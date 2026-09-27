@@ -1,0 +1,58 @@
+{
+  "name": "react-typescript-template",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "React TypeScript Template with Radix UI for task management",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [
+    "react",
+    "typescript",
+    "radix-ui",
+    "task-manager",
+    "vite",
+    "zustand",
+    "zod"
+  ],
+  "author": "Luis Alamo <luismalamoc@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "@hookform/resolvers": "^3.3.2",
+    "@radix-ui/react-slot": "^1.0.2",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.0.0",
+    "cmdk": "^0.2.0",
+    "date-fns": "^2.30.0",
+    "framer-motion": "^10.16.4",
+    "lucide-react": "^0.292.0",
+    "next-themes": "^0.2.1",
+    "react": "^18.2.0",
+    "react-day-picker": "^8.9.1",
+    "react-dom": "^18.2.0",
+    "react-helmet-async": "^1.3.0",
+    "react-hook-form": "^7.48.2",
+    "react-icons": "^4.11.0",
+    "react-router-dom": "^7.0.0",
+    "tailwind-merge": "^2.0.0",
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^3.22.4",
+    "zustand": "^4.4.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.10",
+    "@types/node": "^20.9.0",
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@types/react-helmet": "^6.1.9",
+    "@vitejs/plugin-react": "^4.1.1",
+    "autoprefixer": "^10.4.16",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.5",
+    "typescript": "^5.2.2",
+    "vite": "^6.3.5",
+    "zod": "^3.22.4"
+  }
+}
