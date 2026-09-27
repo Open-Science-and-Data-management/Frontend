@@ -37,20 +37,19 @@
     "react-icons": "^4.11.0",
     "react-router-dom": "^7.0.0",
     "tailwind-merge": "^2.0.0",
+    "tailwindcss": "^4.3.3",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.22.4",
     "zustand": "^4.4.6"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.10",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^20.9.0",
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
     "@types/react-helmet": "^6.1.9",
     "@vitejs/plugin-react": "^4.1.1",
-    "autoprefixer": "^10.4.16",
-    "postcss": "^8.4.31",
-    "tailwindcss": "^3.3.5",
     "typescript": "^5.2.2",
     "vite": "^6.3.5",
     "zod": "^3.22.4"
