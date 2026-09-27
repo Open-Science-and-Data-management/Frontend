@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { Task } from '@/types/task';
-import { taskApi } from '@/api/taskApi';
-import { useTaskStore } from '@/store/taskStore';
+import { useState, useEffect } from "react";
+import { Task } from "@/types/task";
+import { taskApi } from "@/api/taskApi";
+import { useTaskStore } from "@/store/taskStore";
 
 export const useTask = (taskId?: string) => {
   const [isLoading, setIsLoading] = useState(false);
@@ -15,11 +15,11 @@ export const useTask = (taskId?: string) => {
     const fetchTask = async () => {
       setIsLoading(true);
       setError(null);
-      
+
       try {
         // First check if the task exists in the store
         const storeTask = getTaskById(taskId);
-        
+
         if (storeTask) {
           setTask(storeTask);
         } else {
@@ -30,7 +30,7 @@ export const useTask = (taskId?: string) => {
           }
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error');
+        setError(err instanceof Error ? err.message : "Unknown error");
       } finally {
         setIsLoading(false);
       }

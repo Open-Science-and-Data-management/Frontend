@@ -1,15 +1,11 @@
-import React from 'react';
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { format } from 'date-fns';
-import { Button } from '@/components/ui/button';
-import { useTaskStore } from '@/store/taskStore';
-import { 
-  Task, 
-  TaskStatus, 
-  TaskPriority
-} from '@/types/task';
-import { createTaskSchema, updateTaskSchema } from '@/schemas/task';
+import React from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { format } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { useTaskStore } from "@/store/taskStore";
+import { Task, TaskStatus, TaskPriority } from "@/types/task";
+import { createTaskSchema, updateTaskSchema } from "@/schemas/task";
 
 type TaskFormData = {
   title: string;
@@ -24,24 +20,21 @@ interface TaskFormProps {
   onSuccess?: () => void;
 }
 
-export const TaskForm: React.FC<TaskFormProps> = ({ 
-  task, 
-  onSuccess 
-}) => {
+export const TaskForm: React.FC<TaskFormProps> = ({ task, onSuccess }) => {
   const { addTask, updateTask } = useTaskStore();
-  
+
   const defaultValues: TaskFormData = {
-    title: task?.title || '',
-    description: task?.description || '',
+    title: task?.title || "",
+    description: task?.description || "",
     status: task?.status || TaskStatus.TODO,
     priority: task?.priority || TaskPriority.MEDIUM,
-    dueDate: task?.dueDate ? format(task.dueDate, 'yyyy-MM-dd') : undefined,
+    dueDate: task?.dueDate ? format(task.dueDate, "yyyy-MM-dd") : undefined,
   };
 
-  const { 
-    register, 
-    handleSubmit, 
-    formState: { errors, isSubmitting } 
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
   } = useForm<TaskFormData>({
     resolver: zodResolver(task ? updateTaskSchema : createTaskSchema),
     defaultValues,
@@ -60,12 +53,12 @@ export const TaskForm: React.FC<TaskFormProps> = ({
           dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
         });
       }
-      
+
       if (onSuccess) {
         onSuccess();
       }
     } catch (error) {
-      console.error('Error saving task:', error);
+      console.error("Error saving task:", error);
     }
   };
 
@@ -78,11 +71,13 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         <input
           id="title"
           type="text"
-          {...register('title')}
+          {...register("title")}
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
         />
         {errors.title && (
-          <p className="text-sm text-destructive mt-1">{errors.title.message}</p>
+          <p className="text-sm text-destructive mt-1">
+            {errors.title.message}
+          </p>
         )}
       </div>
 
@@ -92,12 +87,14 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         </label>
         <textarea
           id="description"
-          {...register('description')}
+          {...register("description")}
           rows={3}
           className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
         />
         {errors.description && (
-          <p className="text-sm text-destructive mt-1">{errors.description.message}</p>
+          <p className="text-sm text-destructive mt-1">
+            {errors.description.message}
+          </p>
         )}
       </div>
 
@@ -108,7 +105,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
           </label>
           <select
             id="status"
-            {...register('status')}
+            {...register("status")}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
           >
             <option value={TaskStatus.TODO}>To Do</option>
@@ -123,7 +120,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
           </label>
           <select
             id="priority"
-            {...register('priority')}
+            {...register("priority")}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
           >
             <option value={TaskPriority.LOW}>Low</option>
@@ -139,7 +136,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
           <input
             id="dueDate"
             type="date"
-            {...register('dueDate')}
+            {...register("dueDate")}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
           />
         </div>
@@ -147,7 +144,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
 
       <div className="flex justify-end space-x-2">
         <Button type="submit" disabled={isSubmitting}>
-          {task ? 'Update Task' : 'Create Task'}
+          {task ? "Update Task" : "Create Task"}
         </Button>
       </div>
     </form>
