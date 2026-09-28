@@ -6,5 +6,10 @@ export type Task = z.infer<typeof taskSchema>;
 export type CreateTask = z.infer<typeof createTaskSchema>;
 export type UpdateTask = z.infer<typeof updateTaskSchema>;
 
-// Re-export enums for convenience
-export { TaskStatus, TaskPriority } from "@/schemas/task";
+// Re-export shared enums used by Task for convenience
+export {
+  TaskStatus,
+  Priority,
+  LifecycleStage,
+  GeneratedBy,
+} from "@/schemas/shared";

@@ -1,45 +1,48 @@
 import React from "react";
 import { format } from "date-fns";
-import { Task, TaskStatus, TaskPriority } from "@/types/task";
+import { Task } from "@/types/task";
 import { useTaskStore } from "@/store/taskStore";
 import { Button } from "@/components/ui/button";
+import { Pen } from "lucide-react";
 
 interface TaskCardProps {
   task: Task;
   onEdit: (task: Task) => void;
 }
 
+const PRIORITY_COLORS: Record<Task["priority"], string> = {
+  high: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+  medium:
+    "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
+  low: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+};
+
+const STATUS_COLORS: Record<Task["status"], string> = {
+  done: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+  in_progress:
+    "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+  todo: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
+  cancelled: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
+};
+
+const STATUS_LABELS: Record<Task["status"], string> = {
+  todo: "To Do",
+  in_progress: "In Progress",
+  done: "Done",
+  cancelled: "Cancelled",
+};
+
+const PRIORITY_LABELS: Record<Task["priority"], string> = {
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+};
+
 export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
   const { deleteTask, updateTask } = useTaskStore();
 
-  const getPriorityColor = (priority: TaskPriority) => {
-    switch (priority) {
-      case TaskPriority.HIGH:
-        return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
-      case TaskPriority.MEDIUM:
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
-      case TaskPriority.LOW:
-        return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
-    }
-  };
-
-  const getStatusColor = (status: TaskStatus) => {
-    switch (status) {
-      case TaskStatus.COMPLETED:
-        return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
-      case TaskStatus.IN_PROGRESS:
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300";
-      case TaskStatus.TODO:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
-    }
-  };
-
-  const handleStatusChange = (newStatus: TaskStatus) => {
-    updateTask(task.id, { status: newStatus });
+  const handleStatusChange = (newStatus: Task["status"]) => {
+    updateTask(task.task_id as string, { status: newStatus });
   };
 
   return (
@@ -49,57 +52,68 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
           <h3 className="text-lg font-semibold">{task.title}</h3>
           <div className="flex space-x-2">
             <span
-              className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getPriorityColor(task.priority)}`}
+              className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${PRIORITY_COLORS[task.priority]}`}
             >
-              {task.priority.charAt(0).toUpperCase() + task.priority.slice(1)}
+              {PRIORITY_LABELS[task.priority]}
             </span>
             <span
-              className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(task.status)}`}
+              className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[task.status]}`}
             >
-              {task.status === TaskStatus.IN_PROGRESS
-                ? "In Progress"
-                : task.status.charAt(0).toUpperCase() + task.status.slice(1)}
+              {STATUS_LABELS[task.status]}
             </span>
           </div>
         </div>
 
-        <p className="text-sm text-muted-foreground">{task.description}</p>
+        {task.details && (
+          <p className="text-sm text-muted-foreground">{task.details}</p>
+        )}
 
-        {task.dueDate && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="rounded-full bg-muted px-2 py-0.5 capitalize">
+            {task.lifecycle_stage}
+          </span>
+          <span>{task.progress_percent}% complete</span>
+        </div>
+
+        {(task.start_date || task.end_date) && (
           <div className="text-sm text-muted-foreground">
-            <span className="font-medium">Due:</span>{" "}
-            {format(task.dueDate, "PPP")}
+            {task.start_date && (
+              <span>
+                <span className="font-medium">Start:</span>{" "}
+                {format(task.start_date, "PPP")}
+              </span>
+            )}
+            {task.start_date && task.end_date && <span> · </span>}
+            {task.end_date && (
+              <span>
+                <span className="font-medium">Due:</span>{" "}
+                {format(task.end_date, "PPP")}
+              </span>
+            )}
           </div>
         )}
 
-        <div className="flex justify-between items-center pt-4 border-t">
-          <div className="text-xs text-muted-foreground">
-            Created: {format(task.createdAt, "PPP")}
-          </div>
-
+        <div className="flex justify-end items-center pt-4 border-t">
           <div className="flex space-x-2">
-            {task.status !== TaskStatus.COMPLETED && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleStatusChange(TaskStatus.COMPLETED)}
-              >
-                Complete
-              </Button>
-            )}
-
-            <Button variant="outline" size="sm" onClick={() => onEdit(task)}>
-              Edit
-            </Button>
-
             <Button
               variant="outline"
               size="sm"
-              onClick={() => deleteTask(task.id)}
-              className="text-destructive hover:bg-destructive/10"
+              onClick={() => deleteTask(task.task_id as string)}
+              className="text-destructive hover:bg-destructive/5"
             >
               Delete
             </Button>
+
+            <Button variant="secondary" size="sm" onClick={() => onEdit(task)}>
+              <Pen className="mr-2 w-4 h-4 shrink-0" />
+              Edit
+            </Button>
+
+            {task.status !== "done" && (
+              <Button size="sm" onClick={() => handleStatusChange("done")}>
+                Complete
+              </Button>
+            )}
           </div>
         </div>
       </div>

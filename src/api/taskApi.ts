@@ -23,7 +23,7 @@ export const taskApi = {
 
     const tasks = localStorage.getItem("tasks");
     const parsedTasks: Task[] = tasks ? JSON.parse(tasks) : [];
-    return parsedTasks.find((task) => task.id === id) || null;
+    return parsedTasks.find((task) => task.task_id === id) || null;
   },
 
   // Create a new task
@@ -32,11 +32,7 @@ export const taskApi = {
 
     const newTask: Task = {
       ...taskData,
-      id: Math.random().toString(36).substring(2, 9),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      // Convert string date to Date object if present
-      dueDate: taskData.dueDate ? new Date(taskData.dueDate) : undefined,
+      task_id: Math.random().toString(36).substring(2, 9),
     };
 
     const tasks = localStorage.getItem("tasks");
@@ -58,13 +54,12 @@ export const taskApi = {
     const tasks = localStorage.getItem("tasks");
     const parsedTasks: Task[] = tasks ? JSON.parse(tasks) : [];
 
-    const taskIndex = parsedTasks.findIndex((task) => task.id === id);
+    const taskIndex = parsedTasks.findIndex((task) => task.task_id === id);
     if (taskIndex === -1) return null;
 
     const updatedTask = {
       ...parsedTasks[taskIndex],
       ...taskData,
-      updatedAt: new Date(),
     };
 
     parsedTasks[taskIndex] = updatedTask;
@@ -80,7 +75,7 @@ export const taskApi = {
     const tasks = localStorage.getItem("tasks");
     const parsedTasks: Task[] = tasks ? JSON.parse(tasks) : [];
 
-    const filteredTasks = parsedTasks.filter((task) => task.id !== id);
+    const filteredTasks = parsedTasks.filter((task) => task.task_id !== id);
     localStorage.setItem("tasks", JSON.stringify(filteredTasks));
 
     return true;

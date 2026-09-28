@@ -1,34 +1,38 @@
 import { z } from "zod";
+import { LifecycleStage, TaskStatus, Priority, GeneratedBy } from "../shared/enums";
 
-export enum TaskStatus {
-  TODO = "todo",
-  IN_PROGRESS = "in-progress",
-  COMPLETED = "completed",
-}
-
-export enum TaskPriority {
-  LOW = "low",
-  MEDIUM = "medium",
-  HIGH = "high",
-}
-
-export const taskSchema = z.object({
-  id: z.string(),
-  title: z.string().min(1, { message: "Title is required" }),
-  description: z.string(),
-  status: z.nativeEnum(TaskStatus),
-  priority: z.nativeEnum(TaskPriority),
-  dueDate: z.date().optional(),
-  createdAt: z.date(),
-  updatedAt: z.date(),
+const taskObjectSchema = z.object({
+  task_id: z.string().optional(),
+  dmp_id: z.string(),
+  dataset_id: z.string().optional(),
+  source_version_id: z.string().optional(),
+  title: z.string().min(1),
+  details: z.string().optional(),
+  start_date: z.coerce.date().optional(),
+  end_date: z.coerce.date().optional(),
+  progress_percent: z.coerce.number().min(0).max(100).default(0),
+  lifecycle_stage: LifecycleStage,
+  status: TaskStatus.default("todo"),
+  priority: Priority.default("medium"),
+  generated_by: GeneratedBy.default("user"),
 });
 
-export const createTaskSchema = z.object({
-  title: z.string().min(1, { message: "Title is required" }),
-  description: z.string(),
-  status: z.nativeEnum(TaskStatus).default(TaskStatus.TODO),
-  priority: z.nativeEnum(TaskPriority).default(TaskPriority.MEDIUM),
-  dueDate: z.string().optional(),
-});
+const dateOrderRefinement = (t: { start_date?: Date; end_date?: Date }) =>
+  !t.start_date || !t.end_date || t.end_date >= t.start_date;
+const dateOrderIssue = {
+  message: "end_date should not be before start_date",
+  path: ["end_date"],
+};
 
-export const updateTaskSchema = createTaskSchema.partial();
+export const taskSchema = taskObjectSchema.refine(
+  dateOrderRefinement,
+  dateOrderIssue,
+);
+export const createTaskSchema = taskObjectSchema
+  .omit({ task_id: true })
+  .refine(dateOrderRefinement, dateOrderIssue);
+export const updateTaskSchema = taskObjectSchema
+  .omit({ task_id: true })
+  .partial();
+
+export type Task = z.infer<typeof taskSchema>;
