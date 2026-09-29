@@ -43,7 +43,7 @@ export const DatasetList: React.FC = () => {
 
       {datasets.length === 0 && (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          No research outputs yet — add at least one to submit.
+          No research outputs yet.
         </p>
       )}
 

@@ -1,8 +1,6 @@
 import React from "react";
-import { useDroppable } from "@dnd-kit/core";
 import { Task } from "@/types/task";
-import { DraggableTaskCard } from "@/components/task/DraggableTaskCard";
-import { cn } from "@/utils/cn";
+import { TaskCard } from "@/components/task/TaskCard";
 
 interface TaskColumnProps {
   status: Task["status"];
@@ -11,22 +9,20 @@ interface TaskColumnProps {
   onEdit: (task: Task) => void;
 }
 
+const EMPTY_HINT: Record<string, string> = {
+  todo: "Nothing waiting to start.",
+  in_progress: "Nothing underway — add evidence to a task to move it here.",
+  done: "Nothing finished yet — a task lands here at 100% evidence.",
+};
+
 export const TaskColumn: React.FC<TaskColumnProps> = ({
   status,
   title,
   tasks,
   onEdit,
 }) => {
-  const { setNodeRef, isOver } = useDroppable({ id: status });
-
   return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        "flex min-h-[16rem] flex-col gap-3 rounded-lg border bg-muted/30 p-4 transition-colors",
-        isOver && "border-primary bg-muted/60",
-      )}
-    >
+    <div className="flex min-h-64 flex-col gap-3 rounded-lg border bg-muted/30 p-4">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           {title}
@@ -38,11 +34,11 @@ export const TaskColumn: React.FC<TaskColumnProps> = ({
 
       <div className="flex flex-col gap-3">
         {tasks.map((task) => (
-          <DraggableTaskCard key={task.task_id} task={task} onEdit={onEdit} />
+          <TaskCard key={task.task_id} task={task} onEdit={onEdit} />
         ))}
         {tasks.length === 0 && (
           <p className="py-8 text-center text-xs text-muted-foreground">
-            Drop tasks here
+            {EMPTY_HINT[status] ?? "Nothing here."}
           </p>
         )}
       </div>

@@ -2,7 +2,6 @@ import * as React from "react";
 import { Lock } from "lucide-react";
 import { FieldStateChip } from "@/components/ui/field-state-chip";
 import { ConfidenceNote, type Confidence } from "@/components/ui/confidence-note";
-import { ConfirmableField } from "@/components/ui/confirmable-field";
 import {
   RegeneratePopover,
   type RegenerateDirection,
@@ -21,11 +20,6 @@ export interface FormFieldProps {
   confidence?: Confidence;
   onRegenerate?: (direction: RegenerateDirection) => void;
   isRegenerating?: boolean;
-  /** human (confirmable) fields */
-  confirmed?: boolean;
-  onConfirm?: () => void;
-  onUnconfirm?: () => void;
-  confirmedSummary?: React.ReactNode;
   /** locked fields */
   isApproved?: boolean;
   lockedReason?: string;
@@ -33,9 +27,12 @@ export interface FormFieldProps {
 }
 
 /**
- * Renders a labeled field whose behavior (AI-editable / human-confirm /
+ * Renders a labeled field whose behavior (AI-editable / human-owned /
  * locked) is driven entirely by `policy.permission` — no per-field
  * branching should live outside this component.
+ *
+ * Human-owned fields are edited directly; the plan is confirmed once, at
+ * submit, rather than field by field.
  */
 export const FormField: React.FC<FormFieldProps> = ({
   name,
@@ -47,10 +44,6 @@ export const FormField: React.FC<FormFieldProps> = ({
   confidence,
   onRegenerate,
   isRegenerating,
-  confirmed = false,
-  onConfirm,
-  onUnconfirm,
-  confirmedSummary,
   isApproved,
   lockedReason,
   children,
@@ -61,11 +54,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   // A "locked" field that's still editable pre-approval isn't locked yet —
   // don't show the Locked chip/icon until it actually takes effect.
   const chipState =
-    permission === "human" && confirmed
-      ? "confirmed"
-      : permission === "locked" && !effectivelyLocked
-        ? undefined
-        : permission;
+    permission === "locked" && !effectivelyLocked ? undefined : permission;
   const autoHint =
     permission === "locked" && editableBeforeApproval && !effectivelyLocked
       ? "Editable now — locks once the plan is approved"
@@ -97,18 +86,7 @@ export const FormField: React.FC<FormFieldProps> = ({
         </div>
       </div>
 
-      {permission === "human" ? (
-        <ConfirmableField
-          confirmed={confirmed}
-          onConfirm={() => onConfirm?.()}
-          onEdit={() => onUnconfirm?.()}
-          confirmedSummary={confirmedSummary}
-        >
-          {children}
-        </ConfirmableField>
-      ) : (
-        children
-      )}
+      {children}
 
       {effectiveHint && !error && (
         <p className="text-xs text-muted-foreground">{effectiveHint}</p>

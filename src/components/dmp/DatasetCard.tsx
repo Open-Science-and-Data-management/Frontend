@@ -6,23 +6,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Toggle } from "@/components/ui/toggle";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-provider";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { KeywordInput } from "@/components/dmp/KeywordInput";
 import { SchemaFieldTable } from "@/components/dmp/SchemaFieldTable";
 import { DistributionList } from "@/components/dmp/DistributionList";
 import { datasetFieldPolicy } from "@/config/field-policy";
 import { DatasetType, DatasetStatus, DataAccess, YesNoUnknown } from "@/schemas/shared";
-import { useDmpStore, datasetConfirmKey } from "@/store/dmpStore";
+import { useDmpStore } from "@/store/dmpStore";
 import type { Dataset } from "@/types/dataset";
 import { cn } from "@/utils/cn";
 
 const PROTECTION_LEVELS = ["None", "Standard", "Restricted", "Confidential", "Other"];
 const SECURITY_LEVELS = ["Public", "Internal", "Restricted", "Confidential", "Other"];
-
-const truncate = (text: string | undefined, max = 60) => {
-  if (!text) return undefined;
-  return text.length > max ? `${text.slice(0, max)}…` : text;
-};
 
 interface DatasetCardProps {
   dataset: Dataset;
@@ -30,12 +26,10 @@ interface DatasetCardProps {
 
 export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
   const [expanded, setExpanded] = React.useState(true);
-  const { confirmedFields, confirmField, unconfirmField, updateDataset, changeDatasetType, removeDataset } =
-    useDmpStore();
+  const { updateDataset, changeDatasetType, removeDataset } = useDmpStore();
+  const confirm = useConfirm();
 
   const id = dataset.dataset_id as string;
-  const key = (field: string) => datasetConfirmKey(id, field);
-  const isConfirmed = (field: string) => Boolean(confirmedFields[key(field)]);
   const patch = (p: Partial<Dataset>) => updateDataset(id, p);
 
   const composeStatement = () => {
@@ -122,7 +116,17 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               variant="ghost"
               size="sm"
               className="ml-auto text-destructive hover:bg-destructive/10"
-              onClick={() => removeDataset(id)}
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: "Remove this research output?",
+                    description:
+                      "Its datasets, distributions and preservation details are discarded with it.",
+                    confirmLabel: "Remove output",
+                  })
+                )
+                  removeDataset(id);
+              }}
             >
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
               Remove
@@ -179,10 +183,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               label="Access"
               policy={datasetFieldPolicy.access}
               required
-              confirmed={isConfirmed("access")}
-              onConfirm={() => confirmField(key("access"))}
-              onUnconfirm={() => unconfirmField(key("access"))}
-              confirmedSummary={dataset.access}
             >
               <Select
                 id={`access-${id}`}
@@ -202,10 +202,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               label="Personal data?"
               policy={datasetFieldPolicy.personal_data}
               required
-              confirmed={isConfirmed("personal_data")}
-              onConfirm={() => confirmField(key("personal_data"))}
-              onUnconfirm={() => unconfirmField(key("personal_data"))}
-              confirmedSummary={dataset.personal_data}
             >
               <Select
                 id={`personal-${id}`}
@@ -227,10 +223,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               label="Sensitive data?"
               policy={datasetFieldPolicy.sensitive_data}
               required
-              confirmed={isConfirmed("sensitive_data")}
-              onConfirm={() => confirmField(key("sensitive_data"))}
-              onUnconfirm={() => unconfirmField(key("sensitive_data"))}
-              confirmedSummary={dataset.sensitive_data}
             >
               <Select
                 id={`sensitive-${id}`}
@@ -252,10 +244,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
             name={`personal-plan-${id}`}
             label="Personal data handling plan"
             policy={datasetFieldPolicy.personal_data_plan}
-            confirmed={isConfirmed("personal_data_plan")}
-            onConfirm={() => confirmField(key("personal_data_plan"))}
-            onUnconfirm={() => unconfirmField(key("personal_data_plan"))}
-            confirmedSummary={truncate(dataset.personal_data_plan) ?? "Not applicable"}
           >
             <Textarea
               id={`personal-plan-${id}`}
@@ -272,14 +260,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               label="Protection level"
               policy={datasetFieldPolicy.protection_level}
               required
-              confirmed={isConfirmed("protection_level")}
-              onConfirm={() => confirmField(key("protection_level"))}
-              onUnconfirm={() => unconfirmField(key("protection_level"))}
-              confirmedSummary={
-                dataset.protection_level === "Other"
-                  ? dataset.protection_level_other
-                  : dataset.protection_level
-              }
             >
               <div className="space-y-2">
                 <Select
@@ -311,14 +291,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               label="Security classification"
               policy={datasetFieldPolicy.security_classification_level}
               required
-              confirmed={isConfirmed("security_classification_level")}
-              onConfirm={() => confirmField(key("security_classification_level"))}
-              onUnconfirm={() => unconfirmField(key("security_classification_level"))}
-              confirmedSummary={
-                dataset.security_classification_level === "Other"
-                  ? dataset.security_classification_level_other
-                  : dataset.security_classification_level
-              }
             >
               <div className="space-y-2">
                 <Select
@@ -450,10 +422,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               name={`statement-${id}`}
               label="Preservation statement"
               policy={datasetFieldPolicy["preservation.statement"]}
-              confirmed={isConfirmed("preservation_statement")}
-              onConfirm={() => confirmField(key("preservation_statement"))}
-              onUnconfirm={() => unconfirmField(key("preservation_statement"))}
-              confirmedSummary={truncate(dataset.preservation?.statement) ?? "No statement"}
             >
               <div className="space-y-2">
                 <Textarea

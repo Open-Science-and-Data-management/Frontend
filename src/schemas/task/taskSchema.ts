@@ -1,6 +1,28 @@
 import { z } from "zod";
 import { LifecycleStage, TaskStatus, Priority, GeneratedBy } from "../shared/enums";
 
+/**
+ * Progress is evidenced in three escalating levels rather than typed in:
+ *  - basic          the work happened (a written account)
+ *  - output         a deliverable exists (a task_deliverable file)
+ *  - preserve_share it's deposited/published (an evidence file)
+ */
+export const TaskEvidenceLevel = z.enum(["basic", "output", "preserve_share"]);
+export const TASK_EVIDENCE_LEVELS = TaskEvidenceLevel.options;
+
+export const taskChecklistItemSchema = z.object({
+  level: TaskEvidenceLevel,
+  done: z.boolean().default(false),
+  note: z.string().optional(),
+  file_id: z.string().optional(),
+  // Denormalised so the card can render without resolving the file store.
+  filename: z.string().optional(),
+  completed_at: z.coerce.date().optional(),
+});
+
+export type TaskChecklistItem = z.infer<typeof taskChecklistItemSchema>;
+export type TaskEvidenceLevelValue = z.infer<typeof TaskEvidenceLevel>;
+
 const taskObjectSchema = z.object({
   task_id: z.string().optional(),
   dmp_id: z.string(),
@@ -11,6 +33,8 @@ const taskObjectSchema = z.object({
   start_date: z.coerce.date().optional(),
   end_date: z.coerce.date().optional(),
   progress_percent: z.coerce.number().min(0).max(100).default(0),
+  // Derived from `checklist`; never edited directly.
+  checklist: z.array(taskChecklistItemSchema).default([]),
   file_id: z.string().optional(),
   lifecycle_stage: LifecycleStage,
   status: TaskStatus.default("todo"),

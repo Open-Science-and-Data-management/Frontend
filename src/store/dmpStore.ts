@@ -35,9 +35,6 @@ export interface BatchProposal extends BatchTarget {
 
 const makeId = () => Math.random().toString(36).substring(2, 10);
 
-export const datasetConfirmKey = (datasetId: string, field: string) =>
-  `dataset:${datasetId}:${field}`;
-
 export const createEmptyDataset = (type: Dataset["type"]): Dataset => {
   const base = {
     dataset_id: makeId(),
@@ -81,7 +78,6 @@ const createEmptyCost = (): Cost => ({
 
 interface DmpDraftState {
   draft: DmpDraft;
-  confirmedFields: Record<string, boolean>;
   regeneratingFields: Record<string, boolean>;
   coverage: Coverage | null;
   aiGenerated: boolean;
@@ -96,8 +92,6 @@ interface DmpDraftState {
   markTasksGenerated: () => void;
 
   setField: <K extends keyof DmpDraft>(key: K, value: DmpDraft[K]) => void;
-  confirmField: (key: string) => void;
-  unconfirmField: (key: string) => void;
 
   addContributor: () => void;
   updateContributor: (id: string, patch: Partial<Contributor>) => void;
@@ -141,7 +135,6 @@ const emptyDraft: DmpDraft = {};
 
 export const useDmpStore = create<DmpDraftState>((set, get) => ({
   draft: emptyDraft,
-  confirmedFields: {},
   regeneratingFields: {},
   coverage: null,
   aiGenerated: false,
@@ -156,16 +149,6 @@ export const useDmpStore = create<DmpDraftState>((set, get) => ({
 
   setField: (key, value) =>
     set((state) => ({ draft: { ...state.draft, [key]: value } })),
-
-  confirmField: (key) =>
-    set((state) => ({
-      confirmedFields: { ...state.confirmedFields, [key]: true },
-    })),
-
-  unconfirmField: (key) =>
-    set((state) => ({
-      confirmedFields: { ...state.confirmedFields, [key]: false },
-    })),
 
   addContributor: () =>
     set((state) => {
@@ -315,7 +298,6 @@ export const useDmpStore = create<DmpDraftState>((set, get) => ({
         draft: { ...draft, project_id: projectId },
         coverage,
         aiGenerated: true,
-        confirmedFields: {},
         tokenUsed: state.tokenUsed + token_count,
       }));
       return { coverage };
@@ -483,7 +465,6 @@ export const useDmpStore = create<DmpDraftState>((set, get) => ({
   startManual: (projectId) =>
     set({
       draft: { project_id: projectId },
-      confirmedFields: {},
       coverage: null,
       aiGenerated: false,
     }),
@@ -491,7 +472,6 @@ export const useDmpStore = create<DmpDraftState>((set, get) => ({
   resetDraft: () =>
     set({
       draft: emptyDraft,
-      confirmedFields: {},
       coverage: null,
       aiGenerated: false,
     }),

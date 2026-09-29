@@ -1,6 +1,7 @@
 import React from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-provider";
 import { Input } from "@/components/ui/input";
 import { contributorFullName } from "@/schemas/contributor";
 import { useDmpStore } from "@/store/dmpStore";
@@ -13,6 +14,7 @@ export const ContributorList: React.FC = () => {
     removeContributor,
     setPrimaryContact,
   } = useDmpStore();
+  const confirm = useConfirm();
   const contributors = draft.contributor ?? [];
   const contactCount = contributors.filter((c) => c.is_contact).length;
 
@@ -154,7 +156,15 @@ export const ContributorList: React.FC = () => {
                 variant="ghost"
                 size="icon"
                 className="self-end text-destructive hover:bg-destructive/10"
-                onClick={() => removeContributor(contributor.contributor_id as string)}
+                onClick={async () => {
+                  if (
+                    await confirm({
+                      title: "Remove this contributor?",
+                      confirmLabel: "Remove",
+                    })
+                  )
+                    removeContributor(contributor.contributor_id as string);
+                }}
                 aria-label={`Remove ${contributorFullName(contributor) || "contributor"}`}
               >
                 <Trash2 className="h-4 w-4" />

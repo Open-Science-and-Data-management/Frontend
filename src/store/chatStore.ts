@@ -17,8 +17,8 @@ const makeId = () => Math.random().toString(36).substring(2, 10);
 
 // The assistant only ever sees the plan currently being edited.
 const buildContext = (): ChatContext => {
-  const { draft, confirmedFields, tokensLeft } = useDmpStore.getState();
-  const { unmetItems } = computeReadiness(draft, confirmedFields);
+  const { draft, tokensLeft } = useDmpStore.getState();
+  const { unmetItems } = computeReadiness(draft);
   const costs = draft.cost ?? [];
 
   return {

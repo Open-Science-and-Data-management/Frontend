@@ -1,6 +1,7 @@
 import React from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-provider";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
@@ -9,6 +10,7 @@ import { useDmpStore } from "@/store/dmpStore";
 
 export const CostList: React.FC = () => {
   const { draft, addCost, updateCost, removeCost } = useDmpStore();
+  const confirm = useConfirm();
   const costs = draft.cost ?? [];
   const total = costs.reduce((sum, c) => sum + (c.value || 0), 0);
   const currency = costs[0]?.currency_code ?? "THB";
@@ -118,7 +120,15 @@ export const CostList: React.FC = () => {
               variant="ghost"
               size="icon"
               className="self-end text-destructive hover:bg-destructive/10"
-              onClick={() => removeCost(cost.cost_id as string)}
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: "Remove this cost item?",
+                    confirmLabel: "Remove",
+                  })
+                )
+                  removeCost(cost.cost_id as string);
+              }}
               aria-label={`Remove ${cost.title || "cost item"}`}
             >
               <Trash2 className="h-4 w-4" />

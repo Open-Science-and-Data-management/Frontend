@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Toaster } from "@/components/ui/toast";
 import { AiChatPanel } from "@/components/dmp/AiChatPanel";
+import { ConfirmProvider } from "@/components/ui/confirm-provider";
 import { cn } from "@/utils/cn";
 import { QuotaBar } from "@/components/ui/quota-indicator";
 
@@ -28,6 +29,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     });
 
   return (
+    <ConfirmProvider>
     <div className="min-h-screen bg-background">
       <Navbar
         onMenuClick={() => setMobileNavOpen(true)}
@@ -68,5 +70,6 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
       <AiChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
       <Toaster />
     </div>
+    </ConfirmProvider>
   );
 };

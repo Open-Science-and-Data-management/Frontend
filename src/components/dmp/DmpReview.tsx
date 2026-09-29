@@ -35,7 +35,7 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({
 }) => (
   <div className="min-w-0">
     <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-    <dd className="mt-0.5 text-sm break-words">{children || EMPTY}</dd>
+    <dd className="mt-0.5 text-sm wrap-break-words">{children || EMPTY}</dd>
   </div>
 );
 

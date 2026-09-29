@@ -34,11 +34,8 @@ export const GeneralSection: React.FC = () => {
   const {
     draft,
     aiGenerated,
-    confirmedFields,
     regeneratingFields,
     setField,
-    confirmField,
-    unconfirmField,
     regenerateField,
   } = useDmpStore();
 
@@ -120,14 +117,6 @@ export const GeneralSection: React.FC = () => {
         name="alternate_identifier"
         label="Alternate identifier"
         policy={dmpFieldPolicy.alternate_identifier}
-        confirmed={confirmedFields.alternate_identifier}
-        onConfirm={() => confirmField("alternate_identifier")}
-        onUnconfirm={() => unconfirmField("alternate_identifier")}
-        confirmedSummary={
-          draft.alternate_identifier?.identifier
-            ? `${draft.alternate_identifier.type}: ${draft.alternate_identifier.identifier}`
-            : "No alternate identifier"
-        }
       >
         <div className="flex gap-2">
           <Input

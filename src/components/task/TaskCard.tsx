@@ -1,10 +1,16 @@
 import React from "react";
 import { format } from "date-fns";
-import { Task } from "@/types/task";
+import { Task, TASK_EVIDENCE_LEVELS } from "@/types/task";
 import { useTaskStore } from "@/store/taskStore";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-provider";
 import { ProgressBar } from "@/components/ui/progress-bar";
-import { Pen } from "lucide-react";
+import {
+  TaskProgressDialog,
+  LEVEL_META,
+} from "@/components/task/TaskProgressDialog";
+import { Pen, Check, ListChecks } from "lucide-react";
+import { cn } from "@/utils/cn";
 
 interface TaskCardProps {
   task: Task;
@@ -39,6 +45,8 @@ const PRIORITY_LABELS: Record<Task["priority"], string> = {
 
 export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
   const { deleteTask, updateTask } = useTaskStore();
+  const [progressOpen, setProgressOpen] = React.useState(false);
+  const confirm = useConfirm();
 
   const handleStatusChange = (newStatus: Task["status"]) => {
     updateTask(task.task_id as string, { status: newStatus });
@@ -78,6 +86,30 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
             value={task.progress_percent}
             label={`${task.title} progress`}
           />
+          {/* The three evidence levels at a glance */}
+          <button
+            type="button"
+            onClick={() => setProgressOpen(true)}
+            className="flex w-full items-center gap-1.5 rounded pt-0.5 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {TASK_EVIDENCE_LEVELS.map((level) => {
+              const done = (task.checklist ?? []).some(
+                (i) => i.level === level && i.done,
+              );
+              return (
+                <span
+                  key={level}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5",
+                    done ? "bg-ok-subtle text-ok" : "bg-muted",
+                  )}
+                >
+                  {done && <Check className="h-3 w-3" />}
+                  {LEVEL_META[level].short}
+                </span>
+              );
+            })}
+          </button>
         </div>
 
         {(task.start_date || task.end_date) && (
@@ -103,7 +135,25 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => deleteTask(task.task_id as string)}
+              onClick={() => setProgressOpen(true)}
+            >
+              <ListChecks className="mr-1.5 h-3.5 w-3.5" />
+              Progress
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={async () => {
+                if (
+                  await confirm({
+                    title: "Delete this task?",
+                    description:
+                      "Its evidence and progress are discarded with it.",
+                    confirmLabel: "Delete task",
+                  })
+                )
+                  deleteTask(task.task_id as string);
+              }}
               className="text-destructive hover:bg-destructive/5"
             >
               Delete
@@ -122,6 +172,12 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
           </div>
         </div>
       </div>
+
+      <TaskProgressDialog
+        task={task}
+        open={progressOpen}
+        onOpenChange={setProgressOpen}
+      />
     </div>
   );
 };

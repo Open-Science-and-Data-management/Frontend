@@ -1,40 +1,17 @@
 import { dmpSchema } from "@/schemas/dmp";
-import { useDmpStore, datasetConfirmKey } from "@/store/dmpStore";
+import { useDmpStore } from "@/store/dmpStore";
 import type { DmpDraft } from "@/types/dmp";
-
-const DATASET_REQUIRED_FIELDS = [
-  "access",
-  "personal_data",
-  "sensitive_data",
-  "protection_level",
-  "security_classification_level",
-];
 
 export interface ReadinessItem {
   label: string;
   done: boolean;
 }
 
-export const computeReadiness = (
-  draft: DmpDraft,
-  confirmedFields: Record<string, boolean>,
-) => {
+export const computeReadiness = (draft: DmpDraft) => {
   const schemaResult = dmpSchema.safeParse(draft);
-  const ethicalConfirmed = Boolean(confirmedFields.ethical_issues_exist);
-  const ethicalDescriptionConfirmed =
-    !draft.ethical_issues_exist ||
-    Boolean(confirmedFields.ethical_issues_description);
-
   const contributors = draft.contributor ?? [];
   const contactCount = contributors.filter((c) => c.is_contact).length;
   const datasets = draft.dataset ?? [];
-  const datasetsAllConfirmed =
-    datasets.length > 0 &&
-    datasets.every((d) =>
-      DATASET_REQUIRED_FIELDS.every((field) =>
-        Boolean(confirmedFields[datasetConfirmKey(d.dataset_id as string, field)]),
-      ),
-    );
 
   const checklistItems: ReadinessItem[] = [
     { label: "Title provided", done: Boolean(draft.title) },
@@ -44,12 +21,15 @@ export const computeReadiness = (
       label: "Begin & end dates set",
       done: Boolean(draft.begin_date && draft.end_date),
     },
-    { label: "Ethical issues question confirmed", done: ethicalConfirmed },
+    {
+      label: "Ethical issues answered",
+      done: draft.ethical_issues_exist !== undefined,
+    },
     ...(draft.ethical_issues_exist
       ? [
           {
-            label: "Ethical issues description confirmed",
-            done: ethicalDescriptionConfirmed,
+            label: "Ethical issues described",
+            done: Boolean(draft.ethical_issues_description),
           },
         ]
       : []),
@@ -57,16 +37,20 @@ export const computeReadiness = (
     { label: "Exactly one primary contact set", done: contactCount === 1 },
     { label: "At least one research output added", done: datasets.length > 0 },
     {
-      label: "Every research output's required fields confirmed",
-      done: datasetsAllConfirmed,
+      label: "Every research output has protection & security set",
+      done:
+        datasets.length > 0 &&
+        datasets.every(
+          (d) =>
+            Boolean(d.protection_level) &&
+            Boolean(d.security_classification_level),
+        ),
     },
   ];
 
-  const canSubmit =
-    schemaResult.success &&
-    ethicalConfirmed &&
-    ethicalDescriptionConfirmed &&
-    datasetsAllConfirmed;
+  // Submission is gated on the plan being valid; the single confirmation
+  // now happens once, at submit.
+  const canSubmit = schemaResult.success;
 
   return {
     checklistItems,
@@ -77,6 +61,6 @@ export const computeReadiness = (
 };
 
 export const useDmpReadiness = () => {
-  const { draft, confirmedFields } = useDmpStore();
-  return computeReadiness(draft, confirmedFields);
+  const draft = useDmpStore((s) => s.draft);
+  return computeReadiness(draft);
 };

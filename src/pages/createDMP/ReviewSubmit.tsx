@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, AlertTriangle, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Stepper } from "@/components/ui/stepper";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DmpReview } from "@/components/dmp/DmpReview";
 import { ReadyChecklist } from "@/components/dmp/ReadyChecklist";
 import { useDmpReadiness } from "@/hooks/useDmpReadiness";
@@ -24,6 +25,7 @@ export const ReviewSubmit: React.FC = () => {
   const submitForApproval = useDmpStore((s) => s.submitForApproval);
   const toast = useToastStore((s) => s.toast);
   const { checklistItems, canSubmit, unmetItems } = useDmpReadiness();
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   const goToSection = (section: string) =>
     navigate(`/dmp/create?section=${section}`);
@@ -40,10 +42,13 @@ export const ReviewSubmit: React.FC = () => {
     );
   }
 
+  // The only confirmation in the whole authoring flow — fields are edited
+  // freely, and the plan is confirmed once here.
   const handleSubmit = () => {
     if (!canSubmit) return;
     submitForApproval();
     toast({ title: "Submitted for committee review" });
+    setConfirmOpen(false);
     navigate("/dmp/status");
   };
 
@@ -80,7 +85,7 @@ export const ReviewSubmit: React.FC = () => {
 
             {canSubmit ? (
               <>
-                <Button className="w-full" onClick={handleSubmit}>
+                <Button className="w-full" onClick={() => setConfirmOpen(true)}>
                   <Send className="mr-2 h-4 w-4" />
                   Submit for approval
                 </Button>
@@ -113,6 +118,16 @@ export const ReviewSubmit: React.FC = () => {
           </aside>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Submit this plan for approval?"
+        description="Your committee will review it as it stands now. You can keep editing while it's pending, but they'll see this version."
+        confirmLabel="Submit for approval"
+        cancelLabel="Keep reviewing"
+        onConfirm={handleSubmit}
+      />
     </>
   );
 };

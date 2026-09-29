@@ -2,6 +2,7 @@ import React from "react";
 import { format } from "date-fns";
 import { FileText, Download, Trash2, Upload as UploadIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-provider";
 import { Chip } from "@/components/ui/chip";
 import { Select } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -37,6 +38,7 @@ interface FileListProps {
 
 export const FileList: React.FC<FileListProps> = ({ projectId }) => {
   const { files, projects, uploadFile, removeFile, uploadingFor } = useProjectStore();
+  const confirm = useConfirm();
   const toast = useToastStore((s) => s.toast);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [purpose, setPurpose] = React.useState<FileRecord["purpose"]>("evidence");
@@ -181,6 +183,15 @@ export const FileList: React.FC<FileListProps> = ({ projectId }) => {
                   className="h-8 w-8 text-destructive hover:bg-destructive/10"
                   aria-label={`Remove ${record.filename}`}
                   onClick={async () => {
+                    if (
+                      !(await confirm({
+                        title: `Remove ${record.filename}?`,
+                        description:
+                          "The file and anything referencing it lose this attachment.",
+                        confirmLabel: "Remove file",
+                      }))
+                    )
+                      return;
                     await removeFile(record.file_id as string);
                     toast({ title: `${record.filename} removed` });
                   }}
