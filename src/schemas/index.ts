@@ -1,4 +1,5 @@
 export * from "./shared";
+export * from "./file";
 export * from "./dmp";
 export * from "./dataset";
 export * from "./contributor";

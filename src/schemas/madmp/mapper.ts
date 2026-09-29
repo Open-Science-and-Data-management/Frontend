@@ -1,4 +1,5 @@
 import type { DmpForm } from "../dmp/dmp.schema";
+import { contributorFullName } from "../contributor/contributor.schema";
 import { madmpExportSchema, type MadmpExport } from "./madmp-export.schema";
 
 const yn = (b: boolean): "yes" | "no" => (b ? "yes" : "no");
@@ -22,11 +23,11 @@ export function mapFormToMadmp(
       ethical_issues_exist: yn(form.ethical_issues_exist),
       ethical_issues_description: form.ethical_issues_description,
       contact: {
-        name: contact.name,
+        name: contributorFullName(contact),
         contact_id: { identifier: contact.orcid || "unknown", type: "orcid" },
       },
       contributor: form.contributor.map((c) => ({
-        name: c.name,
+        name: contributorFullName(c),
         role: [c.role],
         contributor_id: c.orcid ? { identifier: c.orcid, type: "orcid" } : undefined,
       })),

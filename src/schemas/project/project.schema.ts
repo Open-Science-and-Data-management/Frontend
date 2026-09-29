@@ -7,5 +7,15 @@ export const projectSchema = z.object({
   description: z.string().optional(),
   proposal_file_id: z.string().optional(),
   status: ProjectStatus.default("draft"),
+  created_at: z.coerce.date().optional(),
+  updated_at: z.coerce.date().optional(),
 });
+
+export const createProjectSchema = projectSchema.omit({
+  project_id: true,
+  created_at: true,
+  updated_at: true,
+});
+
 export type Project = z.infer<typeof projectSchema>;
+export type CreateProject = z.infer<typeof createProjectSchema>;

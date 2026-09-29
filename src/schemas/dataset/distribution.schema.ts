@@ -4,6 +4,7 @@ import { DataAccess } from "../shared/enums";
 // DCAT Distribution schema
 export const distributionSchema = z.object({
   distribution_id: z.string().optional(),
+  file_id: z.string().optional(),
   title: z.string().min(1),
   access_url: z.string().url().or(z.literal("")).optional(),
   download_url: z.string().url().or(z.literal("")).optional(),

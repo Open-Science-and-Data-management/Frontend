@@ -8,6 +8,7 @@ const DEFAULT_DMP_ID = "demo-dmp-1";
 interface TaskState {
   tasks: Task[];
   addTask: (task: Omit<Task, "task_id">) => void;
+  addGeneratedTasks: (tasks: Omit<Task, "task_id">[]) => void;
   updateTask: (id: string, task: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   getTaskById: (id: string) => Task | undefined;
@@ -61,6 +62,17 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       };
       return { tasks: [...state.tasks, newTask] };
     }),
+
+  addGeneratedTasks: (tasks) =>
+    set((state) => ({
+      tasks: [
+        ...state.tasks,
+        ...tasks.map((task) => ({
+          ...task,
+          task_id: Math.random().toString(36).substring(2, 9),
+        })),
+      ],
+    })),
 
   updateTask: (id, updatedTask) =>
     set((state) => {

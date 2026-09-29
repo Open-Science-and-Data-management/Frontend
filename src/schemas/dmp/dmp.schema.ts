@@ -6,6 +6,7 @@ import { identifierSchema } from "../shared/identifier";
 
 const dmpBase = z.object({
   dmp_id: z.string().optional(),
+  project_id: z.string().optional(),
   title: z.string().min(1, "ต้องมีชื่อ"),
   description: z.string().min(1, "ต้องมีคำอธิบาย"),
   language: z.string().min(2),

@@ -11,6 +11,7 @@ const taskObjectSchema = z.object({
   start_date: z.coerce.date().optional(),
   end_date: z.coerce.date().optional(),
   progress_percent: z.coerce.number().min(0).max(100).default(0),
+  file_id: z.string().optional(),
   lifecycle_stage: LifecycleStage,
   status: TaskStatus.default("todo"),
   priority: Priority.default("medium"),

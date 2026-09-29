@@ -3,6 +3,7 @@ import { format } from "date-fns";
 import { Task } from "@/types/task";
 import { useTaskStore } from "@/store/taskStore";
 import { Button } from "@/components/ui/button";
+import { ProgressBar } from "@/components/ui/progress-bar";
 import { Pen } from "lucide-react";
 
 interface TaskCardProps {
@@ -11,18 +12,16 @@ interface TaskCardProps {
 }
 
 const PRIORITY_COLORS: Record<Task["priority"], string> = {
-  high: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
-  medium:
-    "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
-  low: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
+  high: "bg-destructive/10 text-destructive",
+  medium: "bg-warn-subtle text-warn",
+  low: "bg-ok-subtle text-ok",
 };
 
 const STATUS_COLORS: Record<Task["status"], string> = {
-  done: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
-  in_progress:
-    "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-  todo: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
-  cancelled: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
+  done: "bg-ok-subtle text-ok",
+  in_progress: "bg-secondary text-secondary-foreground",
+  todo: "bg-muted text-muted-foreground",
+  cancelled: "bg-muted text-muted-foreground",
 };
 
 const STATUS_LABELS: Record<Task["status"], string> = {
@@ -68,11 +67,17 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
           <p className="text-sm text-muted-foreground">{task.details}</p>
         )}
 
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="rounded-full bg-muted px-2 py-0.5 capitalize">
-            {task.lifecycle_stage}
-          </span>
-          <span>{task.progress_percent}% complete</span>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span className="rounded-full bg-muted px-2 py-0.5 capitalize">
+              {task.lifecycle_stage}
+            </span>
+            <span className="tabular-nums">{task.progress_percent}%</span>
+          </div>
+          <ProgressBar
+            value={task.progress_percent}
+            label={`${task.title} progress`}
+          />
         </div>
 
         {(task.start_date || task.end_date) && (

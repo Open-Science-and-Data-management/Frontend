@@ -1,0 +1,485 @@
+import React from "react";
+import { ChevronDown, Trash2 } from "lucide-react";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Select } from "@/components/ui/select";
+import { Toggle } from "@/components/ui/toggle";
+import { Button } from "@/components/ui/button";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { KeywordInput } from "@/components/dmp/KeywordInput";
+import { SchemaFieldTable } from "@/components/dmp/SchemaFieldTable";
+import { DistributionList } from "@/components/dmp/DistributionList";
+import { datasetFieldPolicy } from "@/config/field-policy";
+import { DatasetType, DatasetStatus, DataAccess, YesNoUnknown } from "@/schemas/shared";
+import { useDmpStore, datasetConfirmKey } from "@/store/dmpStore";
+import type { Dataset } from "@/types/dataset";
+import { cn } from "@/utils/cn";
+
+const PROTECTION_LEVELS = ["None", "Standard", "Restricted", "Confidential", "Other"];
+const SECURITY_LEVELS = ["Public", "Internal", "Restricted", "Confidential", "Other"];
+
+const truncate = (text: string | undefined, max = 60) => {
+  if (!text) return undefined;
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+};
+
+interface DatasetCardProps {
+  dataset: Dataset;
+}
+
+export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
+  const [expanded, setExpanded] = React.useState(true);
+  const { confirmedFields, confirmField, unconfirmField, updateDataset, changeDatasetType, removeDataset } =
+    useDmpStore();
+
+  const id = dataset.dataset_id as string;
+  const key = (field: string) => datasetConfirmKey(id, field);
+  const isConfirmed = (field: string) => Boolean(confirmedFields[key(field)]);
+  const patch = (p: Partial<Dataset>) => updateDataset(id, p);
+
+  const composeStatement = () => {
+    const { repository, duration, format } = dataset.preservation ?? {};
+    const parts = [
+      repository && `Preserved in ${repository}`,
+      format && `as ${format}`,
+      duration && `for ${duration}`,
+      dataset.preservation?.doi_requested && "with a DOI requested",
+    ].filter(Boolean);
+    const statement = parts.length
+      ? `${parts.join(" ")}.`
+      : "Add a repository, format, or duration above to compose a statement.";
+    patch({ preservation: { ...dataset.preservation, statement } });
+  };
+
+  return (
+    <div className="rounded-lg border bg-card">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        className="flex w-full items-center justify-between gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-medium">{dataset.title || "Untitled research output"}</span>
+          <StatusBadge status="draft">{dataset.type}</StatusBadge>
+          <span className="text-xs text-muted-foreground capitalize">{dataset.status}</span>
+        </div>
+        <ChevronDown
+          className={cn("h-4 w-4 shrink-0 transition-transform", expanded && "rotate-180")}
+        />
+      </button>
+
+      {expanded && (
+        <div className="space-y-5 border-t p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label
+                htmlFor={`type-${id}`}
+                className="mb-1 block text-xs font-medium text-muted-foreground"
+              >
+                Output type
+              </label>
+              <Select
+                id={`type-${id}`}
+                className="w-40"
+                value={dataset.type}
+                onChange={(e) =>
+                  changeDatasetType(id, e.target.value as Dataset["type"])
+                }
+              >
+                {DatasetType.options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label
+                htmlFor={`status-${id}`}
+                className="mb-1 block text-xs font-medium text-muted-foreground"
+              >
+                Status
+              </label>
+              <Select
+                id={`status-${id}`}
+                className="w-36"
+                value={dataset.status}
+                onChange={(e) =>
+                  patch({ status: e.target.value as Dataset["status"] })
+                }
+              >
+                {DatasetStatus.options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="ml-auto text-destructive hover:bg-destructive/10"
+              onClick={() => removeDataset(id)}
+            >
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              Remove
+            </Button>
+          </div>
+
+          <FormField name={`title-${id}`} label="Title" policy={datasetFieldPolicy.title} required>
+            <Input
+              id={`title-${id}`}
+              value={dataset.title}
+              onChange={(e) => patch({ title: e.target.value })}
+            />
+          </FormField>
+
+          <FormField
+            name={`description-${id}`}
+            label="Description"
+            policy={datasetFieldPolicy.description}
+          >
+            <Textarea
+              id={`description-${id}`}
+              rows={2}
+              value={dataset.description ?? ""}
+              onChange={(e) => patch({ description: e.target.value })}
+            />
+          </FormField>
+
+          <FormField name={`keyword-${id}`} label="Keywords" policy={datasetFieldPolicy.keyword}>
+            <KeywordInput
+              id={`keyword-${id}`}
+              keywords={dataset.keyword}
+              onChange={(keyword) => patch({ keyword })}
+            />
+          </FormField>
+
+          <div>
+            <label
+              htmlFor={`located-${id}`}
+              className="mb-1 block text-sm font-medium"
+            >
+              Located at
+            </label>
+            <Input
+              id={`located-${id}`}
+              value={dataset.located_at ?? ""}
+              onChange={(e) => patch({ located_at: e.target.value })}
+              placeholder="Storage location or system"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <FormField
+              name={`access-${id}`}
+              label="Access"
+              policy={datasetFieldPolicy.access}
+              required
+              confirmed={isConfirmed("access")}
+              onConfirm={() => confirmField(key("access"))}
+              onUnconfirm={() => unconfirmField(key("access"))}
+              confirmedSummary={dataset.access}
+            >
+              <Select
+                id={`access-${id}`}
+                value={dataset.access}
+                onChange={(e) => patch({ access: e.target.value as Dataset["access"] })}
+              >
+                {DataAccess.options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+
+            <FormField
+              name={`personal-${id}`}
+              label="Personal data?"
+              policy={datasetFieldPolicy.personal_data}
+              required
+              confirmed={isConfirmed("personal_data")}
+              onConfirm={() => confirmField(key("personal_data"))}
+              onUnconfirm={() => unconfirmField(key("personal_data"))}
+              confirmedSummary={dataset.personal_data}
+            >
+              <Select
+                id={`personal-${id}`}
+                value={dataset.personal_data}
+                onChange={(e) =>
+                  patch({ personal_data: e.target.value as Dataset["personal_data"] })
+                }
+              >
+                {YesNoUnknown.options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+
+            <FormField
+              name={`sensitive-${id}`}
+              label="Sensitive data?"
+              policy={datasetFieldPolicy.sensitive_data}
+              required
+              confirmed={isConfirmed("sensitive_data")}
+              onConfirm={() => confirmField(key("sensitive_data"))}
+              onUnconfirm={() => unconfirmField(key("sensitive_data"))}
+              confirmedSummary={dataset.sensitive_data}
+            >
+              <Select
+                id={`sensitive-${id}`}
+                value={dataset.sensitive_data}
+                onChange={(e) =>
+                  patch({ sensitive_data: e.target.value as Dataset["sensitive_data"] })
+                }
+              >
+                {YesNoUnknown.options.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+          </div>
+
+          <FormField
+            name={`personal-plan-${id}`}
+            label="Personal data handling plan"
+            policy={datasetFieldPolicy.personal_data_plan}
+            confirmed={isConfirmed("personal_data_plan")}
+            onConfirm={() => confirmField(key("personal_data_plan"))}
+            onUnconfirm={() => unconfirmField(key("personal_data_plan"))}
+            confirmedSummary={truncate(dataset.personal_data_plan) ?? "Not applicable"}
+          >
+            <Textarea
+              id={`personal-plan-${id}`}
+              rows={2}
+              value={dataset.personal_data_plan ?? ""}
+              onChange={(e) => patch({ personal_data_plan: e.target.value })}
+              placeholder="Leave blank if not applicable"
+            />
+          </FormField>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormField
+              name={`protection-${id}`}
+              label="Protection level"
+              policy={datasetFieldPolicy.protection_level}
+              required
+              confirmed={isConfirmed("protection_level")}
+              onConfirm={() => confirmField(key("protection_level"))}
+              onUnconfirm={() => unconfirmField(key("protection_level"))}
+              confirmedSummary={
+                dataset.protection_level === "Other"
+                  ? dataset.protection_level_other
+                  : dataset.protection_level
+              }
+            >
+              <div className="space-y-2">
+                <Select
+                  id={`protection-${id}`}
+                  value={dataset.protection_level}
+                  onChange={(e) => patch({ protection_level: e.target.value })}
+                >
+                  <option value="" disabled>
+                    Select…
+                  </option>
+                  {PROTECTION_LEVELS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+                {dataset.protection_level === "Other" && (
+                  <Input
+                    placeholder="Describe protection level"
+                    value={dataset.protection_level_other ?? ""}
+                    onChange={(e) => patch({ protection_level_other: e.target.value })}
+                  />
+                )}
+              </div>
+            </FormField>
+
+            <FormField
+              name={`security-${id}`}
+              label="Security classification"
+              policy={datasetFieldPolicy.security_classification_level}
+              required
+              confirmed={isConfirmed("security_classification_level")}
+              onConfirm={() => confirmField(key("security_classification_level"))}
+              onUnconfirm={() => unconfirmField(key("security_classification_level"))}
+              confirmedSummary={
+                dataset.security_classification_level === "Other"
+                  ? dataset.security_classification_level_other
+                  : dataset.security_classification_level
+              }
+            >
+              <div className="space-y-2">
+                <Select
+                  id={`security-${id}`}
+                  value={dataset.security_classification_level}
+                  onChange={(e) =>
+                    patch({ security_classification_level: e.target.value })
+                  }
+                >
+                  <option value="" disabled>
+                    Select…
+                  </option>
+                  {SECURITY_LEVELS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </Select>
+                {dataset.security_classification_level === "Other" && (
+                  <Input
+                    placeholder="Describe security classification"
+                    value={dataset.security_classification_level_other ?? ""}
+                    onChange={(e) =>
+                      patch({ security_classification_level_other: e.target.value })
+                    }
+                  />
+                )}
+              </div>
+            </FormField>
+          </div>
+
+          <div>
+            <label
+              htmlFor={`dqa-${id}`}
+              className="mb-1 block text-sm font-medium"
+            >
+              Data quality assurance
+            </label>
+            <Textarea
+              id={`dqa-${id}`}
+              rows={2}
+              value={dataset.data_quality_assurance ?? ""}
+              onChange={(e) => patch({ data_quality_assurance: e.target.value })}
+              placeholder="Leave blank if not applicable"
+            />
+          </div>
+
+          {dataset.type === "raw" && (
+            <div>
+              <h3 className="mb-2 text-sm font-medium">Schema fields</h3>
+              <SchemaFieldTable
+                fields={dataset.schema_fields}
+                onChange={(schema_fields) => patch({ schema_fields })}
+              />
+            </div>
+          )}
+
+          {dataset.type === "software" && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label
+                  htmlFor={`repo-url-${id}`}
+                  className="mb-1 block text-sm font-medium"
+                >
+                  Repository URL
+                </label>
+                <Input
+                  id={`repo-url-${id}`}
+                  value={dataset.repository_url ?? ""}
+                  onChange={(e) => patch({ repository_url: e.target.value })}
+                  placeholder="https://…"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor={`sw-version-${id}`}
+                  className="mb-1 block text-sm font-medium"
+                >
+                  Software version
+                </label>
+                <Input
+                  id={`sw-version-${id}`}
+                  value={dataset.software_version ?? ""}
+                  onChange={(e) => patch({ software_version: e.target.value })}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
+            <h3 className="text-sm font-medium">Preservation</h3>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Input
+                aria-label="Repository"
+                placeholder="Repository"
+                value={dataset.preservation?.repository ?? ""}
+                onChange={(e) =>
+                  patch({ preservation: { ...dataset.preservation, repository: e.target.value } })
+                }
+              />
+              <Input
+                aria-label="Duration"
+                placeholder="Duration (e.g. 10 years)"
+                value={dataset.preservation?.duration ?? ""}
+                onChange={(e) =>
+                  patch({ preservation: { ...dataset.preservation, duration: e.target.value } })
+                }
+              />
+              <Input
+                aria-label="Format"
+                placeholder="Format"
+                value={dataset.preservation?.format ?? ""}
+                onChange={(e) =>
+                  patch({ preservation: { ...dataset.preservation, format: e.target.value } })
+                }
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <Toggle
+                checked={dataset.preservation?.doi_requested ?? false}
+                onCheckedChange={(checked) =>
+                  patch({ preservation: { ...dataset.preservation, doi_requested: checked } })
+                }
+              />
+              DOI requested
+            </label>
+
+            <FormField
+              name={`statement-${id}`}
+              label="Preservation statement"
+              policy={datasetFieldPolicy["preservation.statement"]}
+              confirmed={isConfirmed("preservation_statement")}
+              onConfirm={() => confirmField(key("preservation_statement"))}
+              onUnconfirm={() => unconfirmField(key("preservation_statement"))}
+              confirmedSummary={truncate(dataset.preservation?.statement) ?? "No statement"}
+            >
+              <div className="space-y-2">
+                <Textarea
+                  id={`statement-${id}`}
+                  rows={2}
+                  value={dataset.preservation?.statement ?? ""}
+                  onChange={(e) =>
+                    patch({ preservation: { ...dataset.preservation, statement: e.target.value } })
+                  }
+                />
+                <Button type="button" variant="ghost" size="sm" onClick={composeStatement}>
+                  Compose from above
+                </Button>
+              </div>
+            </FormField>
+          </div>
+
+          <div>
+            <h3 className="mb-2 text-sm font-medium">Distribution</h3>
+            <DistributionList
+              distributions={dataset.distribution}
+              onChange={(distribution) => patch({ distribution })}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
