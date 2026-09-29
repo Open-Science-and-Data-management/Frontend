@@ -23,6 +23,7 @@ export const Status: React.FC = () => {
   const navigate = useNavigate();
   const { draft, status, tasksGenerated, approve, markTasksGenerated, hasTokensFor, tokensLeft } =
     useDmpStore();
+  const currentDmpId = useDmpStore((s) => s.currentDmpId);
   const addGeneratedTasks = useTaskStore((s) => s.addGeneratedTasks);
   const toast = useToastStore((s) => s.toast);
 
@@ -36,6 +37,11 @@ export const Status: React.FC = () => {
   const stageIndex = isApproved ? TRACKER_STAGES.length - 1 : 1;
 
   const runGeneration = async () => {
+    if (!currentDmpId) {
+      toast({ title: "Open a plan first", variant: "destructive" });
+      return;
+    }
+
     setGenerating(true);
     setStep(0);
     const timer = setInterval(
@@ -57,7 +63,8 @@ export const Status: React.FC = () => {
 
       addGeneratedTasks(
         tasks.map((t) => ({
-          dmp_id: draft.dmp_id ?? draft.project_id ?? "current-dmp",
+          // The plan these tasks came from, so the board can scope to it.
+          dmp_id: currentDmpId,
           dataset_id: t.dataset_id,
           title: t.title,
           details: t.details,

@@ -76,10 +76,28 @@ export const DmpReview: React.FC<DmpReviewProps> = ({ onEditSection }) => {
       <Section title="Ethical" onEdit={() => onEditSection("ethical")}>
         <dl className="grid grid-cols-1 gap-4">
           <Field label="Ethical issues">
-            {draft.ethical_issues_exist ? "Yes — issues apply" : "No ethical issues"}
+            {draft.ethical_issues_exist
+              ? "Yes — issues apply"
+              : "No ethical issues"}
           </Field>
           {draft.ethical_issues_exist && (
-            <Field label="Description">{draft.ethical_issues_description}</Field>
+            <>
+              <Field label="Description">
+                {draft.ethical_issues_description}
+              </Field>
+              <Field label="Report">
+                {draft.ethical_issues_report ? (
+                  <a
+                    href={draft.ethical_issues_report}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="text-primary underline underline-offset-2"
+                  >
+                    {draft.ethical_issues_report}
+                  </a>
+                ) : null}
+              </Field>
+            </>
           )}
           <Field label="Indigenous data considerations">
             {draft.indigenous_considerations || "Not applicable"}
@@ -93,9 +111,14 @@ export const DmpReview: React.FC<DmpReviewProps> = ({ onEditSection }) => {
       >
         <div className="space-y-4">
           {datasets.map((d) => (
-            <div key={d.dataset_id} className="rounded-md border bg-muted/20 p-4">
+            <div
+              key={d.dataset_id}
+              className="rounded-md border bg-muted/20 p-4"
+            >
               <div className="mb-3 flex flex-wrap items-center gap-2">
-                <span className="font-medium">{d.title || "Untitled output"}</span>
+                <span className="font-medium">
+                  {d.title || "Untitled output"}
+                </span>
                 <StatusBadge status="draft">{d.type}</StatusBadge>
                 <span className="text-xs text-muted-foreground capitalize">
                   {d.status}
@@ -161,6 +184,7 @@ export const DmpReview: React.FC<DmpReviewProps> = ({ onEditSection }) => {
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {c.role}
+                      {c.email ? ` · ${c.email}` : ""}
                       {c.orcid ? ` · ORCID ${c.orcid}` : ""}
                     </p>
                   </div>
@@ -203,7 +227,9 @@ export const DmpReview: React.FC<DmpReviewProps> = ({ onEditSection }) => {
       <Section title="System info" onEdit={() => onEditSection("system")}>
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Schema version">{draft.schema_version}</Field>
-          <Field label="Project">{project?.project_name ?? draft.project_id}</Field>
+          <Field label="Project">
+            {project?.project_name ?? draft.project_id}
+          </Field>
         </dl>
       </Section>
     </div>

@@ -10,7 +10,8 @@ export function mapFormToMadmp(
   form: DmpForm,
   ids: { dmpDoi: string; projectStart?: string; projectEnd?: string },
 ): MadmpExport {
-  const contact = form.contributor.find((c) => c.is_contact) ?? form.contributor[0];
+  const contact =
+    form.contributor.find((c) => c.is_contact) ?? form.contributor[0];
 
   const out = {
     dmp: {
@@ -22,14 +23,19 @@ export function mapFormToMadmp(
       dmp_id: { identifier: ids.dmpDoi, type: "doi" },
       ethical_issues_exist: yn(form.ethical_issues_exist),
       ethical_issues_description: form.ethical_issues_description,
+      ethical_issues_report: form.ethical_issues_report || undefined,
       contact: {
         name: contributorFullName(contact),
+        mbox: contact.email || undefined,
         contact_id: { identifier: contact.orcid || "unknown", type: "orcid" },
       },
       contributor: form.contributor.map((c) => ({
         name: contributorFullName(c),
+        mbox: c.email || undefined,
         role: [c.role],
-        contributor_id: c.orcid ? { identifier: c.orcid, type: "orcid" } : undefined,
+        contributor_id: c.orcid
+          ? { identifier: c.orcid, type: "orcid" }
+          : undefined,
       })),
       cost: form.cost.map((c) => ({
         title: c.title,
@@ -37,7 +43,9 @@ export function mapFormToMadmp(
         value: c.value,
         currency_code: c.currency_code,
       })),
-      project: [{ title: form.title, start: ids.projectStart, end: ids.projectEnd }],
+      project: [
+        { title: form.title, start: ids.projectStart, end: ids.projectEnd },
+      ],
       dataset: form.dataset.map((d) => ({
         title: d.title,
         type: d.type,
@@ -46,7 +54,9 @@ export function mapFormToMadmp(
         personal_data: d.personal_data,
         sensitive_data: d.sensitive_data,
         keyword: d.keyword,
-        data_quality_assurance: d.data_quality_assurance ? [d.data_quality_assurance] : undefined,
+        data_quality_assurance: d.data_quality_assurance
+          ? [d.data_quality_assurance]
+          : undefined,
         preservation_statement: d.preservation?.statement,
         distribution: d.distribution.map((dist) => ({
           title: dist.title,
@@ -55,7 +65,9 @@ export function mapFormToMadmp(
           format: dist.format ? [dist.format] : undefined,
           byte_size: dist.byte_size,
           data_access: dist.data_access,
-          license: dist.license ? [{ license_ref: dist.license, start_date: nowIso() }] : undefined,
+          license: dist.license
+            ? [{ license_ref: dist.license, start_date: nowIso() }]
+            : undefined,
         })),
         protection_level: d.protection_level,
         security_classification_level: d.security_classification_level,

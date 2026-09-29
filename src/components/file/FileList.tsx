@@ -19,11 +19,12 @@ const PURPOSE_LABELS: Record<FileRecord["purpose"], string> = {
   evidence: "Evidence",
 };
 
-const PURPOSE_VARIANTS: Record<FileRecord["purpose"], "ai" | "ok" | "neutral"> = {
-  proposal: "ai",
-  task_deliverable: "ok",
-  evidence: "neutral",
-};
+const PURPOSE_VARIANTS: Record<FileRecord["purpose"], "ai" | "ok" | "neutral"> =
+  {
+    proposal: "ai",
+    task_deliverable: "ok",
+    evidence: "neutral",
+  };
 
 export const formatBytes = (bytes: number | undefined) => {
   if (bytes === undefined) return "—";
@@ -37,11 +38,13 @@ interface FileListProps {
 }
 
 export const FileList: React.FC<FileListProps> = ({ projectId }) => {
-  const { files, projects, uploadFile, removeFile, uploadingFor } = useProjectStore();
+  const { files, projects, uploadFile, removeFile, uploadingFor } =
+    useProjectStore();
   const confirm = useConfirm();
   const toast = useToastStore((s) => s.toast);
   const inputRef = React.useRef<HTMLInputElement>(null);
-  const [purpose, setPurpose] = React.useState<FileRecord["purpose"]>("evidence");
+  const [purpose, setPurpose] =
+    React.useState<FileRecord["purpose"]>("evidence");
 
   // Superseded files sink below the current ones.
   const projectFiles = files
@@ -77,7 +80,8 @@ export const FileList: React.FC<FileListProps> = ({ projectId }) => {
     if (!url) {
       toast({
         title: "No local copy available",
-        description: "This record was seeded — re-upload it to download.",
+        description:
+          "File contents aren't kept between sessions — re-upload it to download.",
       });
       return;
     }
@@ -102,7 +106,9 @@ export const FileList: React.FC<FileListProps> = ({ projectId }) => {
             aria-label="File purpose"
             className="w-36"
             value={effectivePurpose}
-            onChange={(e) => setPurpose(e.target.value as FileRecord["purpose"])}
+            onChange={(e) =>
+              setPurpose(e.target.value as FileRecord["purpose"])
+            }
           >
             {purposeOptions.map((option) => (
               <option key={option} value={option}>
@@ -149,7 +155,9 @@ export const FileList: React.FC<FileListProps> = ({ projectId }) => {
               <div className="flex min-w-0 items-center gap-3">
                 <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{record.filename}</p>
+                  <p className="truncate text-sm font-medium">
+                    {record.filename}
+                  </p>
                   <p className="text-xs text-muted-foreground">
                     {formatBytes(record.metadata?.byte_size)} ·{" "}
                     {format(record.uploaded_at, "PP")}

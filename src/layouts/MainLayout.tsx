@@ -38,13 +38,11 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         onToggleChat={() => setChatOpen((o) => !o)}
         chatOpen={chatOpen}
       >
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <QuotaBar />
           <ThemeToggle />
         </div>
       </Navbar>
-
-      {/* Make room for the chat panel on wide screens instead of covering
-          the content the user is asking about. */}
       <div
         className={cn(
           "transition-[margin] duration-200",
@@ -66,7 +64,6 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           </div>
         </footer>
       </div>
-      <QuotaBar progress={50}></QuotaBar>
       <AiChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
       <Toaster />
     </div>

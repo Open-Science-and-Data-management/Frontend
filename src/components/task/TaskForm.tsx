@@ -5,16 +5,7 @@ import { format } from "date-fns";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { useTaskStore } from "@/store/taskStore";
-import {
-  Task,
-  TaskStatus,
-  Priority,
-  LifecycleStage,
-} from "@/types/task";
-
-// Placeholder until tasks are created within a real DMP context (no DMP
-// selection/routing exists yet).
-const DEFAULT_DMP_ID = "demo-dmp-1";
+import { Task, Priority, LifecycleStage } from "@/types/task";
 
 // Validates only the fields this form edits; ownership fields (dmp_id,
 // dataset_id, generated_by) aren't user-editable here and are filled in
@@ -23,10 +14,8 @@ const taskFormSchema = z
   .object({
     title: z.string().min(1, { message: "Title is required" }),
     details: z.string().optional(),
-    status: TaskStatus.default("todo"),
     priority: Priority.default("medium"),
     lifecycle_stage: LifecycleStage,
-    progress_percent: z.coerce.number().min(0).max(100).default(0),
     start_date: z.string().optional(),
     end_date: z.string().optional(),
   })
@@ -39,24 +28,32 @@ type TaskFormData = z.infer<typeof taskFormSchema>;
 
 interface TaskFormProps {
   task?: Task;
+  /** The plan a new task belongs to. Required when creating. */
+  dmpId?: string;
   onSuccess?: () => void;
+  /** Rendered as a Cancel button when the form is hosted in a dialog. */
+  onCancel?: () => void;
 }
 
-const STATUS_OPTIONS = TaskStatus.options;
 const PRIORITY_OPTIONS = Priority.options;
 const LIFECYCLE_OPTIONS = LifecycleStage.options;
 
-export const TaskForm: React.FC<TaskFormProps> = ({ task, onSuccess }) => {
+export const TaskForm: React.FC<TaskFormProps> = ({
+  task,
+  dmpId,
+  onSuccess,
+  onCancel,
+}) => {
   const { addTask, updateTask } = useTaskStore();
 
   const defaultValues: TaskFormData = {
     title: task?.title || "",
     details: task?.details || "",
-    status: task?.status || "todo",
     priority: task?.priority || "medium",
     lifecycle_stage: task?.lifecycle_stage || "collect",
-    progress_percent: task?.progress_percent ?? 0,
-    start_date: task?.start_date ? format(task.start_date, "yyyy-MM-dd") : undefined,
+    start_date: task?.start_date
+      ? format(task.start_date, "yyyy-MM-dd")
+      : undefined,
     end_date: task?.end_date ? format(task.end_date, "yyyy-MM-dd") : undefined,
   };
 
@@ -80,10 +77,14 @@ export const TaskForm: React.FC<TaskFormProps> = ({ task, onSuccess }) => {
       if (task) {
         updateTask(task.task_id as string, payload);
       } else {
+        if (!dmpId) throw new Error("A task must belong to a DMP");
         addTask({
           ...payload,
-          dmp_id: DEFAULT_DMP_ID,
+          dmp_id: dmpId,
           generated_by: "user",
+          // A new task starts with no evidence, so it starts at zero.
+          status: "todo",
+          progress_percent: 0,
         });
       }
 
@@ -133,20 +134,13 @@ export const TaskForm: React.FC<TaskFormProps> = ({ task, onSuccess }) => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label htmlFor="status" className="block text-sm font-medium mb-1">
-            Status
-          </label>
-          <select
-            id="status"
-            {...register("status")}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background capitalize"
-          >
-            {STATUS_OPTIONS.map((option) => (
-              <option key={option} value={option} className="capitalize">
-                {option.replace("_", " ")}
-              </option>
-            ))}
-          </select>
+          <span className="block text-sm font-medium mb-1">Status</span>
+          <p className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm capitalize">
+            {(task?.status ?? "todo").replace("_", " ")}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Set by the evidence checklist, not edited here.
+          </p>
         </div>
 
         <div>
@@ -192,29 +186,20 @@ export const TaskForm: React.FC<TaskFormProps> = ({ task, onSuccess }) => {
         </div>
 
         <div>
-          <label
-            htmlFor="progress_percent"
-            className="block text-sm font-medium mb-1"
-          >
-            Progress (%)
-          </label>
-          <input
-            id="progress_percent"
-            type="number"
-            min={0}
-            max={100}
-            {...register("progress_percent", { valueAsNumber: true })}
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-          />
-          {errors.progress_percent && (
-            <p className="text-sm text-destructive mt-1">
-              {errors.progress_percent.message}
-            </p>
-          )}
+          <span className="block text-sm font-medium mb-1">Progress</span>
+          <p className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm tabular-nums">
+            {task?.progress_percent ?? 0}%
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Earned by attaching evidence on the task card.
+          </p>
         </div>
 
         <div>
-          <label htmlFor="start_date" className="block text-sm font-medium mb-1">
+          <label
+            htmlFor="start_date"
+            className="block text-sm font-medium mb-1"
+          >
             Start Date (Optional)
           </label>
           <input
@@ -244,6 +229,11 @@ export const TaskForm: React.FC<TaskFormProps> = ({ task, onSuccess }) => {
       </div>
 
       <div className="flex justify-end space-x-2">
+        {onCancel && (
+          <Button type="button" variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+        )}
         <Button type="submit" disabled={isSubmitting}>
           {task ? "Update Task" : "Create Task"}
         </Button>

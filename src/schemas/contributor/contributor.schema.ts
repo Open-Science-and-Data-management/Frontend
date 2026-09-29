@@ -8,10 +8,19 @@ export const contributorSchema = z.object({
   name: z.string().min(1),
   surname: z.string().optional(),
   role: z.string().min(1),
-  orcid: z.string().regex(ORCID, "รูปแบบ ORCID ไม่ถูกต้อง").or(z.literal("")).optional(),
+  email: z.string().email("รูปแบบอีเมลไม่ถูกต้อง").or(z.literal("")).optional(),
+  orcid: z
+    .string()
+    .regex(ORCID, "รูปแบบ ORCID ไม่ถูกต้อง")
+    .or(z.literal(""))
+    .optional(),
   is_contact: z.boolean().default(false),
 });
 export type Contributor = z.infer<typeof contributorSchema>;
+
+/** Mirrors the schema's rule so the form can flag a bad address as it's typed. */
+export const isValidEmail = (value: string | undefined): boolean =>
+  !value || contributorSchema.shape.email.safeParse(value).success;
 
 // maDMP exports a contributor as a single `name` string, so the parts are
 // composed on the way out.

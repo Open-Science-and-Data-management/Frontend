@@ -7,7 +7,7 @@ import { Stepper } from "@/components/ui/stepper";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DmpReview } from "@/components/dmp/DmpReview";
 import { ReadyChecklist } from "@/components/dmp/ReadyChecklist";
-import { useDmpReadiness } from "@/hooks/useDmpReadiness";
+import { SECTION_LABELS, useDmpReadiness } from "@/hooks/useDmpReadiness";
 import { useDmpStore } from "@/store/dmpStore";
 import { useToastStore } from "@/store/toastStore";
 
@@ -61,14 +61,20 @@ export const ReviewSubmit: React.FC = () => {
       <div className="space-y-6 py-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <Stepper steps={STEPPER_STEPS} activeIndex={3} />
-          <Button variant="ghost" size="sm" onClick={() => navigate("/dmp/create")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/dmp/create")}
+          >
             <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
             Back to editing
           </Button>
         </div>
 
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Review &amp; submit</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Review &amp; submit
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             This is exactly what your committee will receive. Check it over —
             you can still edit any section before submitting.
@@ -81,7 +87,7 @@ export const ReviewSubmit: React.FC = () => {
           </div>
 
           <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
-            <ReadyChecklist items={checklistItems} />
+            <ReadyChecklist items={checklistItems} onNavigate={goToSection} />
 
             {canSubmit ? (
               <>
@@ -100,16 +106,29 @@ export const ReviewSubmit: React.FC = () => {
                   <AlertTriangle className="h-4 w-4 shrink-0" />
                   Not ready to submit
                 </p>
-                <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                <ul className="mt-2 space-y-1 text-xs">
                   {unmetItems.map((item) => (
-                    <li key={item.label}>· {item.label}</li>
+                    <li key={item.label}>
+                      <button
+                        type="button"
+                        onClick={() => goToSection(item.section)}
+                        className="w-full rounded text-left text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        · {item.label}{" "}
+                        <span className="text-muted-foreground/80">
+                          ({SECTION_LABELS[item.section]})
+                        </span>
+                      </button>
+                    </li>
                   ))}
                 </ul>
                 <Button
                   className="mt-3 w-full"
                   size="sm"
                   variant="outline"
-                  onClick={() => navigate("/dmp/create")}
+                  onClick={() =>
+                    goToSection(unmetItems[0]?.section ?? "general")
+                  }
                 >
                   Go fix these
                 </Button>

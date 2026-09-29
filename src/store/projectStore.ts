@@ -1,12 +1,15 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { jsonStorage, storageKey } from "@/store/persist";
 import type { Project, ProjectMember } from "@/types/project";
 import type { FileRecord } from "@/types/file";
 import type { User } from "@/types/user";
 import { fileApi } from "@/api/fileApi";
 import { useToastStore } from "@/store/toastStore";
+import { notify } from "@/store/notificationStore";
+import { CURRENT_USER_ID } from "@/config/current-user";
 
-// Placeholder until auth exists — every upload is attributed to this user.
-export const CURRENT_USER_ID = "user-1";
+export { CURRENT_USER_ID } from "@/config/current-user";
 
 const makeId = () => Math.random().toString(36).substring(2, 10);
 
@@ -79,9 +82,17 @@ const seedUsers: User[] = [
 ];
 
 const seedMembers: ProjectMember[] = [
-  { project_id: "proj-1", user_id: CURRENT_USER_ID, project_role: "researcher" },
+  {
+    project_id: "proj-1",
+    user_id: CURRENT_USER_ID,
+    project_role: "researcher",
+  },
   { project_id: "proj-1", user_id: "user-2", project_role: "committee" },
-  { project_id: "proj-2", user_id: CURRENT_USER_ID, project_role: "researcher" },
+  {
+    project_id: "proj-2",
+    user_id: CURRENT_USER_ID,
+    project_role: "researcher",
+  },
 ];
 
 interface ProjectState {
@@ -94,7 +105,10 @@ interface ProjectState {
 
   getUser: (id: string) => User | undefined;
 
-  createProject: (input: { project_name: string; description?: string }) => Project;
+  createProject: (input: {
+    project_name: string;
+    description?: string;
+  }) => Project;
   updateProject: (id: string, patch: Partial<Project>) => void;
   removeProject: (id: string) => void;
   setCurrentProject: (id: string | null) => void;
@@ -112,136 +126,173 @@ interface ProjectState {
   removeFile: (fileId: string) => Promise<void>;
 }
 
-export const useProjectStore = create<ProjectState>((set, get) => ({
-  projects: seedProjects,
-  files: seedFiles,
-  members: seedMembers,
-  users: seedUsers,
-  currentProjectId: null,
-  uploadingFor: null,
+export const useProjectStore = create<ProjectState>()(
+  persist(
+    (set, get) => ({
+      projects: seedProjects,
+      files: seedFiles,
+      members: seedMembers,
+      users: seedUsers,
+      currentProjectId: null,
+      uploadingFor: null,
 
-  getUser: (id) => get().users.find((u) => u.user_id === id),
+      getUser: (id) => get().users.find((u) => u.user_id === id),
 
-  createProject: ({ project_name, description }) => {
-    const project: Project = {
-      project_id: makeId(),
-      project_name,
-      description,
-      status: "draft",
-      created_at: new Date(),
-      updated_at: new Date(),
-    };
-    set((state) => ({
-      projects: [...state.projects, project],
-      members: [
-        ...state.members,
-        {
-          project_id: project.project_id as string,
-          user_id: CURRENT_USER_ID,
-          project_role: "researcher",
-        },
-      ],
-    }));
-    return project;
-  },
+      createProject: ({ project_name, description }) => {
+        const project: Project = {
+          project_id: makeId(),
+          project_name,
+          description,
+          status: "draft",
+          created_at: new Date(),
+          updated_at: new Date(),
+        };
+        set((state) => ({
+          projects: [...state.projects, project],
+          members: [
+            ...state.members,
+            {
+              project_id: project.project_id as string,
+              user_id: CURRENT_USER_ID,
+              project_role: "researcher",
+            },
+          ],
+        }));
+        return project;
+      },
 
-  updateProject: (id, patch) =>
-    set((state) => ({
-      projects: state.projects.map((p) =>
-        p.project_id === id ? { ...p, ...patch, updated_at: new Date() } : p,
-      ),
-    })),
-
-  removeProject: (id) =>
-    set((state) => ({
-      projects: state.projects.filter((p) => p.project_id !== id),
-      files: state.files.filter((f) => f.project_id !== id),
-      members: state.members.filter((m) => m.project_id !== id),
-      currentProjectId: state.currentProjectId === id ? null : state.currentProjectId,
-    })),
-
-  setCurrentProject: (id) => set({ currentProjectId: id }),
-
-  getProject: (id) => get().projects.find((p) => p.project_id === id),
-
-  getProjectFiles: (id) => get().files.filter((f) => f.project_id === id),
-
-  getProjectMembers: (id) => get().members.filter((m) => m.project_id === id),
-
-  getProposalFile: (project) =>
-    get().files.find((f) => f.file_id === project.proposal_file_id),
-
-  uploadFile: async ({ file, projectId, purpose }) => {
-    set({ uploadingFor: projectId });
-    try {
-      const record = await fileApi.upload({
-        file,
-        projectId,
-        uploadedBy: CURRENT_USER_ID,
-        purpose,
-      });
-
-      // A project has exactly one *active* proposal. Earlier ones are kept
-      // and stamped as superseded so the provenance trail survives.
-      const supersededAt = new Date();
-      const superseded =
-        purpose === "proposal"
-          ? get().files.filter(
-              (f) =>
-                f.project_id === projectId &&
-                f.purpose === "proposal" &&
-                !f.superseded_at,
-            )
-          : [];
-      const supersededIds = new Set(superseded.map((f) => f.file_id));
-
-      set((state) => ({
-        files: [
-          ...state.files.map((f) =>
-            supersededIds.has(f.file_id)
-              ? { ...f, superseded_at: supersededAt }
-              : f,
+      updateProject: (id, patch) =>
+        set((state) => ({
+          projects: state.projects.map((p) =>
+            p.project_id === id
+              ? { ...p, ...patch, updated_at: new Date() }
+              : p,
           ),
-          record,
-        ],
-        uploadingFor: null,
-        // A project's active proposal is tracked on the project itself.
-        projects:
-          purpose === "proposal"
-            ? state.projects.map((p) =>
-                p.project_id === projectId
-                  ? { ...p, proposal_file_id: record.file_id, updated_at: new Date() }
-                  : p,
-              )
-            : state.projects,
-      }));
+        })),
 
-      if (superseded.length > 0) {
-        useToastStore.getState().toast({
-          title: "Proposal replaced",
-          description: `${superseded[0].filename} kept as a previous version.`,
-        });
-      }
+      removeProject: (id) =>
+        set((state) => ({
+          projects: state.projects.filter((p) => p.project_id !== id),
+          files: state.files.filter((f) => f.project_id !== id),
+          members: state.members.filter((m) => m.project_id !== id),
+          currentProjectId:
+            state.currentProjectId === id ? null : state.currentProjectId,
+        })),
 
-      return record;
-    } catch (err) {
-      set({ uploadingFor: null });
-      useToastStore.getState().toast({
-        title: "Upload failed",
-        description: err instanceof Error ? err.message : "Please try again.",
-        variant: "destructive",
-      });
-      throw err;
-    }
-  },
+      setCurrentProject: (id) => set({ currentProjectId: id }),
 
-  removeFile: async (fileId) => {
-    await fileApi.remove(fileId);
-    set((state) => ({
-      files: state.files.filter((f) => f.file_id !== fileId),
-      projects: state.projects.map((p) =>
-        p.proposal_file_id === fileId ? { ...p, proposal_file_id: undefined } : p,
-      ),
-    }));
-  },
-}));
+      getProject: (id) => get().projects.find((p) => p.project_id === id),
+
+      getProjectFiles: (id) => get().files.filter((f) => f.project_id === id),
+
+      getProjectMembers: (id) =>
+        get().members.filter((m) => m.project_id === id),
+
+      getProposalFile: (project) =>
+        get().files.find((f) => f.file_id === project.proposal_file_id),
+
+      uploadFile: async ({ file, projectId, purpose }) => {
+        set({ uploadingFor: projectId });
+        try {
+          const record = await fileApi.upload({
+            file,
+            projectId,
+            uploadedBy: CURRENT_USER_ID,
+            purpose,
+          });
+
+          // A project has exactly one *active* proposal. Earlier ones are kept
+          // and stamped as superseded so the provenance trail survives.
+          const supersededAt = new Date();
+          const superseded =
+            purpose === "proposal"
+              ? get().files.filter(
+                  (f) =>
+                    f.project_id === projectId &&
+                    f.purpose === "proposal" &&
+                    !f.superseded_at,
+                )
+              : [];
+          const supersededIds = new Set(superseded.map((f) => f.file_id));
+
+          set((state) => ({
+            files: [
+              ...state.files.map((f) =>
+                supersededIds.has(f.file_id)
+                  ? { ...f, superseded_at: supersededAt }
+                  : f,
+              ),
+              record,
+            ],
+            uploadingFor: null,
+            // A project's active proposal is tracked on the project itself.
+            projects:
+              purpose === "proposal"
+                ? state.projects.map((p) =>
+                    p.project_id === projectId
+                      ? {
+                          ...p,
+                          proposal_file_id: record.file_id,
+                          updated_at: new Date(),
+                        }
+                      : p,
+                  )
+                : state.projects,
+          }));
+
+          if (superseded.length > 0) {
+            useToastStore.getState().toast({
+              title: "Proposal replaced",
+              description: `${superseded[0].filename} kept as a previous version.`,
+            });
+            // Worth finding later, not just in the moment the toast shows.
+            notify({
+              user_id: CURRENT_USER_ID,
+              type: "proposal_superseded",
+              title: "Proposal replaced",
+              message: `${superseded[0].filename} was superseded by ${record.filename}. The earlier version is kept for provenance.`,
+              link: `/projects/${projectId}`,
+              project_id: projectId,
+            });
+          }
+
+          return record;
+        } catch (err) {
+          set({ uploadingFor: null });
+          useToastStore.getState().toast({
+            title: "Upload failed",
+            description:
+              err instanceof Error ? err.message : "Please try again.",
+            variant: "destructive",
+          });
+          throw err;
+        }
+      },
+
+      removeFile: async (fileId) => {
+        await fileApi.remove(fileId);
+        set((state) => ({
+          files: state.files.filter((f) => f.file_id !== fileId),
+          projects: state.projects.map((p) =>
+            p.proposal_file_id === fileId
+              ? { ...p, proposal_file_id: undefined }
+              : p,
+          ),
+        }));
+      },
+    }),
+    {
+      name: storageKey("projects"),
+      storage: jsonStorage,
+      version: 1,
+      // Only the records. `uploadingFor` would restore a spinner for an upload
+      // that died with the last session.
+      partialize: (state) => ({
+        projects: state.projects,
+        files: state.files,
+        members: state.members,
+        users: state.users,
+      }),
+    },
+  ),
+);

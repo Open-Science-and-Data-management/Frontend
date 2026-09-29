@@ -55,6 +55,7 @@ export const madmpExportSchema = z.object({
     dmp_id: pid,
     ethical_issues_exist: z.enum(["yes", "no", "unknown"]),
     ethical_issues_description: z.string().optional(),
+    ethical_issues_report: z.string().url().optional(),
     contact: contactOut,
     contributor: z.array(contributorOut).optional(),
     cost: z.array(costOut).optional(),

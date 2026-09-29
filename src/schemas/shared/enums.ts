@@ -15,6 +15,13 @@ export const VersionStatus  = z.enum(["draft", "pending", "approved", "rejected"
 export const EditType       = z.enum(["minor", "major"]);
 export const Decision       = z.enum(["pending", "approved", "rejected"]);
 
+export const NotificationType = z.enum([
+  "dmp_submitted",
+  "dmp_approved",
+  "tasks_generated",
+  "proposal_superseded",
+]);
+
 export const UserRole       = z.enum(["admin", "chief", "committee", "researcher"]);
 export const ProjectRole    = z.enum(["researcher", "committee", "chief"]);
 export const ProjectStatus  = z.enum(["draft", "active", "done"]);

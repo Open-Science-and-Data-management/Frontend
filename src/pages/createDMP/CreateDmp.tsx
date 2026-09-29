@@ -78,7 +78,11 @@ export const CreateDmp: React.FC = () => {
               <Sparkles className="mr-1.5 h-3.5 w-3.5" />
               Batch regenerate
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setDiscardOpen(true)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDiscardOpen(true)}
+            >
               Cancel
             </Button>
           </div>
@@ -100,7 +104,7 @@ export const CreateDmp: React.FC = () => {
           }
           rail={
             <>
-              <ReadyChecklist items={checklistItems} />
+              <ReadyChecklist items={checklistItems} onNavigate={setSection} />
               <Button
                 className="w-full"
                 disabled={!canSubmit}
@@ -118,7 +122,9 @@ export const CreateDmp: React.FC = () => {
           }
         >
           {section !== "dataset" && (
-            <h1 className="text-2xl font-bold tracking-tight">{SECTION_TITLES[section]}</h1>
+            <h1 className="text-2xl font-bold tracking-tight">
+              {SECTION_TITLES[section]}
+            </h1>
           )}
           {section === "general" && <GeneralSection />}
           {section === "dataset" && <DatasetList />}

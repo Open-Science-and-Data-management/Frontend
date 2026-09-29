@@ -1,28 +1,26 @@
 {
-  "name": "react-typescript-template",
+  "name": "dmp-researcher",
   "version": "1.0.0",
   "type": "module",
-  "description": "React TypeScript Template with Radix UI for task management",
+  "description": "AI-assisted Data Management Plan authoring for researchers, reviewed and approved by humans.",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [
+    "dmp",
+    "maDMP",
+    "research-data-management",
+    "open-science",
     "react",
-    "typescript",
-    "radix-ui",
-    "task-manager",
-    "vite",
-    "zustand",
-    "zod"
+    "typescript"
   ],
   "author": "Luis Alamo <luismalamoc@gmail.com>",
   "license": "MIT",
   "dependencies": {
-    "@dnd-kit/core": "^6.3.1",
-    "@dnd-kit/sortable": "^10.0.0",
-    "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^3.3.2",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-popover": "^1.1.23",
@@ -31,17 +29,12 @@
     "@radix-ui/react-tooltip": "^1.2.16",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
-    "cmdk": "^0.2.0",
     "date-fns": "^2.30.0",
-    "framer-motion": "^10.16.4",
     "lucide-react": "^0.292.0",
-    "next-themes": "^0.2.1",
     "react": "^18.2.0",
-    "react-day-picker": "^8.9.1",
     "react-dom": "^18.2.0",
     "react-helmet-async": "^1.3.0",
     "react-hook-form": "^7.48.2",
-    "react-icons": "^4.11.0",
     "react-router-dom": "^7.0.0",
     "tailwind-merge": "^2.0.0",
     "tailwindcss": "^4.3.3",
@@ -57,9 +50,11 @@
     "@types/react-dom": "^18.2.15",
     "@types/react-helmet": "^6.1.9",
     "@vitejs/plugin-react": "^4.1.1",
+    "jsdom": "^30.1.1",
     "prettier": "3.9.9",
     "typescript": "^5.2.2",
     "vite": "^6.3.5",
+    "vitest": "^3.2.7",
     "zod": "^3.22.4"
   }
 }

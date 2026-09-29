@@ -23,7 +23,12 @@ import { cn } from "@/utils/cn";
 
 export const LEVEL_META: Record<
   TaskEvidenceLevelValue,
-  { label: string; short: string; description: string; evidence: "note" | "file" }
+  {
+    label: string;
+    short: string;
+    description: string;
+    evidence: "note" | "file";
+  }
 > = {
   basic: {
     label: "Basic",
@@ -67,13 +72,20 @@ export const TaskProgressDialog: React.FC<TaskProgressDialogProps> = ({
   const setChecklistItem = useTaskStore((s) => s.setChecklistItem);
   const { projects, uploadFile } = useProjectStore();
   const draftProjectId = useDmpStore((s) => s.draft.project_id);
+  const dmps = useDmpStore((s) => s.dmps);
+  const currentDmpId = useDmpStore((s) => s.currentDmpId);
   const toast = useToastStore((s) => s.toast);
   const [uploading, setUploading] = React.useState<string | null>(null);
   const inputRefs = React.useRef<Record<string, HTMLInputElement | null>>({});
 
-  // Evidence files belong to a project. Until DMPs are persisted as records
-  // we resolve via the current draft, falling back to the first project.
-  const projectId = draftProjectId ?? projects[0]?.project_id;
+  // Evidence belongs to the project behind this task's own plan, not whichever
+  // plan happens to be open in the editor. The draft wins only when the task
+  // does belong to it, since its record may not be committed yet.
+  const projectId =
+    (task.dmp_id === currentDmpId ? draftProjectId : undefined) ??
+    dmps.find((d) => d.dmp_id === task.dmp_id)?.project_id ??
+    draftProjectId ??
+    projects[0]?.project_id;
 
   const itemFor = (level: TaskEvidenceLevelValue) =>
     (task.checklist ?? []).find((i) => i.level === level);
@@ -242,10 +254,14 @@ export const TaskProgressDialog: React.FC<TaskProgressDialogProps> = ({
                               size="sm"
                               variant="ghost"
                               onClick={() =>
-                                setChecklistItem(task.task_id as string, level, {
-                                  file_id: undefined,
-                                  filename: undefined,
-                                })
+                                setChecklistItem(
+                                  task.task_id as string,
+                                  level,
+                                  {
+                                    file_id: undefined,
+                                    filename: undefined,
+                                  },
+                                )
                               }
                             >
                               Remove

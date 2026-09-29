@@ -3,7 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-provider";
 import { Input } from "@/components/ui/input";
-import { contributorFullName } from "@/schemas/contributor";
+import { contributorFullName, isValidEmail } from "@/schemas/contributor";
 import { useDmpStore } from "@/store/dmpStore";
 
 export const ContributorList: React.FC = () => {
@@ -27,7 +27,12 @@ export const ContributorList: React.FC = () => {
             Exactly one contributor must be the primary contact.
           </p>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={addContributor}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={addContributor}
+        >
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add contributor
         </Button>
@@ -102,7 +107,7 @@ export const ContributorList: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto_auto]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_1fr]">
               <div>
                 <label
                   htmlFor={`contributor-role-${contributor.contributor_id}`}
@@ -139,7 +144,42 @@ export const ContributorList: React.FC = () => {
                   placeholder="0000-0000-0000-0000"
                 />
               </div>
-              <label className="flex items-center gap-1.5 self-end pb-2 text-xs font-medium">
+              <div>
+                <label
+                  htmlFor={`contributor-email-${contributor.contributor_id}`}
+                  className="mb-1 block text-xs font-medium text-muted-foreground"
+                >
+                  Email
+                  {contributor.is_contact && (
+                    <span className="text-destructive"> *</span>
+                  )}
+                </label>
+                <Input
+                  id={`contributor-email-${contributor.contributor_id}`}
+                  type="email"
+                  value={contributor.email ?? ""}
+                  invalid={
+                    Boolean(contributor.email) &&
+                    !isValidEmail(contributor.email)
+                  }
+                  onChange={(e) =>
+                    updateContributor(contributor.contributor_id as string, {
+                      email: e.target.value,
+                    })
+                  }
+                  placeholder="name@university.edu"
+                />
+                {Boolean(contributor.email) &&
+                  !isValidEmail(contributor.email) && (
+                    <p className="mt-1 text-xs text-destructive" role="alert">
+                      Enter a valid email address.
+                    </p>
+                  )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <label className="flex items-center gap-1.5 text-xs font-medium">
                 <input
                   type="radio"
                   name="primary_contact"
@@ -155,7 +195,7 @@ export const ContributorList: React.FC = () => {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="self-end text-destructive hover:bg-destructive/10"
+                className="text-destructive hover:bg-destructive/10"
                 onClick={async () => {
                   if (
                     await confirm({
@@ -179,6 +219,13 @@ export const ContributorList: React.FC = () => {
           {contactCount === 0
             ? "Select one contributor as the primary contact."
             : "Only one contributor can be the primary contact."}
+        </p>
+      )}
+
+      {contactCount === 1 && !contributors.find((c) => c.is_contact)?.email && (
+        <p className="text-xs text-warn" role="alert">
+          The primary contact needs an email — it's how your committee reaches
+          you, and it's exported as the plan's contact address.
         </p>
       )}
     </div>

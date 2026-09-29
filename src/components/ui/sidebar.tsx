@@ -3,7 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import {
   ListChecks,
   Bell,
-  FileEdit,
+  FileText,
   FolderKanban,
   Settings as SettingsIcon,
   HelpCircle,
@@ -11,12 +11,15 @@ import {
   Home,
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useNotificationStore } from "@/store/notificationStore";
 import { cn } from "@/utils/cn";
 
 interface SidebarNavItem {
   label: string;
   to: string;
   icon: React.ComponentType<{ className?: string }>;
+  /** Marks the item that carries the unread-notification count. */
+  badge?: "notifications";
 }
 
 interface SidebarSection {
@@ -28,10 +31,15 @@ const SECTIONS: SidebarSection[] = [
   {
     label: "Workspace",
     items: [
-      { label: "Dashboard", to: "/home", icon: Home },
+      { label: "Dashboard", to: "/", icon: Home },
       { label: "My Tasks", to: "/tasks", icon: ListChecks },
-      { label: "Notifications", to: "/notifications", icon: Bell },
-      { label: "My Drafts", to: "/drafts", icon: FileEdit },
+      {
+        label: "Notifications",
+        to: "/notifications",
+        icon: Bell,
+        badge: "notifications",
+      },
+      { label: "My DMPs", to: "/dmps", icon: FileText },
     ],
   },
   {
@@ -55,35 +63,45 @@ const SidebarNav: React.FC<{ onNavigate: () => void; collapsed?: boolean }> = ({
   collapsed,
 }) => {
   const { pathname } = useLocation();
+  const unread = useNotificationStore(
+    (s) => s.notifications.filter((n) => !n.read_at).length,
+  );
 
   return (
-  <nav
-    aria-label="Workspace navigation"
-    className={cn(
-      "flex h-full flex-col gap-6 overflow-y-auto py-4",
-      collapsed ? "px-2" : "px-4",
-    )}
-  >
-    {SECTIONS.map((section) => (
-      <div key={section.label}>
-        {collapsed ? (
-          <div className="mx-auto mb-2 h-px bg-border" aria-hidden="true" />
-        ) : (
-          <h2 className="mb-2 px text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {section.label}
-          </h2>
-        )}
-        <ul className="space-y-1">
-          {section.items.map((item) => {
-            const isActive =
-              pathname === item.to || pathname.startsWith(`${item.to}/`);
+    <nav
+      aria-label="Workspace navigation"
+      className={cn(
+        "flex h-full flex-col gap-6 overflow-y-auto py-4",
+        collapsed ? "px-2" : "px-4",
+      )}
+    >
+      {SECTIONS.map((section) => (
+        <div key={section.label}>
+          {collapsed ? (
+            <div className="mx-auto mb-2 h-px bg-border" aria-hidden="true" />
+          ) : (
+            <h2 className="mb-2 px text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {section.label}
+            </h2>
+          )}
+          <ul className="space-y-1">
+            {section.items.map((item) => {
+              const isActive =
+                pathname === item.to || pathname.startsWith(`${item.to}/`);
+              const count = item.badge === "notifications" ? unread : 0;
 
-            const link = (
-              <NavLink
-                to={item.to}
-                onClick={onNavigate}
-                aria-label={collapsed ? item.label : undefined}
-                className={cn(
+              const link = (
+                <NavLink
+                  to={item.to}
+                  onClick={onNavigate}
+                  aria-label={
+                    count > 0
+                      ? `${item.label}, ${count} unread`
+                      : collapsed
+                        ? item.label
+                        : undefined
+                  }
+                  className={cn(
                     "flex items-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     collapsed
                       ? "mx-auto h-11 w-11 justify-center"
@@ -92,32 +110,60 @@ const SidebarNav: React.FC<{ onNavigate: () => void; collapsed?: boolean }> = ({
                       ? "bg-accent text-accent-foreground"
                       : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                   )}
-              >
-                <item.icon
-                  className={cn(collapsed ? "h-4 w-4" : "h-4 w-4", "shrink-0")}
-                />
-                {!collapsed && item.label}
-              </NavLink>
-            );
+                >
+                  <span className="relative shrink-0">
+                    <item.icon className="h-4 w-4 shrink-0" />
+                    {/* Collapsed: a dot, since there's no room for a count. */}
+                    {collapsed && count > 0 && (
+                      <span
+                        className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-primary"
+                        aria-hidden="true"
+                      />
+                    )}
+                  </span>
+                  {!collapsed && (
+                    <>
+                      <span className="flex-1">{item.label}</span>
+                      {count > 0 && (
+                        <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-semibold leading-none text-primary-foreground">
+                          {count > 99 ? "99+" : count}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </NavLink>
+              );
 
-            return (
-              <li key={item.to}>
-                {collapsed ? (
-                  <Tooltip content={item.label}>{link}</Tooltip>
-                ) : (
-                  link
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    ))}
-  </nav>
+              return (
+                <li key={item.to}>
+                  {collapsed ? (
+                    <Tooltip
+                      content={
+                        count > 0
+                          ? `${item.label} (${count} unread)`
+                          : item.label
+                      }
+                    >
+                      {link}
+                    </Tooltip>
+                  ) : (
+                    link
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </nav>
   );
 };
 
-export const Sidebar: React.FC<SidebarProps> = ({ open, onClose, collapsed }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  open,
+  onClose,
+  collapsed,
+}) => {
   return (
     <>
       {/* Desktop: static column that can shrink to an icon rail */}

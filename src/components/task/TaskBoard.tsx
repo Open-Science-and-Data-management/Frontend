@@ -4,7 +4,10 @@ import { TaskColumn } from "@/components/task/TaskColumn";
 
 interface TaskBoardProps {
   tasks: Task[];
+  /** Supplied only when the board shows more than one plan's tasks. */
+  planLabel?: (dmpId: string) => string | undefined;
   onEdit: (task: Task) => void;
+  onOpenProgress: (task: Task) => void;
 }
 
 // "cancelled" tasks aren't surfaced as a column.
@@ -20,7 +23,12 @@ const COLUMNS: { status: Task["status"]; title: string }[] = [
  * "Done" without the proof that earns it — progress is updated through the
  * evidence checklist instead.
  */
-export const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, onEdit }) => {
+export const TaskBoard: React.FC<TaskBoardProps> = ({
+  tasks,
+  planLabel,
+  onEdit,
+  onOpenProgress,
+}) => {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
       {COLUMNS.map((column) => (
@@ -29,7 +37,9 @@ export const TaskBoard: React.FC<TaskBoardProps> = ({ tasks, onEdit }) => {
           status={column.status}
           title={column.title}
           tasks={tasks.filter((task) => task.status === column.status)}
+          planLabel={planLabel}
           onEdit={onEdit}
+          onOpenProgress={onOpenProgress}
         />
       ))}
     </div>

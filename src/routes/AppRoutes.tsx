@@ -1,5 +1,5 @@
 import React from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 
 // Import pages
 import { Home } from "@/pages/home";
@@ -8,7 +8,7 @@ import { CreateDmp, ReviewSubmit } from "@/pages/createDMP";
 import { Status } from "@/pages/status";
 import { TaskDashboard } from "@/pages/tasks";
 import { Notifications } from "@/pages/notifications";
-import { MyDrafts } from "@/pages/drafts";
+import { MyDmps } from "@/pages/dmps";
 import { Projects, ProjectDetail } from "@/pages/projects";
 import { Settings } from "@/pages/settings";
 import { HelpGuide } from "@/pages/help";
@@ -42,13 +42,12 @@ const AppRoutes: React.FC = () => {
           element={<ComingSoon label="Edit DMP" />}
         />
         <Route path="/dmp/status" element={<Status />} />
-
-        {/* Existing task feature */}
         <Route path="/tasks" element={<TaskDashboard />} />
-
-        {/* Workspace sidebar */}
         <Route path="/notifications" element={<Notifications />} />
-        <Route path="/drafts" element={<MyDrafts />} />
+        <Route path="/dmps" element={<MyDmps />} />
+        {/* The dashboard has always lived at "/". */}
+        <Route path="/home" element={<Navigate to="/" replace />} />
+        <Route path="/drafts" element={<Navigate to="/dmps" replace />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/projects/:projectId" element={<ProjectDetail />} />
         <Route path="/settings" element={<Settings />} />

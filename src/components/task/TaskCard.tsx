@@ -5,16 +5,16 @@ import { useTaskStore } from "@/store/taskStore";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-provider";
 import { ProgressBar } from "@/components/ui/progress-bar";
-import {
-  TaskProgressDialog,
-  LEVEL_META,
-} from "@/components/task/TaskProgressDialog";
-import { Pen, Check, ListChecks } from "lucide-react";
+import { LEVEL_META } from "@/components/task/TaskProgressDialog";
+import { Check, ListChecks } from "lucide-react";
 import { cn } from "@/utils/cn";
 
 interface TaskCardProps {
   task: Task;
+  /** Shown only when the board is mixing tasks from several plans. */
+  planName?: string;
   onEdit: (task: Task) => void;
+  onOpenProgress: (task: Task) => void;
 }
 
 const PRIORITY_COLORS: Record<Task["priority"], string> = {
@@ -43,20 +43,39 @@ const PRIORITY_LABELS: Record<Task["priority"], string> = {
   high: "High",
 };
 
-export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
-  const { deleteTask, updateTask } = useTaskStore();
-  const [progressOpen, setProgressOpen] = React.useState(false);
+export const TaskCard: React.FC<TaskCardProps> = ({
+  task,
+  planName,
+  onEdit,
+  onOpenProgress,
+}) => {
+  const { deleteTask } = useTaskStore();
   const confirm = useConfirm();
 
-  const handleStatusChange = (newStatus: Task["status"]) => {
-    updateTask(task.task_id as string, { status: newStatus });
-  };
-
   return (
-    <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onEdit(task)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onEdit(task);
+        }
+      }}
+      aria-label={`Edit ${task.title}`}
+      className="cursor-pointer rounded-lg border bg-card text-card-foreground shadow-sm transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <div className="p-6 space-y-4">
         <div className="flex justify-between items-start">
-          <h3 className="text-lg font-semibold">{task.title}</h3>
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold">{task.title}</h3>
+            {planName && (
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {planName}
+              </p>
+            )}
+          </div>
           <div className="flex space-x-2">
             <span
               className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${PRIORITY_COLORS[task.priority]}`}
@@ -89,7 +108,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
           {/* The three evidence levels at a glance */}
           <button
             type="button"
-            onClick={() => setProgressOpen(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenProgress(task);
+            }}
             className="flex w-full items-center gap-1.5 rounded pt-0.5 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {TASK_EVIDENCE_LEVELS.map((level) => {
@@ -135,7 +157,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setProgressOpen(true)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenProgress(task);
+              }}
             >
               <ListChecks className="mr-1.5 h-3.5 w-3.5" />
               Progress
@@ -143,7 +168,8 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
             <Button
               variant="outline"
               size="sm"
-              onClick={async () => {
+              onClick={async (e) => {
+                e.stopPropagation();
                 if (
                   await confirm({
                     title: "Delete this task?",
@@ -158,26 +184,9 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onEdit }) => {
             >
               Delete
             </Button>
-
-            <Button variant="secondary" size="sm" onClick={() => onEdit(task)}>
-              <Pen className="mr-2 w-4 h-4 shrink-0" />
-              Edit
-            </Button>
-
-            {task.status !== "done" && (
-              <Button size="sm" onClick={() => handleStatusChange("done")}>
-                Complete
-              </Button>
-            )}
           </div>
         </div>
       </div>
-
-      <TaskProgressDialog
-        task={task}
-        open={progressOpen}
-        onOpenChange={setProgressOpen}
-      />
     </div>
   );
 };

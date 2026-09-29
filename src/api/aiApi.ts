@@ -205,6 +205,7 @@ const CANNED_DRAFT: DmpDraft = {
       name: "Aran",
       surname: "Suwannachot",
       role: "Principal Investigator",
+      email: "aran.s@example.edu",
       orcid: "0000-0002-1825-0097",
       is_contact: true,
     },

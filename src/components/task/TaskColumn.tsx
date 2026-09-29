@@ -6,7 +6,9 @@ interface TaskColumnProps {
   status: Task["status"];
   title: string;
   tasks: Task[];
+  planLabel?: (dmpId: string) => string | undefined;
   onEdit: (task: Task) => void;
+  onOpenProgress: (task: Task) => void;
 }
 
 const EMPTY_HINT: Record<string, string> = {
@@ -19,7 +21,9 @@ export const TaskColumn: React.FC<TaskColumnProps> = ({
   status,
   title,
   tasks,
+  planLabel,
   onEdit,
+  onOpenProgress,
 }) => {
   return (
     <div className="flex min-h-64 flex-col gap-3 rounded-lg border bg-muted/30 p-4">
@@ -34,7 +38,13 @@ export const TaskColumn: React.FC<TaskColumnProps> = ({
 
       <div className="flex flex-col gap-3">
         {tasks.map((task) => (
-          <TaskCard key={task.task_id} task={task} onEdit={onEdit} />
+          <TaskCard
+            key={task.task_id}
+            task={task}
+            planName={planLabel?.(task.dmp_id)}
+            onEdit={onEdit}
+            onOpenProgress={onOpenProgress}
+          />
         ))}
         {tasks.length === 0 && (
           <p className="py-8 text-center text-xs text-muted-foreground">
