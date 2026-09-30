@@ -5,6 +5,8 @@ import { format } from "date-fns";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { useTaskStore } from "@/store/taskStore";
+import { useDmpStore } from "@/store/dmpStore";
+import { requirementFor, REQUIREMENT_COPY } from "@/config/task-evidence";
 import { Task, Priority, LifecycleStage } from "@/types/task";
 
 // Validates only the fields this form edits; ownership fields (dmp_id,
@@ -16,6 +18,7 @@ const taskFormSchema = z
     details: z.string().optional(),
     priority: Priority.default("medium"),
     lifecycle_stage: LifecycleStage,
+    dataset_id: z.string().optional(),
     start_date: z.string().optional(),
     end_date: z.string().optional(),
   })
@@ -45,12 +48,20 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   onCancel,
 }) => {
   const { addTask, updateTask } = useTaskStore();
+  const dmps = useDmpStore((s) => s.dmps);
+  const draft = useDmpStore((s) => s.draft);
+  // The plan's outputs: linking one is what raises the evidence bar.
+  const datasets =
+    (dmpId ? dmps.find((d) => d.dmp_id === dmpId)?.draft.dataset : undefined) ??
+    draft.dataset ??
+    [];
 
   const defaultValues: TaskFormData = {
     title: task?.title || "",
     details: task?.details || "",
     priority: task?.priority || "medium",
     lifecycle_stage: task?.lifecycle_stage || "collect",
+    dataset_id: task?.dataset_id ?? "",
     start_date: task?.start_date
       ? format(task.start_date, "yyyy-MM-dd")
       : undefined,
@@ -60,16 +71,22 @@ export const TaskForm: React.FC<TaskFormProps> = ({
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<TaskFormData>({
     resolver: zodResolver(taskFormSchema),
     defaultValues,
   });
 
+  // The evidence rule depends on both, so the hint follows them live.
+  const watchedDataset = watch("dataset_id");
+  const watchedStage = watch("lifecycle_stage");
+
   const onSubmit = async (data: TaskFormData) => {
     try {
       const payload = {
         ...data,
+        dataset_id: data.dataset_id || undefined,
         start_date: data.start_date ? new Date(data.start_date) : undefined,
         end_date: data.end_date ? new Date(data.end_date) : undefined,
       };
@@ -134,16 +151,6 @@ export const TaskForm: React.FC<TaskFormProps> = ({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <span className="block text-sm font-medium mb-1">Status</span>
-          <p className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm capitalize">
-            {(task?.status ?? "todo").replace("_", " ")}
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Set by the evidence checklist, not edited here.
-          </p>
-        </div>
-
-        <div>
           <label htmlFor="priority" className="block text-sm font-medium mb-1">
             Priority
           </label>
@@ -186,12 +193,34 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         </div>
 
         <div>
-          <span className="block text-sm font-medium mb-1">Progress</span>
-          <p className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm tabular-nums">
-            {task?.progress_percent ?? 0}%
-          </p>
+          <label
+            htmlFor="dataset_id"
+            className="block text-sm font-medium mb-1"
+          >
+            Research output (optional)
+          </label>
+          <select
+            id="dataset_id"
+            {...register("dataset_id")}
+            disabled={task?.status === "done"}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <option value="">General work — not tied to an output</option>
+            {datasets.map((d) => (
+              <option key={d.dataset_id} value={d.dataset_id}>
+                {d.title || "Untitled output"}
+              </option>
+            ))}
+          </select>
           <p className="mt-1 text-xs text-muted-foreground">
-            Earned by attaching evidence on the task card.
+            {task?.status === "done"
+              ? "Fixed while the task is closed — it decided which evidence rule applied. Reopen the task to change it."
+              : REQUIREMENT_COPY[
+                  requirementFor({
+                    dataset_id: watchedDataset || undefined,
+                    lifecycle_stage: watchedStage,
+                  })
+                ].hint}
           </p>
         </div>
 

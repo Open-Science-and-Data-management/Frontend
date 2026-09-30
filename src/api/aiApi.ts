@@ -20,11 +20,11 @@ export interface RegenerateResult {
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ~4 characters per token is the usual rough rule for English prose.
-const tokensIn = (text: string) => Math.ceil(text.length / 4);
+export const tokensIn = (text: string) => Math.ceil(text.length / 4);
 
 // Overheads for the prompt/system scaffolding each call carries, on top of
 // the tokens spent on the actual input and output text.
-const PROMPT_OVERHEAD = {
+export const PROMPT_OVERHEAD = {
   analyze_proposal: 450,
   regenerate_field: 60,
   chat: 90,
@@ -97,7 +97,8 @@ const composeReply = (message: string, ctx: ChatContext): string => {
 
   if (/cost|budget|money|spend|currency/.test(q)) {
     return ctx.costTotal > 0
-      ? `Budgeted cost totals ${ctx.costTotal.toLocaleString()} ${ctx.currency ?? ""}`.trim() + "."
+      ? `Budgeted cost totals ${ctx.costTotal.toLocaleString()} ${ctx.currency ?? ""}`.trim() +
+          "."
       : "No cost items have been added. Cost is optional, so this won't block submission.";
   }
 
@@ -124,10 +125,37 @@ export interface GeneratedTask {
 }
 
 export interface GenerateTasksInput {
-  outputs: { dataset_id?: string; title: string; type: string; access: string }[];
+  outputs: {
+    dataset_id?: string;
+    title: string;
+    type: string;
+    access: string;
+  }[];
   beginDate?: Date;
   endDate?: Date;
+  /** Free-text steer, e.g. "focus on preservation" or "fewer, broader tasks". */
+  direction?: string;
 }
+
+/** Ready-made steers, offered as chips next to the free-text box. */
+export const TASK_DIRECTIONS = [
+  { id: "granular", label: "More granular", hint: "Split each stage in two" },
+  {
+    id: "broader",
+    label: "Fewer, broader",
+    hint: "Collect, preserve, share only",
+  },
+  {
+    id: "preservation",
+    label: "Focus on preservation",
+    hint: "Preserve & share, raised priority",
+  },
+  {
+    id: "sharing",
+    label: "Focus on sharing",
+    hint: "Publishing steps in detail",
+  },
+] as const;
 
 export interface GenerateTasksResult {
   tasks: GeneratedTask[];
@@ -149,27 +177,131 @@ const STAGE_PLAN: {
   { stage: "share", verb: "Publish and share", priority: "low" },
 ];
 
+/** Splits one stage into two when a granular breakdown is asked for. */
+const GRANULAR_SPLIT: Partial<
+  Record<GeneratedTask["lifecycle_stage"], [string, string]>
+> = {
+  collect: ["Set up collection for", "Run collection for"],
+  process: ["Clean and validate", "Document the processing of"],
+  analyse: ["Analyse", "Write up findings from"],
+  preserve: ["Prepare the deposit of", "Deposit and verify"],
+  share: ["Prepare the release of", "Publish and announce"],
+};
+
+/**
+ * Applies the direction to the stage plan. A steer has to change the result
+ * visibly — a direction that quietly did nothing would be worse than none.
+ */
+const planForDirection = (direction: string) => {
+  const d = direction.toLowerCase();
+  const focus = (stages: GeneratedTask["lifecycle_stage"][]) =>
+    STAGE_PLAN.filter((s) => stages.includes(s.stage)).map((s) => ({
+      ...s,
+      priority: "high" as const,
+    }));
+
+  if (/granular|detail|smaller|split|step/.test(d))
+    return { plan: STAGE_PLAN, granular: true };
+  if (/fewer|broad|high.?level|simpl/.test(d))
+    return { plan: focus(["collect", "preserve", "share"]), granular: false };
+  if (/preserv|archive|deposit|backup/.test(d))
+    return { plan: focus(["preserve", "share"]), granular: false };
+  if (/shar|publish|release|open/.test(d))
+    return { plan: focus(["share", "preserve"]), granular: true };
+
+  return { plan: STAGE_PLAN, granular: false };
+};
+
 export const generateTasks = async (
   input: GenerateTasksInput,
 ): Promise<GenerateTasksResult> => {
   await delay(1300);
 
+  const direction = input.direction?.trim() ?? "";
+  const { plan, granular } = planForDirection(direction);
+  const steer = direction ? ` Direction: ${direction}.` : "";
+
   const tasks: GeneratedTask[] = input.outputs.flatMap((o) =>
-    STAGE_PLAN
+    plan
       // A closed output is never published, so no share task is proposed.
       .filter((s) => !(s.stage === "share" && o.access === "closed"))
-      .map((s) => ({
-        title: `${s.verb} — ${o.title}`,
-        details: `${s.verb.toLowerCase()} the ${o.type} output “${o.title}” in line with the approved plan.`,
-        lifecycle_stage: s.stage,
-        priority: s.priority,
-        dataset_id: o.dataset_id,
-      })),
+      .flatMap((s) => {
+        const verbs =
+          granular && GRANULAR_SPLIT[s.stage]
+            ? GRANULAR_SPLIT[s.stage]!
+            : [s.verb];
+
+        return verbs.map((verb) => ({
+          title: `${verb} — ${o.title}`,
+          details: `${verb.toLowerCase()} the ${o.type} output “${o.title}” in line with the approved plan.${steer}`,
+          lifecycle_stage: s.stage,
+          priority: s.priority,
+          dataset_id: o.dataset_id,
+        }));
+      }),
   );
 
   const token_count =
-    PROMPT_OVERHEAD.generate_tasks + tokensIn(JSON.stringify(tasks));
+    PROMPT_OVERHEAD.generate_tasks +
+    tokensIn(direction) +
+    tokensIn(JSON.stringify(tasks));
   return { tasks, token_count };
+};
+
+export interface GenerateChecklistInput {
+  taskTitle: string;
+  lifecycleStage: string;
+  /** The outputs the plan approved, so steps name real deliverables. */
+  outputs: { title: string; type: string; access: string }[];
+  direction?: string;
+}
+
+/** The steps a list is drafted from, before the direction narrows them. */
+const CHECKLIST_TEMPLATE = [
+  "Agree the approach and record it",
+  "Do the work and note what changed",
+  "Produce the deliverable",
+  "Check it against the plan",
+  "Deposit it in the repository",
+  "Record the DOI or receipt",
+];
+
+/**
+ * Drafts the steps for one task from the approved plan. The direction has to
+ * change the result — a steer that quietly did nothing would be worse than
+ * having none.
+ */
+export const generateTaskChecklist = async (
+  input: GenerateChecklistInput,
+): Promise<{ steps: string[]; token_count: number }> => {
+  await delay(900);
+
+  const d = (input.direction ?? "").trim().toLowerCase();
+  const output = input.outputs[0]?.title;
+
+  let steps = CHECKLIST_TEMPLATE.map((s) =>
+    output ? `${s} — ${output}` : `${s} (${input.lifecycleStage})`,
+  );
+
+  if (/brief|fewer|short|minimal|simpl/.test(d))
+    steps = steps.filter((_, i) => i % 2 === 0);
+  if (/detail|granular|thorough|more/.test(d))
+    steps = [
+      ...steps,
+      "Log the decisions taken along the way",
+      "Have a second person review it",
+    ];
+  if (/preserv|archive|deposit|backup/.test(d))
+    steps = steps.filter((s) => /deposit|doi|receipt/i.test(s));
+  if (/quality|check|valid|qa/.test(d))
+    steps = [...steps, "Run the quality checks and keep the report"];
+
+  const token_count =
+    PROMPT_OVERHEAD.generate_tasks / 2 +
+    tokensIn(d) +
+    tokensIn(JSON.stringify(steps));
+
+  return { steps, token_count };
 };
 
 export const aiChat = async (
@@ -180,8 +312,7 @@ export const aiChat = async (
   const reply = composeReply(message, context);
   return {
     reply,
-    token_count:
-      PROMPT_OVERHEAD.chat + tokensIn(message) + tokensIn(reply),
+    token_count: PROMPT_OVERHEAD.chat + tokensIn(message) + tokensIn(reply),
   };
 };
 
@@ -237,7 +368,9 @@ export const aiApi = {
     await delay(1400);
 
     if (!file.name.toLowerCase().endsWith(".docx")) {
-      throw new Error("Couldn't read this file — please upload a .docx proposal.");
+      throw new Error(
+        "Couldn't read this file — please upload a .docx proposal.",
+      );
     }
     if (file.size === 0) {
       throw new Error(

@@ -39,6 +39,24 @@ export interface BatchProposal extends BatchTarget {
 
 const makeId = () => Math.random().toString(36).substring(2, 10);
 
+/** A dataset only moves forward through these. */
+const DATASET_STATUS_ORDER: Dataset["status"][] = [
+  "planned",
+  "collected",
+  "processed",
+  "preserved",
+  "shared",
+];
+
+/** Which lifecycle stage finishing a task implies for its dataset. */
+const STATUS_FOR_STAGE: Record<string, Dataset["status"]> = {
+  collect: "collected",
+  process: "processed",
+  analyse: "processed",
+  preserve: "preserved",
+  share: "shared",
+};
+
 /**
  * A saved plan in the researcher's library. `draft` carries the whole plan so a
  * record can be reopened in the editor; the summary fields on top are what the
@@ -92,7 +110,20 @@ const seedDmps = (): DmpRecord[] => {
         description:
           "Sequencing and trait data for bee populations across three city districts, shared under CC-BY once the embargo lifts.",
         language: "eng",
-        dataset: [createEmptyDataset("raw"), createEmptyDataset("publication")],
+        // Stable ids: the seeded tasks point at these, and a random id would
+        // make every seeded task an orphan of an output that never existed.
+        dataset: [
+          {
+            ...createEmptyDataset("raw"),
+            dataset_id: "ds-pollinator-reads",
+            title: "Pollinator genomic sequence reads",
+          },
+          {
+            ...createEmptyDataset("publication"),
+            dataset_id: "ds-pollinator-paper",
+            title: "Population genomics manuscript",
+          },
+        ],
         contributor: [createEmptyContributor()],
       },
     },
@@ -274,6 +305,17 @@ interface DmpDraftState {
 
   addDataset: (type: Dataset["type"]) => void;
   updateDataset: (id: string, patch: Partial<Dataset>) => void;
+  /** False once an output has been dropped from the plan it belonged to. */
+  datasetExists: (dmpId: string, datasetId: string) => boolean;
+  /**
+   * A finished task moves its dataset along the lifecycle. Status only ever
+   * advances, so reopening a task never walks a dataset backwards.
+   */
+  advanceDatasetStatus: (
+    dmpId: string,
+    datasetId: string,
+    stage: "collect" | "process" | "analyse" | "preserve" | "share",
+  ) => void;
   removeDataset: (id: string) => void;
   changeDatasetType: (id: string, type: Dataset["type"]) => void;
 
@@ -520,6 +562,49 @@ export const useDmpStore = create<DmpDraftState>()(
               ],
             },
           })),
+
+        datasetExists: (dmpId, datasetId) => {
+          const state = get();
+          const list =
+            state.currentDmpId === dmpId
+              ? state.draft.dataset
+              : state.dmps.find((d) => d.dmp_id === dmpId)?.draft.dataset;
+          return (list ?? []).some((d) => d.dataset_id === datasetId);
+        },
+
+        advanceDatasetStatus: (dmpId, datasetId, stage) => {
+          const target = STATUS_FOR_STAGE[stage];
+
+          const bump = (dataset: Dataset): Dataset =>
+            dataset.dataset_id === datasetId &&
+            DATASET_STATUS_ORDER.indexOf(target) >
+              DATASET_STATUS_ORDER.indexOf(dataset.status)
+              ? { ...dataset, status: target }
+              : dataset;
+
+          set((state) => ({
+            // The plan may be the one open in the editor, filed in the
+            // library, or both — keep the two in step.
+            draft:
+              state.currentDmpId === dmpId
+                ? {
+                    ...state.draft,
+                    dataset: (state.draft.dataset ?? []).map(bump),
+                  }
+                : state.draft,
+            dmps: state.dmps.map((record) =>
+              record.dmp_id === dmpId
+                ? {
+                    ...record,
+                    draft: {
+                      ...record.draft,
+                      dataset: (record.draft.dataset ?? []).map(bump),
+                    },
+                  }
+                : record,
+            ),
+          }));
+        },
 
         updateDataset: (id, patch) =>
           set((state) => ({

@@ -33,6 +33,14 @@ type Section = (typeof SECTIONS)[number];
 const isSection = (value: string | null): value is Section =>
   SECTIONS.includes(value as Section);
 
+const SECTION_ITEMS: { id: Section; label: string }[] = [
+  { id: "general", label: "General" },
+  { id: "dataset", label: "Research outputs" },
+  { id: "ethical", label: "Ethical" },
+  { id: "people", label: "People & cost" },
+  { id: "system", label: "System info" },
+];
+
 const SECTION_TITLES: Record<Section, string> = {
   general: "General",
   dataset: "Research outputs",
@@ -67,7 +75,7 @@ export const CreateDmp: React.FC = () => {
       <div className="space-y-6 py-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <Stepper steps={STEPPER_STEPS} activeIndex={2} />
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <AutosaveIndicator value={draft} />
             <Button
               variant="outline"
@@ -91,14 +99,16 @@ export const CreateDmp: React.FC = () => {
         <PlanEditorLayout
           sectionNav={
             <SectionNav
-              items={[
-                { id: "general", label: "General" },
-                { id: "dataset", label: "Research outputs" },
-                { id: "ethical", label: "Ethical" },
-                { id: "people", label: "People & cost" },
-                { id: "system", label: "System info" },
-              ]}
+              items={SECTION_ITEMS}
               activeId={section}
+              onSelect={(id) => setSection(id as Section)}
+            />
+          }
+          sectionTabs={
+            <SectionNav
+              items={SECTION_ITEMS}
+              activeId={section}
+              orientation="horizontal"
               onSelect={(id) => setSection(id as Section)}
             />
           }

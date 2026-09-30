@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { FileList, formatBytes } from "@/components/file/FileList";
 import { userFullName } from "@/schemas/user";
 import { useProjectStore, CURRENT_USER_ID } from "@/store/projectStore";
+import { ProjectTasks } from "@/components/task/ProjectTasks";
 import { useDmpStore } from "@/store/dmpStore";
 
 export const ProjectDetail: React.FC = () => {
@@ -69,7 +70,12 @@ export const ProjectDetail: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        {/* min-w-0: a grid item defaults to min-width:auto, and a `truncate`
+            title inside is nowrap — its full width would widen the track and
+            push the page sideways instead of ellipsising. */}
+        <ProjectTasks projectId={id as string} />
+
+        <div className="grid gap-4 [&>*]:min-w-0 md:grid-cols-2">
           <section className="rounded-lg border bg-card p-5">
             <h2 className="font-semibold">Proposal</h2>
             {proposal ? (
@@ -77,7 +83,9 @@ export const ProjectDetail: React.FC = () => {
                 <div className="mt-3 flex items-center gap-3">
                   <FileText className="h-8 w-8 shrink-0 text-primary" />
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{proposal.filename}</p>
+                    <p className="truncate text-sm font-medium">
+                      {proposal.filename}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {formatBytes(proposal.metadata?.byte_size)} ·{" "}
                       {format(proposal.uploaded_at, "PP")}
@@ -87,7 +95,9 @@ export const ProjectDetail: React.FC = () => {
                 <p className="mt-3 text-xs text-muted-foreground">
                   {supersededProposals.length > 0
                     ? `${supersededProposals.length} earlier ${
-                        supersededProposals.length === 1 ? "version" : "versions"
+                        supersededProposals.length === 1
+                          ? "version"
+                          : "versions"
                       } kept below for provenance.`
                     : "A project has one active proposal — uploading another keeps this as a previous version."}
                 </p>
@@ -120,10 +130,16 @@ export const ProjectDetail: React.FC = () => {
             <h2 className="font-semibold">Data Management Plan</h2>
             {hasDmp ? (
               <>
-                <p className="mt-2 truncate text-sm font-medium">{draft.title}</p>
+                <p className="mt-2 truncate text-sm font-medium">
+                  {draft.title}
+                </p>
                 <div className="mt-3 flex items-center gap-2">
                   <StatusBadge status="draft" />
-                  <Button size="sm" variant="outline" onClick={() => navigate("/dmp/create")}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigate("/dmp/create")}
+                  >
                     Continue editing
                   </Button>
                 </div>
@@ -131,7 +147,8 @@ export const ProjectDetail: React.FC = () => {
             ) : (
               <>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  No DMP yet — generate one from the proposal, or fill it manually.
+                  No DMP yet — generate one from the proposal, or fill it
+                  manually.
                 </p>
                 <Button
                   className="mt-3"
@@ -163,11 +180,15 @@ export const ProjectDetail: React.FC = () => {
                     <p className="text-sm font-medium">
                       {user ? userFullName(user) : member.user_id}
                       {member.user_id === CURRENT_USER_ID && (
-                        <span className="ml-1.5 text-xs text-muted-foreground">(you)</span>
+                        <span className="ml-1.5 text-xs text-muted-foreground">
+                          (you)
+                        </span>
                       )}
                     </p>
                     {user?.email && (
-                      <p className="text-xs text-muted-foreground">{user.email}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {user.email}
+                      </p>
                     )}
                   </div>
                   <Chip variant="neutral">{member.project_role}</Chip>

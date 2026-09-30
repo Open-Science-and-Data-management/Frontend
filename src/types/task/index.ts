@@ -8,9 +8,10 @@ export type UpdateTask = z.infer<typeof updateTaskSchema>;
 
 export type {
   TaskChecklistItem,
-  TaskEvidenceLevelValue,
+  TaskEvidence,
+  TaskEvidenceTypeValue,
 } from "@/schemas/task";
-export { TaskEvidenceLevel, TASK_EVIDENCE_LEVELS } from "@/schemas/task";
+export { TaskEvidenceType } from "@/schemas/task";
 
 // Re-export shared enums used by Task for convenience
 export {

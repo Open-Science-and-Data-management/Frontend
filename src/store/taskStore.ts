@@ -2,38 +2,107 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { jsonStorage, storageKey } from "@/store/persist";
 import {
-  Task,
-  TASK_EVIDENCE_LEVELS,
-  type TaskChecklistItem,
-  type TaskEvidenceLevelValue,
-} from "@/types/task";
+  backupBeforeMigrate,
+  CURRENT_TASKS_VERSION,
+  migrateTasks,
+} from "@/store/taskMigrations";
+import { CURRENT_USER_ID } from "@/config/current-user";
+import { evidenceSatisfies } from "@/config/task-evidence";
+import { useDmpStore } from "@/store/dmpStore";
+import type { Task, TaskChecklistItem, TaskEvidence } from "@/types/task";
 
 // The seeded tasks belong to the approved seeded plan, since tasks only exist
 // once a committee has approved the DMP they came from.
 const SEED_DMP_ID = "dmp-pollinator";
 
-// Progress is a function of evidence, never typed in, so the number on a
-// card can't disagree with what's actually been produced.
-const progressFromChecklist = (checklist: Task["checklist"]) => {
+const makeId = () => Math.random().toString(36).substring(2, 10);
+
+/** What a caller supplies; the store fills in the rest. */
+export type NewTask = Omit<
+  Task,
+  "task_id" | "checklist" | "evidence" | "progress_percent" | "status"
+> &
+  Partial<Pick<Task, "checklist" | "evidence" | "progress_percent" | "status">>;
+
+/** Progress is the share of checklist steps done — never typed in. */
+const progressFromChecklist = (checklist: TaskChecklistItem[]) => {
+  if (checklist.length === 0) return 0;
   const done = checklist.filter((i) => i.done).length;
-  return Math.round((done / TASK_EVIDENCE_LEVELS.length) * 100);
+  return Math.round((done / checklist.length) * 100);
 };
+
+/**
+ * Recomputes progress after a checklist change, and walks the status with it.
+ * A task only reaches "done" through `completeTask`, which checks evidence.
+ */
+const withDerivedProgress = (
+  task: Task,
+  checklist: TaskChecklistItem[],
+): Task => {
+  const progress = progressFromChecklist(checklist);
+
+  if (task.status === "cancelled") return { ...task, checklist };
+
+  // Ticking every step doesn't close the task; evidence does.
+  const status: Task["status"] =
+    task.status === "done" ? "done" : progress > 0 ? "in_progress" : "todo";
+
+  return { ...task, checklist, progress_percent: progress, status };
+};
+
+const step = (label: string, done = false): TaskChecklistItem => ({
+  item_id: makeId(),
+  label,
+  done,
+});
 
 interface TaskState {
   tasks: Task[];
-  addTask: (task: Omit<Task, "task_id" | "checklist">) => void;
-  addGeneratedTasks: (tasks: Omit<Task, "task_id" | "checklist">[]) => void;
+  addTask: (task: NewTask) => Task;
+  addGeneratedTasks: (tasks: NewTask[]) => void;
   updateTask: (id: string, task: Partial<Task>) => void;
-  setChecklistItem: (
-    taskId: string,
-    level: TaskEvidenceLevelValue,
-    patch: Partial<TaskChecklistItem>,
-  ) => void;
+
+  /** Checklist: the only thing that moves progress. */
+  addChecklistItem: (taskId: string, label: string) => void;
+  renameChecklistItem: (taskId: string, itemId: string, label: string) => void;
+  toggleChecklistItem: (taskId: string, itemId: string) => void;
+  removeChecklistItem: (taskId: string, itemId: string) => void;
+  replaceChecklist: (taskId: string, labels: string[]) => void;
+
+  /** Evidence: what makes closing the task legitimate. */
+  setEvidence: (taskId: string, evidence: TaskEvidence) => void;
+  clearEvidence: (taskId: string) => void;
+  /** Refused when the stage demands evidence the task doesn't have. */
+  completeTask: (taskId: string) => boolean;
+  reopenTask: (taskId: string) => void;
+  cancelTask: (taskId: string) => void;
+
   deleteTask: (id: string) => void;
   getTaskById: (id: string) => Task | undefined;
   /** Tasks belong to exactly one plan; the board never mixes them by accident. */
   getTasksForDmp: (dmpId: string) => Task[];
+  /**
+   * Swaps in a fresh AI breakdown for one plan. Tasks someone has already
+   * worked on, and anything a person created, are kept.
+   */
+  replaceGeneratedTasks: (
+    dmpId: string,
+    tasks: NewTask[],
+  ) => { added: number; removed: number; kept: number };
+  /** A dataset dropped from the plan: its tasks are cancelled, never deleted. */
+  cancelTasksForDataset: (dmpId: string, datasetId: string) => number;
 }
+
+const mutate = (
+  tasks: Task[],
+  taskId: string,
+  change: (task: Task) => Task,
+): Task[] => tasks.map((t) => (t.task_id === taskId ? change(t) : t));
+
+const updateChecklist = (
+  task: Task,
+  change: (checklist: TaskChecklistItem[]) => TaskChecklistItem[],
+) => withDerivedProgress(task, change(task.checklist ?? []));
 
 export const useTaskStore = create<TaskState>()(
   persist(
@@ -42,153 +111,310 @@ export const useTaskStore = create<TaskState>()(
         {
           task_id: "1",
           dmp_id: SEED_DMP_ID,
-          title: "Create project structure",
-          details:
-            "Set up the initial project structure with all necessary folders",
+          dataset_id: "ds-pollinator-reads",
+          title: "Deposit the sequence reads",
+          details: "Upload the raw reads to the repository and record the DOI.",
           status: "done",
           priority: "high",
-          lifecycle_stage: "collect",
+          lifecycle_stage: "preserve",
           progress_percent: 100,
           checklist: [
-            {
-              level: "basic",
-              done: true,
-              note: "Folder structure agreed and created.",
-            },
-            { level: "output", done: true, filename: "structure-manifest.csv" },
-            {
-              level: "preserve_share",
-              done: true,
-              filename: "deposit-receipt.pdf",
-            },
+            step("Package the reads for deposit", true),
+            step("Upload to the repository", true),
+            step("Record the DOI", true),
           ],
-          generated_by: "user",
+          evidence: {
+            type: "rdm_deposit",
+            ref: "https://doi.org/10.5281/zenodo.1234567",
+            label: "10.5281/zenodo.1234567",
+            attached_at: new Date("2026-09-18T09:00:00"),
+          },
+          completed_at: new Date("2026-09-18T09:05:00"),
+          completed_by: CURRENT_USER_ID,
+          generated_by: "ai",
         },
         {
           task_id: "2",
           dmp_id: SEED_DMP_ID,
-          title: "Implement task creation",
-          details: "Create the form and functionality to add new tasks",
+          dataset_id: "ds-pollinator-reads",
+          title: "Run QC on the sequencing batch",
+          details: "Check read quality and record the failures.",
           status: "in_progress",
           priority: "medium",
           lifecycle_stage: "process",
-          progress_percent: 33,
+          progress_percent: 50,
           checklist: [
-            {
-              level: "basic",
-              done: true,
-              note: "Form drafted and reviewed with the team.",
-            },
+            step("Run the QC pipeline", true),
+            step("Write up the failures", false),
           ],
-          end_date: new Date("2025-05-18T23:59:59"),
-          generated_by: "user",
+          evidence: { type: "none" },
+          end_date: new Date("2026-10-09T23:59:59"),
+          generated_by: "ai",
         },
         {
           task_id: "3",
           dmp_id: SEED_DMP_ID,
-          title: "Add task filtering",
-          details: "Implement filters for tasks by status and priority",
+          title: "Agree the weekly data review slot",
+          details: "General coordination — no output attached.",
           status: "todo",
           priority: "low",
-          lifecycle_stage: "process",
+          lifecycle_stage: "collect",
           progress_percent: 0,
-          checklist: [],
-          end_date: new Date("2025-05-20T23:59:59"),
+          checklist: [step("Ask the team for a slot")],
+          evidence: { type: "none" },
+          end_date: new Date("2026-10-15T23:59:59"),
           generated_by: "user",
         },
       ],
 
-      addTask: (task) =>
-        set((state) => {
-          const newTask: Task = {
-            ...task,
-            task_id: Math.random().toString(36).substring(2, 9),
-            checklist: [],
-          };
-          return { tasks: [...state.tasks, newTask] };
-        }),
+      addTask: (task) => {
+        const created: Task = {
+          progress_percent: 0,
+          status: "todo",
+          checklist: [],
+          evidence: { type: "none" },
+          ...task,
+          task_id: makeId(),
+        };
+        set((state) => ({ tasks: [...state.tasks, created] }));
+        return created;
+      },
 
       addGeneratedTasks: (tasks) =>
         set((state) => ({
           tasks: [
             ...state.tasks,
             ...tasks.map((task) => ({
-              ...task,
-              task_id: Math.random().toString(36).substring(2, 9),
+              progress_percent: 0,
+              status: "todo" as const,
               checklist: [],
+              evidence: { type: "none" as const },
+              ...task,
+              task_id: makeId(),
             })),
           ],
         })),
 
-      setChecklistItem: (taskId, level, patch) =>
+      updateTask: (id, updatedTask) =>
         set((state) => ({
-          tasks: state.tasks.map((task) => {
-            if (task.task_id !== taskId) return task;
+          tasks: mutate(state.tasks, id, (task) => {
+            // A closed task was judged against the rule its output implied.
+            // Re-pointing it afterwards would rewrite that judgement, so the
+            // link is fixed until the task is reopened.
+            const patch =
+              task.status === "done" && "dataset_id" in updatedTask
+                ? { ...updatedTask, dataset_id: task.dataset_id }
+                : updatedTask;
+            return { ...task, ...patch };
+          }),
+        })),
 
-            const existing = task.checklist ?? [];
-            const hasLevel = existing.some((i) => i.level === level);
-            const checklist = (
-              hasLevel
-                ? existing
-                : [...existing, { level, done: false } as TaskChecklistItem]
-            ).map((item) =>
-              item.level === level
-                ? {
-                    ...item,
-                    ...patch,
-                    completed_at: patch.done ? new Date() : undefined,
-                  }
-                : item,
+      addChecklistItem: (taskId, label) =>
+        set((state) => ({
+          tasks: mutate(state.tasks, taskId, (task) =>
+            updateChecklist(task, (list) => [
+              ...list,
+              step(label.trim() || "Untitled step"),
+            ]),
+          ),
+        })),
+
+      renameChecklistItem: (taskId, itemId, label) =>
+        set((state) => ({
+          tasks: mutate(state.tasks, taskId, (task) => ({
+            ...task,
+            checklist: (task.checklist ?? []).map((i) =>
+              i.item_id === itemId
+                ? { ...i, label: label.trim() || i.label }
+                : i,
+            ),
+          })),
+        })),
+
+      toggleChecklistItem: (taskId, itemId) =>
+        set((state) => ({
+          tasks: mutate(state.tasks, taskId, (task) =>
+            updateChecklist(task, (list) =>
+              list.map((i) =>
+                i.item_id === itemId ? { ...i, done: !i.done } : i,
+              ),
+            ),
+          ),
+        })),
+
+      removeChecklistItem: (taskId, itemId) =>
+        set((state) => ({
+          tasks: mutate(state.tasks, taskId, (task) =>
+            updateChecklist(task, (list) =>
+              list.filter((i) => i.item_id !== itemId),
+            ),
+          ),
+        })),
+
+      replaceChecklist: (taskId, labels) =>
+        set((state) => ({
+          tasks: mutate(state.tasks, taskId, (task) =>
+            updateChecklist(task, (list) => {
+              // Steps already ticked survive a re-draft of the list.
+              const kept = list.filter((i) => i.done);
+              const fresh = labels
+                .filter(
+                  (l) =>
+                    !kept.some(
+                      (k) => k.label.toLowerCase() === l.trim().toLowerCase(),
+                    ),
+                )
+                .map((l) => step(l));
+              return [...kept, ...fresh];
+            }),
+          ),
+        })),
+
+      setEvidence: (taskId, evidence) =>
+        set((state) => ({
+          tasks: mutate(state.tasks, taskId, (task) => ({
+            ...task,
+            evidence: { ...evidence, attached_at: new Date() },
+            file_id: evidence.type === "file" ? evidence.ref : task.file_id,
+          })),
+        })),
+
+      clearEvidence: (taskId) =>
+        set((state) => ({
+          tasks: mutate(state.tasks, taskId, (task) => ({
+            ...task,
+            evidence: { type: "none" },
+          })),
+        })),
+
+      completeTask: (taskId) => {
+        const task = get().tasks.find((t) => t.task_id === taskId);
+        // The trust boundary: some stages can't be closed on a tick alone.
+        if (!task || !evidenceSatisfies(task)) return false;
+
+        set((state) => ({
+          tasks: mutate(state.tasks, taskId, (t) => ({
+            ...t,
+            status: "done",
+            progress_percent: 100,
+            checklist: (t.checklist ?? []).map((i) => ({ ...i, done: true })),
+            completed_at: new Date(),
+            completed_by: CURRENT_USER_ID,
+          })),
+        }));
+
+        // Finishing work on a dataset is what moves it along the lifecycle.
+        if (task.dataset_id) {
+          useDmpStore
+            .getState()
+            .advanceDatasetStatus(
+              task.dmp_id,
+              task.dataset_id,
+              task.lifecycle_stage,
             );
+        }
+        return true;
+      },
 
-            // The output level's file is the task's deliverable.
-            const outputItem = checklist.find((i) => i.level === "output");
-            const progress = progressFromChecklist(checklist);
-
+      reopenTask: (taskId) =>
+        set((state) => ({
+          tasks: mutate(state.tasks, taskId, (task) => {
+            const progress = progressFromChecklist(task.checklist ?? []);
             return {
               ...task,
-              checklist,
+              status: progress > 0 ? "in_progress" : "todo",
               progress_percent: progress,
-              // Status follows the evidence rather than being set by hand, so a
-              // task can't sit in "Done" without the proof behind it. An
-              // explicitly cancelled task stays cancelled.
-              status:
-                task.status === "cancelled"
-                  ? "cancelled"
-                  : progress === 100
-                    ? "done"
-                    : progress > 0
-                      ? "in_progress"
-                      : "todo",
-              file_id: outputItem?.done ? outputItem.file_id : task.file_id,
+              completed_at: undefined,
+              completed_by: undefined,
             };
           }),
         })),
 
-      updateTask: (id, updatedTask) =>
-        set((state) => {
-          const tasks = state.tasks.map((task) =>
-            task.task_id === id ? { ...task, ...updatedTask } : task,
-          );
-          return { tasks };
-        }),
+      cancelTask: (taskId) =>
+        set((state) => ({
+          tasks: mutate(state.tasks, taskId, (task) => ({
+            ...task,
+            status: "cancelled",
+          })),
+        })),
 
       deleteTask: (id) =>
         set((state) => ({
           tasks: state.tasks.filter((task) => task.task_id !== id),
         })),
 
-      getTaskById: (id) => {
-        return get().tasks.find((task) => task.task_id === id);
-      },
+      getTaskById: (id) => get().tasks.find((task) => task.task_id === id),
 
       getTasksForDmp: (dmpId) => get().tasks.filter((t) => t.dmp_id === dmpId),
+
+      replaceGeneratedTasks: (dmpId, tasks) => {
+        const before = get().tasks;
+        // Only untouched AI tasks are swapped out — work is never discarded.
+        const isReplaceable = (t: Task) =>
+          t.dmp_id === dmpId &&
+          t.generated_by === "ai" &&
+          t.status === "todo" &&
+          t.progress_percent === 0 &&
+          t.evidence.type === "none";
+
+        const kept = before.filter((t) => !isReplaceable(t));
+        const removed = before.length - kept.length;
+        const added = tasks.map((task) => ({
+          progress_percent: 0,
+          status: "todo" as const,
+          checklist: [],
+          evidence: { type: "none" as const },
+          ...task,
+          task_id: makeId(),
+        }));
+
+        set({ tasks: [...kept, ...added] });
+        return {
+          added: added.length,
+          removed,
+          kept: kept.filter((t) => t.dmp_id === dmpId).length,
+        };
+      },
+
+      cancelTasksForDataset: (dmpId, datasetId) => {
+        const affected = get().tasks.filter(
+          (t) =>
+            t.dmp_id === dmpId &&
+            t.dataset_id === datasetId &&
+            t.status !== "done" &&
+            t.status !== "cancelled",
+        );
+
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            affected.some((a) => a.task_id === t.task_id)
+              ? { ...t, status: "cancelled" as const }
+              : t,
+          ),
+        }));
+        return affected.length;
+      },
     }),
     {
       name: storageKey("tasks"),
       storage: jsonStorage,
       // Bump when the shape of a stored task changes.
-      version: 1,
+      version: CURRENT_TASKS_VERSION,
+      migrate: (persisted, version) => {
+        if (version >= CURRENT_TASKS_VERSION) return persisted;
+
+        // Copied aside first: a migration can't be undone, and a bad one
+        // would otherwise be overwritten by the next save.
+        backupBeforeMigrate(storageKey("tasks"), version);
+
+        try {
+          return migrateTasks(persisted, version);
+        } catch {
+          // Rather than hand back half-migrated rows, start clean — the
+          // untouched payload is still on disk under its backup key.
+          return { tasks: [] };
+        }
+      },
       partialize: (state) => ({ tasks: state.tasks }),
     },
   ),

@@ -1,4 +1,11 @@
 export { TaskCard } from "./TaskCard";
 export { TaskForm } from "./TaskForm";
 export { TaskBoard } from "./TaskBoard";
-export { TaskColumn } from "./TaskColumn";
+export { TaskFormDialog } from "./TaskFormDialog";
+export { TaskEvidence } from "./TaskEvidence";
+export { TaskPriorityBar, TaskLifecycleTag, TaskStatusBox } from "./TaskMeta";
+export { RegenerateTasksDialog } from "./RegenerateTasksDialog";
+export { TaskFilters, useTaskFilters } from "./TaskFilters";
+export { ProjectTasks } from "./ProjectTasks";
+export { TaskKanban } from "./TaskKanban";
+export { TaskViewToggle, useTaskView } from "./TaskViewToggle";

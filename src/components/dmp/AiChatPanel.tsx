@@ -1,18 +1,19 @@
 import React from "react";
 import { X, Send, Sparkles, Loader2, Eraser } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ChatProposalCard } from "@/components/dmp/ChatProposalCard";
 import { Input } from "@/components/ui/input";
-import { useChatStore } from "@/store/chatStore";
+import { estimateTurn, useChatStore } from "@/store/chatStore";
 import { useDmpStore } from "@/store/dmpStore";
 import { cn } from "@/utils/cn";
 
 // Kept in step with what the assistant can actually answer, so a suggestion
 // never leads to the "I can only answer from this plan" fallback.
 const SUGGESTIONS = [
-  "What's missing before I submit?",
   "Summarise this plan",
-  "List the research outputs",
-  "How many tokens do I have left?",
+  "What is the current access?",
+  "Explain protection level",
+  "Change retention to 15 years for every output",
 ];
 
 interface AiChatPanelProps {
@@ -21,7 +22,15 @@ interface AiChatPanelProps {
 }
 
 export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
-  const { messages, isThinking, send, clear } = useChatStore();
+  const {
+    messages,
+    isThinking,
+    send,
+    clear,
+    acceptProposal,
+    rejectProposal,
+    acceptAll,
+  } = useChatStore();
   const tokensLeft = useDmpStore((s) => s.tokensLeft());
   const hasDraft = useDmpStore((s) =>
     Boolean(s.draft.title || s.draft.description),
@@ -50,10 +59,12 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
   return (
     <aside
       aria-label="AI assistant"
-      // Sits below the header so the toggle that opened it stays reachable.
-      className="fixed bottom-0 right-0 top-16 z-30 flex w-full max-w-sm flex-col border-l bg-card shadow-xl"
+      // Full height on the right: from xl the shell reserves a column for it,
+      // so it reads as part of the layout rather than a sheet thrown over it.
+      className="fixed inset-y-0 right-0 z-30 flex w-full max-w-sm flex-col border-l bg-card shadow-xl xl:shadow-none"
     >
-      <div className="flex items-center justify-between gap-2 border-b p-4">
+      {/* h-16 so its bottom border lines up with the app header's. */}
+      <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-ai" />
           <h2 className="font-semibold">Ask AI</h2>
@@ -112,31 +123,68 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
           </div>
         )}
 
-        {messages.map((m) => (
-          <div
-            key={m.id}
-            className={cn(
-              "flex",
-              m.role === "user" ? "justify-end" : "justify-start",
-            )}
-          >
-            <div
-              className={cn(
-                "max-w-[85%] whitespace-pre-line rounded-lg px-3 py-2 text-sm",
-                m.role === "user"
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted",
-              )}
-            >
-              {m.text}
-              {m.role === "assistant" && m.token_count !== undefined && (
-                <span className="mt-1 block text-[11px] text-muted-foreground">
-                  {m.token_count.toLocaleString()} tokens
-                </span>
+        {messages.map((m) => {
+          const pending = (m.proposals ?? []).filter(
+            (p) => p.status === "pending",
+          );
+
+          return (
+            <div key={m.id} className="space-y-2">
+              <div
+                className={cn(
+                  "flex",
+                  m.role === "user" ? "justify-end" : "justify-start",
+                )}
+              >
+                <div
+                  className={cn(
+                    "max-w-[85%] whitespace-pre-line rounded-lg px-3 py-2 text-sm",
+                    m.role === "user"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted",
+                  )}
+                >
+                  {m.text}
+                  {m.role === "assistant" && m.token_count !== undefined && (
+                    <span className="mt-1 block text-[11px] text-muted-foreground">
+                      {m.token_count.toLocaleString()} tokens
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Refusals are shown, not hidden — the reason is the point. */}
+              {(m.rejections ?? []).map((r, i) => (
+                <div
+                  key={`${m.id}-r${i}`}
+                  className="rounded-md border border-warn/40 bg-warn-subtle/40 p-2 text-xs text-warn"
+                >
+                  <span className="font-medium">{r.label}:</span> {r.reason}
+                </div>
+              ))}
+
+              {(m.proposals ?? []).map((p) => (
+                <ChatProposalCard
+                  key={p.id}
+                  proposal={p}
+                  onAccept={() => acceptProposal(m.id, p.id)}
+                  onReject={() => rejectProposal(m.id, p.id)}
+                />
+              ))}
+
+              {pending.length > 1 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => acceptAll(m.id)}
+                >
+                  Accept all {pending.length}
+                </Button>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
 
         {isThinking && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -158,7 +206,9 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
           <Input
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder={hasDraft ? "Ask about this plan…" : "No plan to ask about yet"}
+            placeholder={
+              hasDraft ? "Ask about this plan…" : "No plan to ask about yet"
+            }
             aria-label="Message the AI assistant"
             disabled={isThinking || !hasDraft}
           />
@@ -173,7 +223,10 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
           </Button>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          {tokensLeft.toLocaleString()} tokens left · each reply costs a few
+          {value.trim()
+            ? `This turn costs about ${estimateTurn(value).toLocaleString()} tokens · `
+            : ""}
+          {tokensLeft.toLocaleString()} tokens left
         </p>
       </form>
     </aside>

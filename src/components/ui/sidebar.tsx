@@ -169,7 +169,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Desktop: static column that can shrink to an icon rail */}
       <aside
         className={cn(
-          "hidden shrink-0 border-r bg-card transition-[width] duration-200 md:block",
+          // Sticks under the header so navigation stays put on long pages.
+          "hidden shrink-0 self-start border-r bg-card transition-[width] duration-200 md:sticky md:top-16 md:block md:h-[calc(100dvh-4rem)]",
           collapsed ? "md:w-16" : "md:w-56",
         )}
       >

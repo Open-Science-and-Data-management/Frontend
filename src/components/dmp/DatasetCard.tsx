@@ -12,13 +12,32 @@ import { KeywordInput } from "@/components/dmp/KeywordInput";
 import { SchemaFieldTable } from "@/components/dmp/SchemaFieldTable";
 import { DistributionList } from "@/components/dmp/DistributionList";
 import { datasetFieldPolicy } from "@/config/field-policy";
-import { DatasetType, DatasetStatus, DataAccess, YesNoUnknown } from "@/schemas/shared";
+import {
+  DatasetType,
+  DatasetStatus,
+  DataAccess,
+  YesNoUnknown,
+} from "@/schemas/shared";
 import { useDmpStore } from "@/store/dmpStore";
+import { useTaskStore } from "@/store/taskStore";
+import { useToastStore } from "@/store/toastStore";
 import type { Dataset } from "@/types/dataset";
 import { cn } from "@/utils/cn";
 
-const PROTECTION_LEVELS = ["None", "Standard", "Restricted", "Confidential", "Other"];
-const SECURITY_LEVELS = ["Public", "Internal", "Restricted", "Confidential", "Other"];
+const PROTECTION_LEVELS = [
+  "None",
+  "Standard",
+  "Restricted",
+  "Confidential",
+  "Other",
+];
+const SECURITY_LEVELS = [
+  "Public",
+  "Internal",
+  "Restricted",
+  "Confidential",
+  "Other",
+];
 
 interface DatasetCardProps {
   dataset: Dataset;
@@ -27,6 +46,9 @@ interface DatasetCardProps {
 export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
   const [expanded, setExpanded] = React.useState(true);
   const { updateDataset, changeDatasetType, removeDataset } = useDmpStore();
+  const currentDmpId = useDmpStore((s) => s.currentDmpId);
+  const cancelTasksForDataset = useTaskStore((s) => s.cancelTasksForDataset);
+  const toast = useToastStore((s) => s.toast);
   const confirm = useConfirm();
 
   const id = dataset.dataset_id as string;
@@ -55,12 +77,19 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
         className="flex w-full items-center justify-between gap-3 p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <div className="flex items-center gap-2">
-          <span className="font-medium">{dataset.title || "Untitled research output"}</span>
+          <span className="font-medium">
+            {dataset.title || "Untitled research output"}
+          </span>
           <StatusBadge status="draft">{dataset.type}</StatusBadge>
-          <span className="text-xs text-muted-foreground capitalize">{dataset.status}</span>
+          <span className="text-xs text-muted-foreground capitalize">
+            {dataset.status}
+          </span>
         </div>
         <ChevronDown
-          className={cn("h-4 w-4 shrink-0 transition-transform", expanded && "rotate-180")}
+          className={cn(
+            "h-4 w-4 shrink-0 transition-transform",
+            expanded && "rotate-180",
+          )}
         />
       </button>
 
@@ -121,11 +150,23 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                   await confirm({
                     title: "Remove this research output?",
                     description:
-                      "Its datasets, distributions and preservation details are discarded with it.",
+                      "Its distributions and preservation details go with it. Any open tasks for it are cancelled, not deleted, so the trail survives.",
                     confirmLabel: "Remove output",
                   })
-                )
+                ) {
+                  // Tasks keep their history: cancelled, never erased.
+                  const cancelled = currentDmpId
+                    ? cancelTasksForDataset(currentDmpId, id)
+                    : 0;
                   removeDataset(id);
+                  if (cancelled > 0) {
+                    toast({
+                      title: `${cancelled} task${cancelled === 1 ? "" : "s"} cancelled`,
+                      description:
+                        "They stay on the board for the record, marked cancelled.",
+                    });
+                  }
+                }
               }}
             >
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />
@@ -133,7 +174,12 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
             </Button>
           </div>
 
-          <FormField name={`title-${id}`} label="Title" policy={datasetFieldPolicy.title} required>
+          <FormField
+            name={`title-${id}`}
+            label="Title"
+            policy={datasetFieldPolicy.title}
+            required
+          >
             <Input
               id={`title-${id}`}
               value={dataset.title}
@@ -154,7 +200,11 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
             />
           </FormField>
 
-          <FormField name={`keyword-${id}`} label="Keywords" policy={datasetFieldPolicy.keyword}>
+          <FormField
+            name={`keyword-${id}`}
+            label="Keywords"
+            policy={datasetFieldPolicy.keyword}
+          >
             <KeywordInput
               id={`keyword-${id}`}
               keywords={dataset.keyword}
@@ -187,7 +237,9 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               <Select
                 id={`access-${id}`}
                 value={dataset.access}
-                onChange={(e) => patch({ access: e.target.value as Dataset["access"] })}
+                onChange={(e) =>
+                  patch({ access: e.target.value as Dataset["access"] })
+                }
               >
                 {DataAccess.options.map((option) => (
                   <option key={option} value={option}>
@@ -207,7 +259,9 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                 id={`personal-${id}`}
                 value={dataset.personal_data}
                 onChange={(e) =>
-                  patch({ personal_data: e.target.value as Dataset["personal_data"] })
+                  patch({
+                    personal_data: e.target.value as Dataset["personal_data"],
+                  })
                 }
               >
                 {YesNoUnknown.options.map((option) => (
@@ -228,7 +282,9 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                 id={`sensitive-${id}`}
                 value={dataset.sensitive_data}
                 onChange={(e) =>
-                  patch({ sensitive_data: e.target.value as Dataset["sensitive_data"] })
+                  patch({
+                    sensitive_data: e.target.value as Dataset["sensitive_data"],
+                  })
                 }
               >
                 {YesNoUnknown.options.map((option) => (
@@ -280,7 +336,9 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                   <Input
                     placeholder="Describe protection level"
                     value={dataset.protection_level_other ?? ""}
-                    onChange={(e) => patch({ protection_level_other: e.target.value })}
+                    onChange={(e) =>
+                      patch({ protection_level_other: e.target.value })
+                    }
                   />
                 )}
               </div>
@@ -314,7 +372,9 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                     placeholder="Describe security classification"
                     value={dataset.security_classification_level_other ?? ""}
                     onChange={(e) =>
-                      patch({ security_classification_level_other: e.target.value })
+                      patch({
+                        security_classification_level_other: e.target.value,
+                      })
                     }
                   />
                 )}
@@ -333,7 +393,9 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               id={`dqa-${id}`}
               rows={2}
               value={dataset.data_quality_assurance ?? ""}
-              onChange={(e) => patch({ data_quality_assurance: e.target.value })}
+              onChange={(e) =>
+                patch({ data_quality_assurance: e.target.value })
+              }
               placeholder="Leave blank if not applicable"
             />
           </div>
@@ -388,7 +450,12 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                 placeholder="Repository"
                 value={dataset.preservation?.repository ?? ""}
                 onChange={(e) =>
-                  patch({ preservation: { ...dataset.preservation, repository: e.target.value } })
+                  patch({
+                    preservation: {
+                      ...dataset.preservation,
+                      repository: e.target.value,
+                    },
+                  })
                 }
               />
               <Input
@@ -396,7 +463,12 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                 placeholder="Duration (e.g. 10 years)"
                 value={dataset.preservation?.duration ?? ""}
                 onChange={(e) =>
-                  patch({ preservation: { ...dataset.preservation, duration: e.target.value } })
+                  patch({
+                    preservation: {
+                      ...dataset.preservation,
+                      duration: e.target.value,
+                    },
+                  })
                 }
               />
               <Input
@@ -404,7 +476,12 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                 placeholder="Format"
                 value={dataset.preservation?.format ?? ""}
                 onChange={(e) =>
-                  patch({ preservation: { ...dataset.preservation, format: e.target.value } })
+                  patch({
+                    preservation: {
+                      ...dataset.preservation,
+                      format: e.target.value,
+                    },
+                  })
                 }
               />
             </div>
@@ -412,7 +489,12 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               <Toggle
                 checked={dataset.preservation?.doi_requested ?? false}
                 onCheckedChange={(checked) =>
-                  patch({ preservation: { ...dataset.preservation, doi_requested: checked } })
+                  patch({
+                    preservation: {
+                      ...dataset.preservation,
+                      doi_requested: checked,
+                    },
+                  })
                 }
               />
               DOI requested
@@ -429,10 +511,20 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                   rows={2}
                   value={dataset.preservation?.statement ?? ""}
                   onChange={(e) =>
-                    patch({ preservation: { ...dataset.preservation, statement: e.target.value } })
+                    patch({
+                      preservation: {
+                        ...dataset.preservation,
+                        statement: e.target.value,
+                      },
+                    })
                   }
                 />
-                <Button type="button" variant="ghost" size="sm" onClick={composeStatement}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={composeStatement}
+                >
                   Compose from above
                 </Button>
               </div>

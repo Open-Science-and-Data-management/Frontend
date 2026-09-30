@@ -1,45 +1,67 @@
 import { z } from "zod";
-import { LifecycleStage, TaskStatus, Priority, GeneratedBy } from "../shared/enums";
+import {
+  LifecycleStage,
+  TaskStatus,
+  Priority,
+  GeneratedBy,
+} from "../shared/enums";
 
 /**
- * Progress is evidenced in three escalating levels rather than typed in:
- *  - basic          the work happened (a written account)
- *  - output         a deliverable exists (a task_deliverable file)
- *  - preserve_share it's deposited/published (an evidence file)
+ * How "done" is proven. The requirement comes from the task's lifecycle stage,
+ * not from the person ticking it.
+ *  - none         nothing attached yet
+ *  - file         an output file was uploaded
+ *  - url          a link to the output
+ *  - rdm_deposit  a DOI/URL issued by the repository — the only one a
+ *                 researcher can't fabricate
  */
-export const TaskEvidenceLevel = z.enum(["basic", "output", "preserve_share"]);
-export const TASK_EVIDENCE_LEVELS = TaskEvidenceLevel.options;
+export const TaskEvidenceType = z.enum(["none", "file", "url", "rdm_deposit"]);
 
+export const taskEvidenceSchema = z.object({
+  type: TaskEvidenceType.default("none"),
+  /** File id, URL, or DOI depending on `type`. */
+  ref: z.string().optional(),
+  /** Shown on the card without resolving the file store. */
+  label: z.string().optional(),
+  attached_at: z.coerce.date().optional(),
+});
+
+/**
+ * A checklist is how a task is broken down — no dates, no status of its own,
+ * no separate entity. Just the steps, and whether each is done.
+ */
 export const taskChecklistItemSchema = z.object({
-  level: TaskEvidenceLevel,
+  item_id: z.string(),
+  label: z.string().min(1),
   done: z.boolean().default(false),
-  note: z.string().optional(),
-  file_id: z.string().optional(),
-  // Denormalised so the card can render without resolving the file store.
-  filename: z.string().optional(),
-  completed_at: z.coerce.date().optional(),
 });
 
 export type TaskChecklistItem = z.infer<typeof taskChecklistItemSchema>;
-export type TaskEvidenceLevelValue = z.infer<typeof TaskEvidenceLevel>;
+export type TaskEvidence = z.infer<typeof taskEvidenceSchema>;
+export type TaskEvidenceTypeValue = z.infer<typeof TaskEvidenceType>;
 
 const taskObjectSchema = z.object({
   task_id: z.string().optional(),
   dmp_id: z.string(),
+  /** Absent for general work; present when the task acts on one dataset. */
   dataset_id: z.string().optional(),
   source_version_id: z.string().optional(),
   title: z.string().min(1),
   details: z.string().optional(),
   start_date: z.coerce.date().optional(),
   end_date: z.coerce.date().optional(),
+  /** Derived from `checklist`; never typed in. */
   progress_percent: z.coerce.number().min(0).max(100).default(0),
-  // Derived from `checklist`; never edited directly.
   checklist: z.array(taskChecklistItemSchema).default([]),
+  evidence: taskEvidenceSchema.default({ type: "none" }),
   file_id: z.string().optional(),
   lifecycle_stage: LifecycleStage,
   status: TaskStatus.default("todo"),
   priority: Priority.default("medium"),
   generated_by: GeneratedBy.default("user"),
+  // Audit: who closed it and when.
+  completed_at: z.coerce.date().optional(),
+  completed_by: z.string().optional(),
 });
 
 const dateOrderRefinement = (t: { start_date?: Date; end_date?: Date }) =>

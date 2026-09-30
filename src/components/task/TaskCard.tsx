@@ -1,12 +1,23 @@
 import React from "react";
 import { format } from "date-fns";
-import { Task, TASK_EVIDENCE_LEVELS } from "@/types/task";
+import { Link2, Paperclip, ShieldCheck, Trash2 } from "lucide-react";
+import type { Task } from "@/types/task";
 import { useTaskStore } from "@/store/taskStore";
+import { useDmpStore } from "@/store/dmpStore";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-provider";
 import { ProgressBar } from "@/components/ui/progress-bar";
-import { LEVEL_META } from "@/components/task/TaskProgressDialog";
-import { Check, ListChecks } from "lucide-react";
+import {
+  TaskLifecycleTag,
+  TaskPriorityBar,
+  TaskStatusBox,
+} from "@/components/task/TaskMeta";
+import {
+  evidenceSatisfies,
+  REQUIREMENT_COPY,
+  requirementFor,
+} from "@/config/task-evidence";
+import { useToastStore } from "@/store/toastStore";
 import { cn } from "@/utils/cn";
 
 interface TaskCardProps {
@@ -14,177 +25,189 @@ interface TaskCardProps {
   /** Shown only when the board is mixing tasks from several plans. */
   planName?: string;
   onEdit: (task: Task) => void;
-  onOpenProgress: (task: Task) => void;
 }
 
-const PRIORITY_COLORS: Record<Task["priority"], string> = {
-  high: "bg-destructive/10 text-destructive",
-  medium: "bg-warn-subtle text-warn",
-  low: "bg-ok-subtle text-ok",
-};
-
-const STATUS_COLORS: Record<Task["status"], string> = {
-  done: "bg-ok-subtle text-ok",
-  in_progress: "bg-secondary text-secondary-foreground",
-  todo: "bg-muted text-muted-foreground",
-  cancelled: "bg-muted text-muted-foreground",
-};
-
-const STATUS_LABELS: Record<Task["status"], string> = {
-  todo: "To Do",
-  in_progress: "In Progress",
-  done: "Done",
-  cancelled: "Cancelled",
-};
-
-const PRIORITY_LABELS: Record<Task["priority"], string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-};
+const EVIDENCE_ICON = {
+  none: null,
+  file: Paperclip,
+  url: Link2,
+  rdm_deposit: ShieldCheck,
+} as const;
 
 export const TaskCard: React.FC<TaskCardProps> = ({
   task,
   planName,
   onEdit,
-  onOpenProgress,
 }) => {
-  const { deleteTask } = useTaskStore();
+  const { deleteTask, completeTask, reopenTask } = useTaskStore();
+  const toast = useToastStore((s) => s.toast);
   const confirm = useConfirm();
+
+  const isDone = task.status === "done";
+  const isCancelled = task.status === "cancelled";
+  const EvidenceIcon = EVIDENCE_ICON[task.evidence.type];
+  const requirement = requirementFor(task);
+  const doneCount = (task.checklist ?? []).filter((i) => i.done).length;
+  const taskId = task.task_id as string;
+
+  // A dropped output leaves its tasks behind for the record; without saying so
+  // the row reads as ordinary work against something that no longer exists.
+  const orphaned = useDmpStore((s) =>
+    task.dataset_id ? !s.datasetExists(task.dmp_id, task.dataset_id) : false,
+  );
+
+  // Tickable when the evidence rule is already satisfied — which is always
+  // true for self-declared work, and true elsewhere once proof is attached.
+  const canToggle = !isCancelled && (isDone || evidenceSatisfies(task));
+
+  const blockedReason =
+    canToggle || isCancelled ? undefined : REQUIREMENT_COPY[requirement].hint;
+
+  const toggle = () => {
+    if (isDone) {
+      reopenTask(taskId);
+      return;
+    }
+    if (completeTask(taskId)) {
+      toast({ title: "Task closed", description: task.title });
+    }
+  };
 
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={() => onEdit(task)}
+      onClick={(e) => {
+        // Aiming at the locked box deserves an answer, not a silent jump.
+        if (
+          blockedReason &&
+          (e.target as HTMLElement).closest('[role="img"]')
+        ) {
+          toast({ title: "Evidence needed first", description: blockedReason });
+        }
+        onEdit(task);
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onEdit(task);
         }
       }}
-      aria-label={`Edit ${task.title}`}
-      className="cursor-pointer rounded-lg border bg-card text-card-foreground shadow-sm transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      aria-label={`Open ${task.title}`}
+      className={cn(
+        "flex cursor-pointer overflow-hidden rounded-lg border bg-card text-card-foreground shadow-sm transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isCancelled && "opacity-60",
+      )}
     >
-      <div className="p-6 space-y-4">
-        <div className="flex justify-between items-start">
-          <div className="min-w-0">
-            <h3 className="text-lg font-semibold">{task.title}</h3>
-            {planName && (
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                {planName}
-              </p>
-            )}
+      <TaskPriorityBar priority={task.priority} className="self-stretch" />
+
+      <div className="min-w-0 flex-1 space-y-2 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-2">
+            <TaskStatusBox
+              status={task.status}
+              className={canToggle ? "mt-0.5" : "mt-1"}
+              onToggle={canToggle ? toggle : undefined}
+              blockedReason={blockedReason}
+              actionLabel={
+                isDone ? `Reopen ${task.title}` : `Mark ${task.title} done`
+              }
+            />
+            <div className="min-w-0">
+              <h3
+                className={cn(
+                  "font-semibold leading-snug",
+                  (isDone || isCancelled) &&
+                    "text-muted-foreground line-through",
+                )}
+              >
+                {task.title}
+              </h3>
+              {planName && (
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  {planName}
+                </p>
+              )}
+            </div>
           </div>
-          <div className="flex space-x-2">
-            <span
-              className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${PRIORITY_COLORS[task.priority]}`}
-            >
-              {PRIORITY_LABELS[task.priority]}
-            </span>
-            <span
-              className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[task.status]}`}
-            >
-              {STATUS_LABELS[task.status]}
-            </span>
-          </div>
+          <TaskLifecycleTag
+            stage={task.lifecycle_stage}
+            className="mt-0.5 shrink-0"
+          />
         </div>
 
-        {task.details && (
+        {task.details && !isDone && (
           <p className="text-sm text-muted-foreground">{task.details}</p>
         )}
 
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-            <span className="rounded-full bg-muted px-2 py-0.5 capitalize">
-              {task.lifecycle_stage}
-            </span>
-            <span className="tabular-nums">{task.progress_percent}%</span>
-          </div>
-          <ProgressBar
-            value={task.progress_percent}
-            label={`${task.title} progress`}
-          />
-          {/* The three evidence levels at a glance */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpenProgress(task);
-            }}
-            className="flex w-full items-center gap-1.5 rounded pt-0.5 text-left text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {TASK_EVIDENCE_LEVELS.map((level) => {
-              const done = (task.checklist ?? []).some(
-                (i) => i.level === level && i.done,
-              );
-              return (
-                <span
-                  key={level}
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5",
-                    done ? "bg-ok-subtle text-ok" : "bg-muted",
-                  )}
-                >
-                  {done && <Check className="h-3 w-3" />}
-                  {LEVEL_META[level].short}
-                </span>
-              );
-            })}
-          </button>
-        </div>
-
-        {(task.start_date || task.end_date) && (
-          <div className="text-sm text-muted-foreground">
-            {task.start_date && (
+        {/* The bar is the in-progress state; a closed or unstarted row
+            doesn't need one. */}
+        {task.status === "in_progress" && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>
-                <span className="font-medium">Start:</span>{" "}
-                {format(task.start_date, "PPP")}
+                {doneCount} of {task.checklist.length} steps
               </span>
-            )}
-            {task.start_date && task.end_date && <span> · </span>}
-            {task.end_date && (
-              <span>
-                <span className="font-medium">Due:</span>{" "}
-                {format(task.end_date, "PPP")}
-              </span>
-            )}
+              <span className="tabular-nums">{task.progress_percent}%</span>
+            </div>
+            <ProgressBar
+              value={task.progress_percent}
+              label={`${task.title} progress`}
+            />
           </div>
         )}
 
-        <div className="flex justify-end items-center pt-4 border-t">
-          <div className="flex space-x-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                onOpenProgress(task);
-              }}
-            >
-              <ListChecks className="mr-1.5 h-3.5 w-3.5" />
-              Progress
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={async (e) => {
-                e.stopPropagation();
-                if (
-                  await confirm({
-                    title: "Delete this task?",
-                    description:
-                      "Its evidence and progress are discarded with it.",
-                    confirmLabel: "Delete task",
-                  })
-                )
-                  deleteTask(task.task_id as string);
-              }}
-              className="text-destructive hover:bg-destructive/5"
-            >
-              Delete
-            </Button>
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-3">
+            {EvidenceIcon && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1",
+                  task.evidence.type === "rdm_deposit" && "text-ok",
+                )}
+                title={task.evidence.label ?? task.evidence.ref}
+              >
+                <EvidenceIcon className="h-3.5 w-3.5" />
+                <span className="max-w-[12rem] truncate">
+                  {task.evidence.label ?? task.evidence.ref}
+                </span>
+              </span>
+            )}
+            {orphaned && (
+              <span
+                className="inline-flex items-center gap-1 rounded border border-dashed border-input px-1.5 text-muted-foreground"
+                title="The research output this task belonged to was removed from the plan"
+              >
+                Output removed
+              </span>
+            )}
+            {!EvidenceIcon && requirement !== "declared" && !isCancelled && (
+              <span className="text-warn">Evidence needed to close</span>
+            )}
+            {task.end_date && (
+              <span>Due {format(task.end_date, "d MMM yyyy")}</span>
+            )}
           </div>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-destructive hover:bg-destructive/10"
+            aria-label={`Delete ${task.title}`}
+            onClick={async (e) => {
+              e.stopPropagation();
+              if (
+                await confirm({
+                  title: "Delete this task?",
+                  description: "Its checklist and evidence go with it.",
+                  confirmLabel: "Delete task",
+                })
+              )
+                deleteTask(task.task_id as string);
+            }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
         </div>
       </div>
     </div>

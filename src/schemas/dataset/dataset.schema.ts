@@ -16,7 +16,7 @@ export const preservationSchema = z.object({
   statement: z.string().optional(),
 });
 
-const datasetBase = z.object({
+export const datasetBase = z.object({
   dataset_id: z.string().optional(),
   title: z.string().min(1),
   description: z.string().optional(),

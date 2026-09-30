@@ -111,7 +111,10 @@ export const QuotaBar: React.FC<{ className?: string }> = ({ className }) => {
         </div>
 
         <span
-          className={cn("text-xs font-medium tabular-nums", tone)}
+          className={cn(
+            "whitespace-nowrap text-xs font-medium tabular-nums",
+            tone,
+          )}
           data-testid="quota-left"
         >
           {isEmpty ? "No tokens left" : `${left.toLocaleString()} left`}
