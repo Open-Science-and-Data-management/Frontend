@@ -13,7 +13,7 @@ import {
   validateProposalFile,
 } from "@/components/ui/file-dropzone";
 import { CreateProjectDialog } from "@/components/project/CreateProjectDialog";
-import { estimateCost } from "@/api/aiApi";
+import { coverageGaps, estimateCost } from "@/api/aiApi";
 import { useDmpStore } from "@/store/dmpStore";
 import { useProjectStore } from "@/store/projectStore";
 
@@ -36,7 +36,6 @@ export const Upload: React.FC = () => {
     hasTokensFor,
     analyzeProposal,
     startManual,
-    setField,
   } = useDmpStore();
   const { projects, files, uploadFile, updateProject } = useProjectStore();
 
@@ -111,7 +110,9 @@ export const Upload: React.FC = () => {
 
       <div className="mx-auto max-w-xl space-y-6 py-8">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Upload your proposal</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Upload your proposal
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             AI will read it and draft a Data Management Plan for you to review.
           </p>
@@ -127,8 +128,20 @@ export const Upload: React.FC = () => {
           </div>
         ) : stage === "low-coverage" ? (
           <LowCoverageFallback
+            file={file}
+            projectId={projectId}
             onContinue={() => navigate("/dmp/create")}
-            setField={setField}
+            onRetry={async (direction) => {
+              if (!file) return;
+              // Nothing has been edited by hand yet, so a second pass can
+              // replace the draft outright.
+              const { coverage } = await analyzeProposal(
+                file,
+                projectId,
+                direction,
+              );
+              if (coverage === "ok") navigate("/dmp/create");
+            }}
           />
         ) : (
           <>
@@ -157,7 +170,10 @@ export const Upload: React.FC = () => {
                     onChange={(e) => setProjectId(e.target.value)}
                   >
                     {projects.map((project) => (
-                      <option key={project.project_id} value={project.project_id}>
+                      <option
+                        key={project.project_id}
+                        value={project.project_id}
+                      >
                         {project.project_name}
                       </option>
                     ))}
@@ -173,9 +189,9 @@ export const Upload: React.FC = () => {
               )}
               {existingProposal && (
                 <p className="mt-2 text-xs text-warn">
-                  This project already has a proposal ({existingProposal.filename}).
-                  Uploading another supersedes it — the old one is kept as a
-                  previous version.
+                  This project already has a proposal (
+                  {existingProposal.filename}). Uploading another supersedes it
+                  — the old one is kept as a previous version.
                 </p>
               )}
             </div>
@@ -251,44 +267,95 @@ export const Upload: React.FC = () => {
   );
 };
 
+/**
+ * When the document was too thin to draft from, we ask rather than guess. The
+ * answers become a direction and the proposal is read again — so the plan is
+ * still AI-drafted from the researcher's own words, not invented.
+ */
 const LowCoverageFallback: React.FC<{
+  file: File | null;
+  projectId: string;
   onContinue: () => void;
-  setField: ReturnType<typeof useDmpStore.getState>["setField"];
-}> = ({ onContinue, setField }) => {
+  onRetry: (direction: string) => Promise<void>;
+}> = ({ file, onContinue, onRetry }) => {
+  const draft = useDmpStore((s) => s.draft);
+  const gaps = React.useMemo(() => coverageGaps(draft), [draft]);
+  const [answers, setAnswers] = React.useState<Record<string, string>>({});
+  const [retrying, setRetrying] = React.useState(false);
+
+  const direction = gaps
+    .map((gap) =>
+      answers[gap.id]?.trim()
+        ? `${gap.question} ${answers[gap.id].trim()}`
+        : "",
+    )
+    .filter(Boolean)
+    .join(" ");
+
+  const answered = Object.values(answers).filter((a) => a.trim()).length;
+
   return (
     <div className="space-y-4 rounded-lg border border-warn/40 bg-warn-subtle/30 p-6">
       <div>
-        <h2 className="font-semibold text-warn">AI needs a bit more info</h2>
+        <h2 className="font-semibold text-warn">
+          AI needs a bit more to go on
+        </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Your proposal was thin on detail, so instead of guessing a full plan,
-          answer a few quick questions — AI will use them to fill the rest.
+          {file?.name ?? "Your proposal"} was thin on detail. Rather than
+          guessing a whole plan, answer what you can — AI reads the proposal
+          again with your answers as direction.
         </p>
       </div>
 
       <div className="space-y-3">
-        <div>
-          <label htmlFor="q-title" className="mb-1 block text-sm font-medium">
-            Project title
-          </label>
-          <Input
-            id="q-title"
-            placeholder="e.g. Urban Pollinator Genomic Survey"
-            onChange={(e) => setField("title", e.target.value)}
-          />
-        </div>
-        <div>
-          <label htmlFor="q-duration" className="mb-1 block text-sm font-medium">
-            Approximate description
-          </label>
-          <Input
-            id="q-duration"
-            placeholder="One or two sentences about the project"
-            onChange={(e) => setField("description", e.target.value)}
-          />
-        </div>
+        {gaps.map((gap) => (
+          <div key={gap.id}>
+            <label
+              htmlFor={`gap-${gap.id}`}
+              className="mb-1 block text-sm font-medium"
+            >
+              {gap.question}
+            </label>
+            <Input
+              id={`gap-${gap.id}`}
+              placeholder={gap.placeholder}
+              value={answers[gap.id] ?? ""}
+              onChange={(e) =>
+                setAnswers((prev) => ({ ...prev, [gap.id]: e.target.value }))
+              }
+            />
+          </div>
+        ))}
       </div>
 
-      <Button onClick={onContinue}>Continue to review</Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="ai"
+          isLoading={retrying}
+          disabled={answered === 0 || !file}
+          onClick={async () => {
+            setRetrying(true);
+            try {
+              await onRetry(direction);
+            } finally {
+              setRetrying(false);
+            }
+          }}
+        >
+          <Sparkles className="mr-1.5 h-4 w-4" />
+          Draft again with these answers
+        </Button>
+        <Button variant="outline" onClick={onContinue}>
+          Skip and edit by hand
+        </Button>
+      </div>
+
+      {answered === 0 && (
+        <p className="text-xs text-muted-foreground">
+          Answer at least one question, or carry on and fill the plan in
+          yourself.
+        </p>
+      )}
     </div>
   );
 };

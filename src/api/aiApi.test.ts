@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { generateTaskChecklist, generateTasks } from "@/api/aiApi";
+import {
+  aiApi,
+  coverageGaps,
+  generateTaskChecklist,
+  generateTasks,
+  redraftFromProposal,
+} from "@/api/aiApi";
 
 const outputs = [
   { dataset_id: "d1", title: "Sequence reads", type: "raw", access: "shared" },
@@ -131,5 +137,172 @@ describe("generateTaskChecklist honours the direction", () => {
 
     expect(steps.length).toBeGreaterThan(0);
     expect(steps.every((s) => /deposit|doi|receipt/i.test(s))).toBe(true);
+  });
+});
+
+describe("analysis takes a direction", () => {
+  const docx = (size: number) =>
+    new File([new Uint8Array(size)], "proposal.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+  it("drafts the plain plan with no direction", async () => {
+    const { draft } = await aiApi.analyzeProposal(docx(20000));
+    expect(draft.dataset?.[0].access).toBe("shared");
+    expect(draft.dataset?.every((d) => d.type !== "software")).toBe(true);
+  });
+
+  it("opens the outputs when told to share", async () => {
+    const { draft } = await aiApi.analyzeProposal(
+      docx(20000),
+      "Make everything openly shared",
+    );
+    expect(draft.dataset?.every((d) => d.access === "open")).toBe(true);
+    expect(draft.dataset?.[0].preservation?.doi_requested).toBe(true);
+  });
+
+  it("raises protection when told the data is sensitive", async () => {
+    const { draft } = await aiApi.analyzeProposal(
+      docx(20000),
+      "Assume personal, sensitive data",
+    );
+    expect(draft.ethical_issues_exist).toBe(true);
+    expect(draft.dataset?.[0].personal_data).toBe("yes");
+    expect(draft.dataset?.[0].security_classification_level).toBe(
+      "Confidential",
+    );
+  });
+
+  it("adds the code as an output when asked", async () => {
+    const { draft } = await aiApi.analyzeProposal(
+      docx(20000),
+      "Include the analysis code as an output",
+    );
+    expect(draft.dataset?.some((d) => d.type === "software")).toBe(true);
+  });
+
+  it("bills for the direction", async () => {
+    const plain = await aiApi.analyzeProposal(docx(20000));
+    const steered = await aiApi.analyzeProposal(
+      docx(20000),
+      "Focus on long-term preservation",
+    );
+    expect(steered.token_count).not.toBe(plain.token_count);
+  });
+
+  it("treats a thin document as low coverage, and a steered re-run as covered", async () => {
+    const thin = await aiApi.analyzeProposal(docx(1000));
+    expect(thin.coverage).toBe("low");
+
+    const guided = await aiApi.analyzeProposal(
+      docx(1000),
+      "The project collects interview recordings with consent, kept ten years",
+    );
+    expect(guided.coverage).toBe("ok");
+  });
+});
+
+describe("coverage gaps become the questions we ask", () => {
+  it("asks for what the draft is missing", () => {
+    const gaps = coverageGaps({});
+    const ids = gaps.map((g) => g.id);
+
+    expect(ids).toContain("title");
+    expect(ids).toContain("outputs");
+    expect(ids).toContain("timeline");
+    expect(ids).toContain("ethics");
+  });
+
+  it("stops asking once the draft answers it", () => {
+    const gaps = coverageGaps({
+      title: "A plan",
+      dataset: [{ dataset_id: "d1" }] as never,
+      begin_date: new Date(),
+      end_date: new Date(),
+      ethical_issues_exist: false,
+    });
+
+    expect(gaps.map((g) => g.id)).toEqual(["sharing"]);
+  });
+});
+
+describe("redrafting returns suggestions, never a replacement plan", () => {
+  const current = {
+    title: "Old title",
+    dataset: [{ dataset_id: "d1", title: "Reads" }],
+  } as never;
+
+  it("returns field-level changes", async () => {
+    const { fields } = await redraftFromProposal({
+      filename: "p.docx",
+      direction: "",
+      current,
+    });
+
+    expect(fields.every((f) => typeof f.path === "string")).toBe(true);
+    expect(fields.some((f) => f.path === "title")).toBe(true);
+    expect(fields.some((f) => f.path === "dataset[0].title")).toBe(true);
+  });
+
+  it("only suggests for outputs that still exist", async () => {
+    const { fields } = await redraftFromProposal({
+      filename: "p.docx",
+      direction: "",
+      current: { dataset: [] } as never,
+    });
+
+    expect(fields.some((f) => f.path.startsWith("dataset["))).toBe(false);
+  });
+
+  it("includes the steer in what it proposes", async () => {
+    const { fields } = await redraftFromProposal({
+      filename: "p.docx",
+      direction: "Make everything openly shared",
+      current,
+    });
+
+    expect(fields.some((f) => f.path === "dataset[0].access")).toBe(true);
+    const description = fields.find((f) => f.path === "description");
+    expect(String(description?.value)).toContain("p.docx");
+  });
+});
+
+describe("a thin proposal yields a thin draft, not an invented one", () => {
+  const docx = (size: number) =>
+    new File([new Uint8Array(size)], "thin.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+  it("extracts little when coverage is low", async () => {
+    const { draft, coverage } = await aiApi.analyzeProposal(docx(1000));
+
+    expect(coverage).toBe("low");
+    expect(draft.dataset).toEqual([]);
+    expect(draft.begin_date).toBeUndefined();
+    expect(draft.ethical_issues_exist).toBeUndefined();
+  });
+
+  it("leaves real questions for the fallback to ask", async () => {
+    const { draft } = await aiApi.analyzeProposal(docx(1000));
+
+    expect(coverageGaps(draft).map((g) => g.id)).toEqual([
+      "outputs",
+      "timeline",
+      "ethics",
+      "sharing",
+    ]);
+  });
+
+  it("fills the plan out once the researcher supplies direction", async () => {
+    const guided = await aiApi.analyzeProposal(
+      docx(1000),
+      "Outputs are sequencing reads and analysis code, shared openly, kept ten years",
+    );
+
+    expect(guided.coverage).toBe("ok");
+    expect((guided.draft.dataset ?? []).length).toBeGreaterThan(0);
+    expect(coverageGaps(guided.draft).map((g) => g.id)).not.toContain(
+      "outputs",
+    );
   });
 });

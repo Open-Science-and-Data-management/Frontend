@@ -10,11 +10,13 @@ import type { DmpStatus as DmpStatusEnum } from "@/schemas/shared";
 type DmpStatus = z.infer<typeof DmpStatusEnum>;
 import {
   aiApi,
+  describeDirection,
   estimateCost,
   type Coverage,
   type RegenerateDirection,
 } from "@/api/aiApi";
 import { useToastStore } from "@/store/toastStore";
+import { recordAiEvent, useAiThread, UNSCOPED } from "@/store/aiThread";
 import { notify } from "@/store/notificationStore";
 import { CURRENT_USER_ID } from "@/config/current-user";
 import { dmpFieldPolicy, datasetFieldPolicy } from "@/config/field-policy";
@@ -29,12 +31,6 @@ export interface BatchTarget {
   label: string;
   group: string;
   value: string;
-}
-
-export interface BatchProposal extends BatchTarget {
-  before: string;
-  after: string;
-  token_count: number;
 }
 
 const makeId = () => Math.random().toString(36).substring(2, 10);
@@ -325,6 +321,8 @@ interface DmpDraftState {
   analyzeProposal: (
     file: File,
     projectId?: string,
+    /** A steer from the researcher, used when the document is thin. */
+    direction?: string,
   ) => Promise<{ coverage: Coverage }>;
   startManual: (projectId?: string) => void;
   regenerateField: (
@@ -334,11 +332,6 @@ interface DmpDraftState {
   ) => Promise<void>;
 
   eligibleBatchTargets: () => BatchTarget[];
-  batchRegenerate: (
-    targetIds: string[],
-    direction: RegenerateDirection,
-  ) => Promise<BatchProposal[]>;
-  applyBatchProposals: (proposals: BatchProposal[]) => void;
 
   resetDraft: () => void;
 }
@@ -668,7 +661,7 @@ export const useDmpStore = create<DmpDraftState>()(
         // estimated cost fits in what's left.
         hasTokensFor: (cost) => get().tokensLeft() >= cost,
 
-        analyzeProposal: async (file, projectId) => {
+        analyzeProposal: async (file, projectId, direction) => {
           const estimated = estimateCost.analyzeProposal(file);
           if (!get().hasTokensFor(estimated)) {
             useToastStore.getState().toast({
@@ -681,13 +674,14 @@ export const useDmpStore = create<DmpDraftState>()(
 
           try {
             const { draft, coverage, token_count } =
-              await aiApi.analyzeProposal(file);
+              await aiApi.analyzeProposal(file, direction);
             const now = new Date();
+            const newDmpId = makeId();
             set((state) => ({
               // The plan that was open is filed before this one takes its place.
               dmps: commitDraft(state),
               draft: { ...draft, project_id: projectId },
-              currentDmpId: makeId(),
+              currentDmpId: newDmpId,
               status: "draft" as DmpStatus,
               tasksGenerated: false,
               draftCreatedAt: now,
@@ -696,6 +690,15 @@ export const useDmpStore = create<DmpDraftState>()(
               aiGenerated: true,
               tokenUsed: state.tokenUsed + token_count,
             }));
+            // Anything said before a plan existed belongs to this plan now.
+            useAiThread.getState().adopt(UNSCOPED, newDmpId);
+            recordAiEvent(newDmpId, {
+              action: "analyze_proposal",
+              summary: `Read ${file.name} and drafted the plan${direction?.trim() ? ` (${direction.trim()})` : ""}`,
+              detail: `${(draft.dataset ?? []).length} research output(s), ${(draft.contributor ?? []).length} contributor(s) proposed.`,
+              token_count,
+            });
+
             return { coverage };
           } catch (err) {
             // Parse/analysis failures don't consume tokens.
@@ -747,6 +750,13 @@ export const useDmpStore = create<DmpDraftState>()(
                 [fieldName]: false,
               },
             }));
+
+            recordAiEvent(get().currentDmpId, {
+              action: "regenerate_field",
+              summary: `Rewrote ${label} (${describeDirection(direction)})`,
+              detail: text.slice(0, 120),
+              token_count,
+            });
 
             useToastStore.getState().toast({
               title: `${label} regenerated`,
@@ -812,64 +822,6 @@ export const useDmpStore = create<DmpDraftState>()(
           // An empty field has nothing to rewrite in a given direction.
           return targets.filter((t) => t.value.trim().length > 0);
         },
-
-        batchRegenerate: async (targetIds, direction) => {
-          // Re-derive from the policy rather than trusting the ids handed in.
-          const targets = get()
-            .eligibleBatchTargets()
-            .filter((t) => targetIds.includes(t.id));
-          if (targets.length === 0) return [];
-
-          const estimated = targets.reduce(
-            (sum, t) => sum + estimateCost.regenerateField(t.value),
-            0,
-          );
-          if (!get().hasTokensFor(estimated)) {
-            useToastStore.getState().toast({
-              title: "Not enough tokens left",
-              description: `This batch needs about ${estimated.toLocaleString()} tokens and you have ${get().tokensLeft().toLocaleString()} left.`,
-              variant: "destructive",
-            });
-            return [];
-          }
-
-          const proposals = await Promise.all(
-            targets.map(async (t) => {
-              const { text, token_count } = await aiApi.regenerateField(
-                t.label,
-                t.value,
-                direction,
-              );
-              return { ...t, before: t.value, after: text, token_count };
-            }),
-          );
-
-          // The generation is billed whether or not the user accepts the result.
-          const spent = proposals.reduce((sum, p) => sum + p.token_count, 0);
-          set((state) => ({ tokenUsed: state.tokenUsed + spent }));
-
-          return proposals;
-        },
-
-        applyBatchProposals: (proposals) =>
-          set((state) => {
-            let draft = { ...state.draft };
-            proposals.forEach((p) => {
-              if (p.scope === "dmp") {
-                draft = { ...draft, [p.key]: p.after };
-              } else {
-                draft = {
-                  ...draft,
-                  dataset: (draft.dataset ?? []).map((d) =>
-                    d.dataset_id === p.datasetId
-                      ? ({ ...d, [p.key]: p.after } as Dataset)
-                      : d,
-                  ),
-                };
-              }
-            });
-            return { draft };
-          }),
 
         startManual: (projectId) => {
           const now = new Date();

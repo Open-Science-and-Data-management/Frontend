@@ -4,6 +4,20 @@ export type RegenerateDirection =
   | { kind: "shorter" | "formal" }
   | { kind: "emphasize" | "custom"; detail: string };
 
+/** A direction in words, for toasts and the AI thread. */
+export const describeDirection = (direction: RegenerateDirection): string => {
+  switch (direction.kind) {
+    case "shorter":
+      return "shorter";
+    case "formal":
+      return "more formal";
+    case "emphasize":
+      return `emphasising ${direction.detail}`;
+    default:
+      return direction.detail;
+  }
+};
+
 export type Coverage = "low" | "ok";
 
 export interface AnalyzeResult {
@@ -212,6 +226,175 @@ const planForDirection = (direction: string) => {
   return { plan: STAGE_PLAN, granular: false };
 };
 
+/**
+ * Shapes the drafted plan by what the researcher told us to aim for. A
+ * direction that quietly changed nothing would be worse than none at all, so
+ * every branch here is observable in the result.
+ */
+const applyAnalysisDirection = (
+  base: DmpDraft,
+  direction: string,
+): DmpDraft => {
+  const d = direction.toLowerCase();
+  if (!d) return base;
+
+  let draft: DmpDraft = { ...base };
+  const datasets = (draft.dataset ?? []).map((set) => ({ ...set }));
+
+  if (/open|shar|publish|reuse|เผยแพร่/.test(d)) {
+    datasets.forEach((set) => {
+      set.access = "open";
+      set.preservation = { ...set.preservation, doi_requested: true };
+    });
+  }
+
+  if (/sensitive|personal|consent|human|ส่วนบุคคล/.test(d)) {
+    datasets.forEach((set) => {
+      set.personal_data = "yes";
+      set.protection_level = "Restricted — access controlled";
+      set.security_classification_level = "Confidential";
+    });
+    draft.ethical_issues_exist = true;
+    draft.ethical_issues_description =
+      draft.ethical_issues_description ??
+      "Personal data is collected, so consent and access control apply.";
+  }
+
+  if (/preserv|archive|long.?term|retention|เก็บ/.test(d)) {
+    datasets.forEach((set) => {
+      set.preservation = {
+        ...set.preservation,
+        duration: "10 years",
+        repository: set.preservation?.repository ?? "Institutional repository",
+      };
+    });
+  }
+
+  if (/software|code|script|โค้ด/.test(d)) {
+    datasets.push({
+      dataset_id: "seed-dataset-software",
+      type: "software",
+      title: "Analysis code",
+      description: "Scripts and notebooks used to process the data.",
+      status: "planned",
+      access: "open",
+      personal_data: "no",
+      sensitive_data: "no",
+      protection_level: "Public repository",
+      security_classification_level: "Public",
+      keyword: ["software"],
+      preservation: { doi_requested: true },
+      distribution: [],
+    });
+  }
+
+  draft = { ...draft, dataset: datasets };
+  return draft;
+};
+
+/**
+ * What the analysis could not work out from the document. These become the
+ * questions we put to the researcher instead of inventing answers.
+ */
+export interface CoverageGap {
+  id: string;
+  question: string;
+  placeholder: string;
+}
+
+export const coverageGaps = (draft: DmpDraft): CoverageGap[] => {
+  const gaps: CoverageGap[] = [];
+
+  if (!draft.title?.trim())
+    gaps.push({
+      id: "title",
+      question: "What is the project called?",
+      placeholder: "e.g. Urban Pollinator Genomic Survey",
+    });
+  if ((draft.dataset ?? []).length === 0)
+    gaps.push({
+      id: "outputs",
+      question: "What data or outputs will the project produce?",
+      placeholder: "e.g. sequencing reads, field photographs, analysis code",
+    });
+  if (!draft.begin_date || !draft.end_date)
+    gaps.push({
+      id: "timeline",
+      question: "Roughly when does it run?",
+      placeholder: "e.g. Jan 2026 to Dec 2027",
+    });
+  if (draft.ethical_issues_exist === undefined)
+    gaps.push({
+      id: "ethics",
+      question: "Does it involve personal or sensitive data?",
+      placeholder: "e.g. interviews with consent; no personal data",
+    });
+  gaps.push({
+    id: "sharing",
+    question: "How should the data be shared and kept?",
+    placeholder: "e.g. open after a 6-month embargo, kept 10 years",
+  });
+
+  return gaps;
+};
+
+export interface RedraftInput {
+  filename: string;
+  direction: string;
+  current: DmpDraft;
+}
+
+/**
+ * Re-reads the proposal with a new steer and returns field-level suggestions
+ * rather than a whole plan. Handing back a replacement draft would silently
+ * overwrite everything a person had already changed.
+ */
+export const redraftFromProposal = async (
+  input: RedraftInput,
+): Promise<{
+  fields: { path: string; value: unknown }[];
+  token_count: number;
+}> => {
+  await delay(1200);
+
+  const steered = applyAnalysisDirection(CANNED_DRAFT, input.direction);
+  const fields: { path: string; value: unknown }[] = [];
+
+  const d = input.direction.toLowerCase();
+  const suffix = input.direction.trim() ? ` (${input.direction.trim()})` : "";
+
+  if (steered.title) fields.push({ path: "title", value: steered.title });
+  if (steered.description)
+    fields.push({
+      path: "description",
+      value: `${steered.description} Redrafted from ${input.filename}${suffix}.`,
+    });
+
+  (steered.dataset ?? []).forEach((set, index) => {
+    if (!(input.current.dataset ?? [])[index]) return;
+    fields.push({ path: `dataset[${index}].title`, value: set.title });
+    if (set.description)
+      fields.push({
+        path: `dataset[${index}].description`,
+        value: set.description,
+      });
+    if (/open|shar|publish/.test(d))
+      fields.push({ path: `dataset[${index}].access`, value: set.access });
+    if (/preserv|archive|retention/.test(d))
+      fields.push({
+        path: `dataset[${index}].preservation.duration`,
+        value: set.preservation?.duration ?? "10 years",
+      });
+  });
+
+  const token_count =
+    PROMPT_OVERHEAD.analyze_proposal / 2 +
+    tokensIn(input.direction) +
+    tokensIn(JSON.stringify(fields));
+
+  return { fields, token_count };
+};
+
 export const generateTasks = async (
   input: GenerateTasksInput,
 ): Promise<GenerateTasksResult> => {
@@ -364,7 +547,10 @@ const CANNED_DRAFT: DmpDraft = {
 };
 
 export const aiApi = {
-  analyzeProposal: async (file: File): Promise<AnalyzeResult> => {
+  analyzeProposal: async (
+    file: File,
+    direction?: string,
+  ): Promise<AnalyzeResult> => {
     await delay(1400);
 
     if (!file.name.toLowerCase().endsWith(".docx")) {
@@ -378,15 +564,36 @@ export const aiApi = {
       );
     }
 
-    // Deterministic stand-in for a real coverage/confidence score.
-    const coverage: Coverage = file.size < 5000 ? "low" : "ok";
-    // Input document + the whole drafted plan that comes back out.
+    // Deterministic stand-in for a real coverage/confidence score. A
+    // direction is extra signal, so a steered re-run reads as better covered.
+    const steer = direction?.trim() ?? "";
+    const coverage: Coverage =
+      file.size < 5000 && steer.length < 40 ? "low" : "ok";
+
+    // A thin document genuinely yields less. Returning a full plan from one
+    // would be the model inventing the parts it couldn't read.
+    const extracted: DmpDraft =
+      coverage === "low"
+        ? {
+            title: CANNED_DRAFT.title,
+            language: CANNED_DRAFT.language,
+            schema_version: CANNED_DRAFT.schema_version,
+            dataset: [],
+            contributor: [],
+            cost: [],
+          }
+        : CANNED_DRAFT;
+
+    const draft = applyAnalysisDirection(extracted, steer);
+
+    // Input document + the direction + the whole drafted plan coming back.
     const token_count =
       PROMPT_OVERHEAD.analyze_proposal +
       Math.ceil(file.size / 12) +
-      tokensIn(JSON.stringify(CANNED_DRAFT));
+      tokensIn(steer) +
+      tokensIn(JSON.stringify(draft));
 
-    return { draft: CANNED_DRAFT, coverage, token_count };
+    return { draft, coverage, token_count };
   },
 
   regenerateField: async (

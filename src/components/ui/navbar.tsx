@@ -5,10 +5,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   MessageSquare,
-  Plus,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
-import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Helmet } from "react-helmet-async";
 
@@ -34,11 +32,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="sticky top-0 z-40 w-full bg-background">
-      {/* The border lives inside the 64px box, so top-16 offsets line up
-          exactly with it — and so the chat panel's rule meets this one. */}
       <div className="flex h-16 items-center border-b">
-        {/* Brand block: same width as the sidebar and sharing its border, so
-            the logo sits directly above the navigation it belongs to. */}
         <div
           className={cn(
             "flex h-full shrink-0 items-center gap-1 px-4 md:border-r",
@@ -75,7 +69,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               )}
             </button>
           )}
-          {/* Mobile has no rail to collapse, so the drawer lives here instead. */}
           {onMenuClick && (
             <button
               type="button"
@@ -93,9 +86,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         </div>
 
-        {/* Right of the divider: the same horizontal rhythm as the page body. */}
         <div className="flex min-w-0 flex-1 items-center justify-end gap-2 px-6">
-          {/* AI group: what it costs, and where to ask. */}
           <div className="flex items-center gap-1.5">
             {children}
             {onToggleChat && (
@@ -118,15 +109,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           <span className="mx-1 hidden h-6 w-px bg-border sm:block" />
-
           <ThemeToggle />
-
-          <Button size="sm" asChild>
-            <Link to="/upload">
-              <Plus className="mr-1 h-4 w-4" />
-              New DMP
-            </Link>
-          </Button>
         </div>
       </div>
     </header>

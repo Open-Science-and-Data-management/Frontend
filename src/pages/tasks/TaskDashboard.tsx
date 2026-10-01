@@ -11,7 +11,6 @@ import { useTaskView } from "@/components/task/TaskViewToggle";
 import { TaskFilters, useTaskFilters } from "@/components/task/TaskFilters";
 import { Task } from "@/types/task";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
 
 const ALL = "all";
 
@@ -114,21 +113,6 @@ export const TaskDashboard: React.FC = () => {
             </p>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
-            {planOptions.length > 0 && (
-              <Select
-                value={selected}
-                onChange={(e) => setSelected(e.target.value)}
-                aria-label="Filter tasks by plan"
-                className="w-full sm:w-64"
-              >
-                <option value={ALL}>All plans ({tasks.length})</option>
-                {planOptions.map((plan) => (
-                  <option key={plan.dmp_id} value={plan.dmp_id}>
-                    {plan.title} ({plan.count})
-                  </option>
-                ))}
-              </Select>
-            )}
             {selectedPlan && (
               <Button
                 variant="outline"
@@ -159,6 +143,16 @@ export const TaskDashboard: React.FC = () => {
         <TaskFilters
           {...filters}
           total={inPlan.length}
+          plan={
+            planOptions.length > 0
+              ? {
+                  value: selected,
+                  onChange: setSelected,
+                  options: planOptions,
+                  totalCount: tasks.length,
+                }
+              : undefined
+          }
           view={view}
           onViewChange={setView}
         />

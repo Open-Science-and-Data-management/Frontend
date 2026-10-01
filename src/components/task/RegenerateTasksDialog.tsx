@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useTaskStore } from "@/store/taskStore";
 import { useDmpStore, type DmpRecord } from "@/store/dmpStore";
+import { recordAiEvent } from "@/store/aiThread";
 import { useToastStore } from "@/store/toastStore";
 import { estimateCost, generateTasks, TASK_DIRECTIONS } from "@/api/aiApi";
 import { cn } from "@/utils/cn";
@@ -87,6 +88,15 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
       if (newOnly) addGeneratedTasks(rows);
 
       useDmpStore.setState((s) => ({ tokenUsed: s.tokenUsed + token_count }));
+      recordAiEvent(plan.dmp_id, {
+        action: "generate_tasks",
+        summary: `Regenerated tasks for ${plan.title}`,
+        detail: [
+          direction.trim() || "no direction given",
+          `${result.added} added, ${result.removed} replaced`,
+        ].join(" · "),
+        token_count,
+      });
       toast({
         title: `${result.added} tasks generated`,
         description: `${result.removed} replaced, ${result.kept} kept · ${token_count.toLocaleString()} tokens.`,

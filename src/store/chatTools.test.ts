@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { runToolCall, type ToolContext } from "@/store/chatTools";
+import {
+  guardBeforeApply,
+  runToolCall,
+  type ToolContext,
+} from "@/store/chatTools";
 import { ENABLED_TOOLS, planToolCalls, TOOL_NAMES } from "@/api/aiTools";
 import type { DmpDraft } from "@/types/dmp";
 
@@ -278,5 +282,112 @@ describe("the planner only ever emits tool calls", () => {
     });
 
     expect(calls).toEqual([{ tool: "summarizeDmp" }]);
+  });
+});
+
+describe("accepting is guarded again, not just suggested", () => {
+  const propose = (path: string, value: unknown, c = ctx()) =>
+    runToolCall({ tool: "proposeFieldChange", path, value }, c).proposals[0];
+
+  it("applies when nothing moved underneath it", () => {
+    const p = propose("title", "A better title");
+    expect(guardBeforeApply(p, ctx()).ok).toBe(true);
+  });
+
+  it("refuses when the field changed since it was suggested", () => {
+    const p = propose("title", "A better title");
+
+    // The researcher edited the same field in the form meanwhile.
+    const moved = ctx();
+    moved.draft.title = "My own title";
+
+    const guard = guardBeforeApply(p, moved);
+    expect(guard.ok).toBe(false);
+    expect(guard.reason).toContain("My own title");
+  });
+
+  it("compares dates by value, not identity", () => {
+    const withDate = ctx();
+    const p = propose("description", "New text", withDate);
+
+    // A fresh Date object for an unrelated field must not read as drift.
+    const same = ctx();
+    same.draft.begin_date = new Date("2026-01-01");
+    expect(guardBeforeApply(p, same).ok).toBe(true);
+  });
+
+  it("refuses a field that became locked after the suggestion", () => {
+    const p = propose("dataset[0].preservation.duration", "15 years");
+    const stale = { ...p, path: "schema_version" };
+
+    expect(guardBeforeApply(stale, ctx()).ok).toBe(false);
+  });
+
+  it("refuses a task once the plan is no longer approved", () => {
+    const p = runToolCall(
+      { tool: "proposeAddTask", title: "Check the backups" },
+      ctx(),
+    ).proposals[0];
+
+    const guard = guardBeforeApply(p, ctx({ planApproved: false }));
+    expect(guard.ok).toBe(false);
+    expect(guard.reason).toMatch(/no longer approved/i);
+  });
+
+  it("refuses a path that stopped existing", () => {
+    const p = propose("dataset[1].access", "closed");
+
+    const shrunk = ctx();
+    shrunk.draft.dataset = [shrunk.draft.dataset![0]];
+
+    expect(guardBeforeApply(p, shrunk).ok).toBe(false);
+  });
+});
+
+describe("the thread is one history across the whole pipeline", () => {
+  it("answers for work done outside the conversation", () => {
+    const run = runToolCall(
+      { tool: "recentAiActivity" },
+      ctx({
+        activity: [
+          {
+            summary: "Read proposal.docx and drafted the plan",
+            token_count: 900,
+          },
+          { summary: "Rewrote Title (shorter)", token_count: 120 },
+          {
+            summary: "Generated 5 tasks from the approved plan",
+            token_count: 640,
+          },
+        ],
+      }),
+    );
+
+    expect(run.answers[0]).toContain("Read proposal.docx");
+    expect(run.answers[0]).toContain("Generated 5 tasks");
+    // The running total is what makes the quota legible.
+    expect(run.answers[0]).toContain("1,660");
+    expect(run.proposals).toEqual([]);
+  });
+
+  it("says so plainly when it has done nothing yet", () => {
+    const run = runToolCall({ tool: "recentAiActivity" }, ctx());
+    expect(run.answers[0]).toMatch(/haven't done anything/i);
+  });
+
+  it("is reached by asking in plain language", () => {
+    const scope = { datasetCount: 1, hasDraft: true };
+    [
+      "what have you done so far?",
+      "what did you change?",
+      "ทำอะไรไปบ้าง",
+    ].forEach((m) => {
+      expect(planToolCalls(m, scope)).toEqual([{ tool: "recentAiActivity" }]);
+    });
+  });
+
+  it("still exposes no tool that commits", () => {
+    const forbidden = /apply|approve|submit|complete|delete|remove|commit/i;
+    expect(TOOL_NAMES.filter((t) => forbidden.test(t))).toEqual([]);
   });
 });

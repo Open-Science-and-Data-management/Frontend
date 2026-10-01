@@ -1,12 +1,19 @@
 import React from "react";
 import { Helmet } from "react-helmet-async";
 import { Link, useNavigate } from "react-router-dom";
-import { CheckCircle2, Circle, Clock, Sparkles, ListChecks } from "lucide-react";
+import {
+  CheckCircle2,
+  Circle,
+  Clock,
+  Sparkles,
+  ListChecks,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AiProgress } from "@/components/ui/ai-progress";
 import { estimateCost, generateTasks } from "@/api/aiApi";
 import { useDmpStore } from "@/store/dmpStore";
+import { recordAiEvent } from "@/store/aiThread";
 import { useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
 import { cn } from "@/utils/cn";
@@ -21,8 +28,15 @@ const GENERATE_STEPS = [
 
 export const Status: React.FC = () => {
   const navigate = useNavigate();
-  const { draft, status, tasksGenerated, approve, markTasksGenerated, hasTokensFor, tokensLeft } =
-    useDmpStore();
+  const {
+    draft,
+    status,
+    tasksGenerated,
+    approve,
+    markTasksGenerated,
+    hasTokensFor,
+    tokensLeft,
+  } = useDmpStore();
   const currentDmpId = useDmpStore((s) => s.currentDmpId);
   const addGeneratedTasks = useTaskStore((s) => s.addGeneratedTasks);
   const toast = useToastStore((s) => s.toast);
@@ -78,6 +92,15 @@ export const Status: React.FC = () => {
       );
 
       useDmpStore.setState((s) => ({ tokenUsed: s.tokenUsed + token_count }));
+      recordAiEvent(currentDmpId, {
+        action: "generate_tasks",
+        summary: `Generated ${tasks.length} task${tasks.length === 1 ? "" : "s"} from the approved plan`,
+        detail: tasks
+          .map((t) => t.title)
+          .slice(0, 3)
+          .join(", "),
+        token_count,
+      });
       markTasksGenerated();
       clearInterval(timer);
       setGenerating(false);
@@ -115,10 +138,17 @@ export const Status: React.FC = () => {
           <ol className="flex items-center justify-between">
             {TRACKER_STAGES.map((stage, i) => {
               const state =
-                i < stageIndex ? "done" : i === stageIndex ? "active" : "upcoming";
+                i < stageIndex
+                  ? "done"
+                  : i === stageIndex
+                    ? "active"
+                    : "upcoming";
               const isDecisionDone = isApproved && i === stageIndex;
               return (
-                <li key={stage} className="flex flex-1 flex-col items-center gap-2 text-center">
+                <li
+                  key={stage}
+                  className="flex flex-1 flex-col items-center gap-2 text-center"
+                >
                   <div className="flex w-full items-center">
                     {i > 0 && (
                       <div

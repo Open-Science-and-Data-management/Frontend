@@ -1,7 +1,7 @@
 import React from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Lock, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Lock, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Stepper } from "@/components/ui/stepper";
 import { AutosaveIndicator } from "@/components/ui/autosave-indicator";
@@ -15,7 +15,7 @@ import { DatasetList } from "@/components/dmp/DatasetList";
 import { ContributorList } from "@/components/dmp/ContributorList";
 import { CostList } from "@/components/dmp/CostList";
 import { ReadyChecklist } from "@/components/dmp/ReadyChecklist";
-import { BatchRegenerateModal } from "@/components/dmp/BatchRegenerateModal";
+import { AiAssistDialog } from "@/components/dmp/AiAssistDialog";
 import { useDmpReadiness } from "@/hooks/useDmpReadiness";
 import { useDmpStore } from "@/store/dmpStore";
 
@@ -54,7 +54,7 @@ export const CreateDmp: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { draft, resetDraft } = useDmpStore();
   const [discardOpen, setDiscardOpen] = React.useState(false);
-  const [batchOpen, setBatchOpen] = React.useState(false);
+  const [assistOpen, setAssistOpen] = React.useState(false);
 
   // The URL owns the active section so Review's per-section Edit links work
   // even when we're already on this route — local state would go stale,
@@ -64,7 +64,29 @@ export const CreateDmp: React.FC = () => {
   const setSection = (next: Section) =>
     setSearchParams({ section: next }, { replace: true });
 
-  const { checklistItems, canSubmit } = useDmpReadiness();
+  const { checklistItems, canSubmit, unmetItems } = useDmpReadiness();
+
+  // What each section still needs, so the nav can say so without being opened.
+  const outstanding = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    unmetItems.forEach((item) => {
+      counts[item.section] = (counts[item.section] ?? 0) + 1;
+    });
+    return counts;
+  }, [unmetItems]);
+
+  const sectionItems = React.useMemo(
+    () =>
+      SECTION_ITEMS.map((item) => ({
+        ...item,
+        outstanding: outstanding[item.id] ?? 0,
+      })),
+    [outstanding],
+  );
+
+  const index = SECTIONS.indexOf(section);
+  const previous = index > 0 ? SECTIONS[index - 1] : undefined;
+  const next = index < SECTIONS.length - 1 ? SECTIONS[index + 1] : undefined;
 
   return (
     <>
@@ -81,10 +103,10 @@ export const CreateDmp: React.FC = () => {
               variant="outline"
               size="sm"
               className="text-ai"
-              onClick={() => setBatchOpen(true)}
+              onClick={() => setAssistOpen(true)}
             >
               <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-              Batch regenerate
+              Ask AI to improve
             </Button>
             <Button
               variant="ghost"
@@ -99,14 +121,14 @@ export const CreateDmp: React.FC = () => {
         <PlanEditorLayout
           sectionNav={
             <SectionNav
-              items={SECTION_ITEMS}
+              items={sectionItems}
               activeId={section}
               onSelect={(id) => setSection(id as Section)}
             />
           }
           sectionTabs={
             <SectionNav
-              items={SECTION_ITEMS}
+              items={sectionItems}
               activeId={section}
               orientation="horizontal"
               onSelect={(id) => setSection(id as Section)}
@@ -146,10 +168,50 @@ export const CreateDmp: React.FC = () => {
             </div>
           )}
           {section === "system" && <SystemInfoSection />}
+
+          {/* Finishing a section leaves you at the bottom of it — the way on
+              should be here, not back at the top of the page. */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            <div className="flex items-center gap-3">
+              {previous ? (
+                <Button variant="outline" onClick={() => setSection(previous)}>
+                  <ArrowLeft className="mr-1.5 h-4 w-4" />
+                  {SECTION_TITLES[previous]}
+                </Button>
+              ) : (
+                <span />
+              )}
+              <span className="text-xs text-muted-foreground">
+                Section {index + 1} of {SECTIONS.length}
+              </span>
+            </div>
+
+            {next ? (
+              <Button onClick={() => setSection(next)}>
+                {SECTION_TITLES[next]}
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2">
+                {!canSubmit && (
+                  <span className="text-xs text-muted-foreground">
+                    {unmetItems.length} still needed
+                  </span>
+                )}
+                <Button
+                  disabled={!canSubmit}
+                  onClick={() => navigate("/dmp/review")}
+                >
+                  Review &amp; submit
+                  <ArrowRight className="ml-1.5 h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
         </PlanEditorLayout>
       </div>
 
-      <BatchRegenerateModal open={batchOpen} onOpenChange={setBatchOpen} />
+      <AiAssistDialog open={assistOpen} onOpenChange={setAssistOpen} />
 
       <ConfirmDialog
         open={discardOpen}

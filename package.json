@@ -18,8 +18,11 @@
     "react",
     "typescript"
   ],
-  "author": "Luis Alamo <luismalamoc@gmail.com>",
+  "author": "parukoko",
   "license": "MIT",
+  "contributors": [
+    "Luis Alamo <luismalamoc@gmail.com> (original template)"
+  ],
   "dependencies": {
     "@hookform/resolvers": "^3.3.2",
     "@radix-ui/react-dialog": "^1.1.23",

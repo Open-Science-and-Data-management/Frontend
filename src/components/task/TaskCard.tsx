@@ -49,15 +49,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   const requirement = requirementFor(task);
   const doneCount = (task.checklist ?? []).filter((i) => i.done).length;
   const taskId = task.task_id as string;
-
-  // A dropped output leaves its tasks behind for the record; without saying so
-  // the row reads as ordinary work against something that no longer exists.
   const orphaned = useDmpStore((s) =>
     task.dataset_id ? !s.datasetExists(task.dmp_id, task.dataset_id) : false,
   );
 
-  // Tickable when the evidence rule is already satisfied — which is always
-  // true for self-declared work, and true elsewhere once proof is attached.
   const canToggle = !isCancelled && (isDone || evidenceSatisfies(task));
 
   const blockedReason =
@@ -139,9 +134,6 @@ export const TaskCard: React.FC<TaskCardProps> = ({
         {task.details && !isDone && (
           <p className="text-sm text-muted-foreground">{task.details}</p>
         )}
-
-        {/* The bar is the in-progress state; a closed or unstarted row
-            doesn't need one. */}
         {task.status === "in_progress" && (
           <div className="space-y-1">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -168,7 +160,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
                 title={task.evidence.label ?? task.evidence.ref}
               >
                 <EvidenceIcon className="h-3.5 w-3.5" />
-                <span className="max-w-[12rem] truncate">
+                <span className="max-w-48 truncate">
                   {task.evidence.label ?? task.evidence.ref}
                 </span>
               </span>

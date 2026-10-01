@@ -1,6 +1,13 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Check, ExternalLink, UserCheck, X } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowRight,
+  Check,
+  ExternalLink,
+  UserCheck,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import type { ChatProposal } from "@/store/chatTools";
@@ -31,6 +38,7 @@ export const ChatProposalCard: React.FC<ChatProposalCardProps> = ({
         "rounded-md border p-3 text-xs",
         proposal.status === "accepted" && "border-ok/40 bg-ok-subtle/40",
         proposal.status === "rejected" && "opacity-60",
+        proposal.status === "stale" && "border-warn/50 bg-warn-subtle/30",
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -44,6 +52,12 @@ export const ChatProposalCard: React.FC<ChatProposalCardProps> = ({
         {proposal.status === "accepted" && <Chip variant="ok">Applied</Chip>}
         {proposal.status === "rejected" && (
           <Chip variant="neutral">Dismissed</Chip>
+        )}
+        {proposal.status === "stale" && (
+          <Chip variant="warn">
+            <AlertTriangle className="h-3 w-3" />
+            Not applied
+          </Chip>
         )}
       </div>
 
@@ -62,6 +76,10 @@ export const ChatProposalCard: React.FC<ChatProposalCardProps> = ({
           This field is yours to decide — accepting here is your confirmation,
           and you can check it in the form.
         </p>
+      )}
+
+      {proposal.status === "stale" && proposal.staleReason && (
+        <p className="mt-2 text-warn">{proposal.staleReason}</p>
       )}
 
       {!settled && (

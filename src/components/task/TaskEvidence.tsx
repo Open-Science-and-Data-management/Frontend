@@ -17,6 +17,7 @@ import { ProgressBar } from "@/components/ui/progress-bar";
 import { useTaskStore } from "@/store/taskStore";
 import { useProjectStore } from "@/store/projectStore";
 import { useDmpStore } from "@/store/dmpStore";
+import { recordAiEvent } from "@/store/aiThread";
 import { useToastStore } from "@/store/toastStore";
 import { generateTaskChecklist } from "@/api/aiApi";
 import {
@@ -151,6 +152,15 @@ export const TaskEvidence: React.FC<TaskEvidenceProps> = ({ task }) => {
 
       replaceChecklist(taskId, steps);
       useDmpStore.setState((s) => ({ tokenUsed: s.tokenUsed + token_count }));
+      recordAiEvent(task.dmp_id, {
+        action: "redraft_steps",
+        summary: `Redrafted the steps for "${task.title}"`,
+        detail: [
+          direction.trim() || "no direction given",
+          `${steps.length} steps`,
+        ].join(" · "),
+        token_count,
+      });
       toast({
         title: `${steps.length} steps drafted`,
         description: `Steps already ticked were kept · ${token_count.toLocaleString()} tokens.`,

@@ -17,6 +17,8 @@ export interface ChatProposal {
   after: string;
   /** The parsed value, ready for the store action that applies it. */
   value?: unknown;
+  /** The raw value when the change was suggested, to detect drift on accept. */
+  beforeValue?: unknown;
   path?: string;
   datasetId?: string;
   datasetField?: string;
@@ -32,7 +34,9 @@ export interface ChatProposal {
    * their confirmation — it is never applied on their behalf.
    */
   needsHumanConfirm: boolean;
-  status: "pending" | "accepted" | "rejected";
+  status: "pending" | "accepted" | "rejected" | "stale";
+  /** Why accepting was refused, when the plan moved on underneath it. */
+  staleReason?: string;
 }
 
 export interface ChatRejection {
@@ -48,6 +52,8 @@ export interface ToolRun {
 
 export interface ToolContext {
   draft: DmpDraft;
+  /** What the AI has already done to this plan, newest last. */
+  activity?: { summary: string; token_count: number }[];
   /** Tasks only exist once the committee has approved the plan. */
   planApproved: boolean;
   unmet: string[];
@@ -120,6 +126,27 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
   }
 
   switch (tool.tool) {
+    case "recentAiActivity": {
+      const activity = ctx.activity ?? [];
+      if (activity.length === 0) {
+        return {
+          ...empty,
+          answers: ["I haven't done anything to this plan yet."],
+        };
+      }
+
+      const spent = activity.reduce((sum, a) => sum + a.token_count, 0);
+      return {
+        ...empty,
+        answers: [
+          [
+            `Here's what I've done on this plan (${spent.toLocaleString()} tokens in total):`,
+            ...activity.slice(-6).map((a) => `• ${a.summary}`),
+          ].join("\n"),
+        ],
+      };
+    }
+
     case "summarizeDmp":
       return { ...empty, answers: [summarise(ctx)] };
 
@@ -180,8 +207,9 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
           rejections: [
             {
               label: target.label,
-              reason:
-                "This field is locked by policy, so I can't propose a change to it.",
+              reason: target.policy.editableBeforeApproval
+                ? "This field is locked to me by policy. You can still edit it yourself in the form until the committee approves the plan."
+                : "This field is locked by policy, so I can't propose a change to it.",
             },
           ],
         };
@@ -212,6 +240,7 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
             before: show(target.read(ctx.draft)),
             after: show(check.data),
             value: check.data,
+            beforeValue: target.read(ctx.draft),
             path: target.path,
             datasetId: target.datasetId,
             datasetField: target.datasetField,
@@ -276,4 +305,70 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
     default:
       return empty;
   }
+};
+
+/** Dates and arrays don't compare with ===, and a stale check has to be exact. */
+const sameValue = (a: unknown, b: unknown): boolean => {
+  if (a instanceof Date || b instanceof Date) {
+    return (
+      a instanceof Date && b instanceof Date && a.getTime() === b.getTime()
+    );
+  }
+  if (a === b) return true;
+  if (a == null || b == null) return a == null && b == null;
+  if (typeof a === "object" || typeof b === "object") {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+  return false;
+};
+
+export interface GuardResult {
+  ok: boolean;
+  reason?: string;
+}
+
+/**
+ * Checked again the moment a person accepts, not just when the suggestion was
+ * drafted. The whole point of proposing rather than committing is that work
+ * isn't overwritten silently — so if the field moved since, or policy now
+ * refuses it, accepting stops here and says why.
+ */
+export const guardBeforeApply = (
+  proposal: ChatProposal,
+  ctx: ToolContext,
+): GuardResult => {
+  if (proposal.kind === "task") {
+    return ctx.planApproved
+      ? { ok: true }
+      : {
+          ok: false,
+          reason:
+            "The plan is no longer approved, so a task can't be added from here.",
+        };
+  }
+
+  if (!proposal.path) return { ok: false, reason: "Nothing to apply." };
+
+  const target = resolveFieldPath(ctx.draft, proposal.path);
+  if ("error" in target) return { ok: false, reason: target.error };
+
+  if (target.policy.permission === "locked") {
+    return {
+      ok: false,
+      reason: "This field is locked now, so I can't apply it.",
+    };
+  }
+
+  const current = target.read(ctx.draft);
+  if (!sameValue(current, proposal.beforeValue)) {
+    return {
+      ok: false,
+      reason: `This changed since I suggested it — it now reads "${show(current)}". Ask again if you still want the change.`,
+    };
+  }
+
+  const check = target.validator.safeParse(proposal.value);
+  return check.success
+    ? { ok: true }
+    : { ok: false, reason: "That value no longer fits this field." };
 };

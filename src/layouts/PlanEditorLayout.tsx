@@ -16,7 +16,13 @@ export const PlanEditorLayout: React.FC<PlanEditorLayoutProps> = ({
 }) => {
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[200px_minmax(0,1fr)_280px]">
-      {sectionNav && <aside className="hidden lg:block">{sectionNav}</aside>}
+      {sectionNav && (
+        // Sticky like the readiness rail: finishing a section at the bottom of
+        // a long form shouldn't mean scrolling back up to leave it.
+        <aside className="hidden lg:sticky lg:top-20 lg:block lg:self-start">
+          {sectionNav}
+        </aside>
+      )}
       <div className="min-w-0 space-y-6">
         {sectionTabs && (
           <div className="border-b pb-2 lg:hidden">{sectionTabs}</div>

@@ -70,7 +70,7 @@
     --secondary-foreground: 200 68% 37%;
 
     --muted: 200 45% 96%;
-    --muted-foreground: 200 20% 45%;
+    --muted-foreground: 200 22% 41%;
 
     --accent: 200 68% 88%;
     --accent-foreground: 200 100% 16%;
@@ -90,7 +90,7 @@
     --ok-foreground: 156 77% 95%;
     --ok-subtle: 156 77% 95%;
 
-    --warn: 37 91% 36%;
+    --warn: 37 95% 29%;
     --warn-foreground: 38 90% 96%;
     --warn-subtle: 38 90% 96%;
 

@@ -1,17 +1,33 @@
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
-// Import pages
-import { Home } from "@/pages/home";
-import { Upload } from "@/pages/upload";
-import { CreateDmp, ReviewSubmit } from "@/pages/createDMP";
-import { Status } from "@/pages/status";
-import { TaskDashboard } from "@/pages/tasks";
-import { Notifications } from "@/pages/notifications";
-import { MyDmps } from "@/pages/dmps";
-import { Projects, ProjectDetail } from "@/pages/projects";
-import { Settings } from "@/pages/settings";
-import { HelpGuide } from "@/pages/help";
+/**
+ * Routes load on demand. The Suspense boundary below was already here but
+ * nothing was lazy, so every screen — editor, AI dialogs, task board — shipped
+ * in the first bundle whatever page you opened.
+ */
+const page = <T, K extends keyof T>(load: () => Promise<T>, name: K) =>
+  React.lazy(() =>
+    load().then((module) => ({
+      default: module[name] as React.ComponentType,
+    })),
+  );
+
+const Home = page(() => import("@/pages/home"), "Home");
+const Upload = page(() => import("@/pages/upload"), "Upload");
+const CreateDmp = page(() => import("@/pages/createDMP"), "CreateDmp");
+const ReviewSubmit = page(() => import("@/pages/createDMP"), "ReviewSubmit");
+const Status = page(() => import("@/pages/status"), "Status");
+const TaskDashboard = page(() => import("@/pages/tasks"), "TaskDashboard");
+const Notifications = page(
+  () => import("@/pages/notifications"),
+  "Notifications",
+);
+const MyDmps = page(() => import("@/pages/dmps"), "MyDmps");
+const Projects = page(() => import("@/pages/projects"), "Projects");
+const ProjectDetail = page(() => import("@/pages/projects"), "ProjectDetail");
+const Settings = page(() => import("@/pages/settings"), "Settings");
+const HelpGuide = page(() => import("@/pages/help"), "HelpGuide");
 
 const ComingSoon: React.FC<{ label: string }> = ({ label }) => (
   <div className="flex h-[60vh] flex-col items-center justify-center gap-2 text-center">
@@ -37,10 +53,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/upload" element={<Upload />} />
         <Route path="/dmp/create" element={<CreateDmp />} />
         <Route path="/dmp/review" element={<ReviewSubmit />} />
-        <Route
-          path="/dmp/:id/edit"
-          element={<ComingSoon label="Edit DMP" />}
-        />
+        <Route path="/dmp/:id/edit" element={<ComingSoon label="Edit DMP" />} />
         <Route path="/dmp/status" element={<Status />} />
         <Route path="/tasks" element={<TaskDashboard />} />
         <Route path="/notifications" element={<Notifications />} />

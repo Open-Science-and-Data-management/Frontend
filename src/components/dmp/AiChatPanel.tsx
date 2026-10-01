@@ -3,7 +3,16 @@ import { X, Send, Sparkles, Loader2, Eraser } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatProposalCard } from "@/components/dmp/ChatProposalCard";
 import { Input } from "@/components/ui/input";
+import { useLocation } from "react-router-dom";
 import { estimateTurn, useChatStore } from "@/store/chatStore";
+import {
+  NO_ENTRIES,
+  scopeKey,
+  useAiThread,
+  type ThreadEntry,
+  type ThreadTurn,
+} from "@/store/aiThread";
+import { AiEventRow } from "@/components/dmp/AiEventRow";
 import { useDmpStore } from "@/store/dmpStore";
 import { cn } from "@/utils/cn";
 
@@ -22,25 +31,30 @@ interface AiChatPanelProps {
 }
 
 export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
-  const {
-    messages,
-    isThinking,
-    send,
-    clear,
-    acceptProposal,
-    rejectProposal,
-    acceptAll,
-  } = useChatStore();
+  const { isThinking, send, clear, acceptProposal, rejectProposal, acceptAll } =
+    useChatStore();
   const tokensLeft = useDmpStore((s) => s.tokensLeft());
   const hasDraft = useDmpStore((s) =>
     Boolean(s.draft.title || s.draft.description),
   );
+  const planTitle = useDmpStore((s) => s.draft.title);
+  const currentDmpId = useDmpStore((s) => s.currentDmpId);
+  // One thread per plan: whatever the AI did to this plan, wherever it was
+  // triggered from, shows up here.
+  const entries = useAiThread(
+    (s) => s.threads[scopeKey(currentDmpId)] ?? NO_ENTRIES,
+  );
+  const { pathname, search } = useLocation();
+  // The assistant answers about the plan on screen, so it says which one.
+  const section = pathname.startsWith("/dmp/create")
+    ? (new URLSearchParams(search).get("section") ?? "general")
+    : undefined;
   const [value, setValue] = React.useState("");
   const endRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isThinking]);
+  }, [entries, isThinking]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -53,7 +67,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
 
   const submit = async (text: string) => {
     setValue("");
-    await send(text);
+    await send(text, { section });
   };
 
   return (
@@ -67,10 +81,18 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
       <div className="flex h-16 shrink-0 items-center justify-between gap-2 border-b px-4">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-ai" />
-          <h2 className="font-semibold">Ask AI</h2>
+          <div className="min-w-0">
+            <h2 className="font-semibold leading-none">Ask AI</h2>
+            {hasDraft && (
+              <p className="mt-1 truncate text-xs text-muted-foreground">
+                {planTitle || "Untitled plan"}
+                {section ? ` · ${section}` : ""}
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-1">
-          {messages.length > 0 && (
+          {entries.length > 0 && (
             <Button
               variant="ghost"
               size="icon"
@@ -94,7 +116,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
-        {messages.length === 0 && !hasDraft && (
+        {entries.length === 0 && !hasDraft && (
           <p className="text-sm text-muted-foreground">
             I answer questions about the plan you&rsquo;re working on, but there
             isn&rsquo;t one yet. Start a DMP and I&rsquo;ll be able to help with
@@ -102,7 +124,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
           </p>
         )}
 
-        {messages.length === 0 && hasDraft && (
+        {entries.length === 0 && hasDraft && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               I can answer questions about the plan you&rsquo;re editing. I
@@ -123,7 +145,11 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
           </div>
         )}
 
-        {messages.map((m) => {
+        {entries.map((entry: ThreadEntry) => {
+          if (entry.kind === "event") {
+            return <AiEventRow key={entry.id} event={entry} />;
+          }
+          const m = entry as ThreadTurn;
           const pending = (m.proposals ?? []).filter(
             (p) => p.status === "pending",
           );
@@ -133,19 +159,19 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
               <div
                 className={cn(
                   "flex",
-                  m.role === "user" ? "justify-end" : "justify-start",
+                  m.kind === "user" ? "justify-end" : "justify-start",
                 )}
               >
                 <div
                   className={cn(
                     "max-w-[85%] whitespace-pre-line rounded-lg px-3 py-2 text-sm",
-                    m.role === "user"
+                    m.kind === "user"
                       ? "bg-primary text-primary-foreground"
                       : "bg-muted",
                   )}
                 >
                   {m.text}
-                  {m.role === "assistant" && m.token_count !== undefined && (
+                  {m.kind === "assistant" && m.token_count !== undefined && (
                     <span className="mt-1 block text-[11px] text-muted-foreground">
                       {m.token_count.toLocaleString()} tokens
                     </span>

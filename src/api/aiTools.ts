@@ -7,6 +7,7 @@ import { z } from "zod";
  * pressing the button. An injected instruction can only ever reach this list.
  */
 export const TOOL_NAMES = [
+  "recentAiActivity",
   "queryDmp",
   "explainField",
   "summarizeDmp",
@@ -24,6 +25,7 @@ export type ToolName = (typeof TOOL_NAMES)[number];
  * everything and hoping the guards hold.
  */
 export const ENABLED_TOOLS: Record<ToolName, boolean> = {
+  recentAiActivity: true,
   queryDmp: true,
   explainField: true,
   summarizeDmp: true,
@@ -36,6 +38,7 @@ export const ENABLED_TOOLS: Record<ToolName, boolean> = {
 };
 
 export const toolCallSchema = z.discriminatedUnion("tool", [
+  z.object({ tool: z.literal("recentAiActivity") }),
   z.object({ tool: z.literal("queryDmp"), path: z.string().min(1) }),
   z.object({ tool: z.literal("explainField"), path: z.string().min(1) }),
   z.object({ tool: z.literal("summarizeDmp") }),
@@ -75,9 +78,23 @@ export type ToolCall = z.infer<typeof toolCallSchema>;
 export interface PlannerScope {
   datasetCount: number;
   hasDraft: boolean;
-  /** The editor section in view, when there is one. */
+  /** The editor section in view, so an ambiguous word resolves to what's on screen. */
   section?: string;
+  /** Named only so the panel can say what it's talking about. */
+  planTitle?: string;
 }
+
+/**
+ * The same word means different fields in different sections. "Description"
+ * in the Ethical section is the ethics write-up, not the plan's summary.
+ */
+const SECTION_OVERRIDES: Record<string, Record<string, string>> = {
+  // Only genuinely ambiguous words belong here. "Title" means the plan's
+  // title everywhere — the Ethical section has no title of its own.
+  ethical: {
+    description: "ethical_issues_description",
+  },
+};
 
 const STAGE_WORDS: [
   RegExp,
@@ -131,13 +148,28 @@ export const planToolCalls = (
     return [{ tool: "summarizeDmp" }];
   }
 
+  // "what have you done", "what did you change" — answered from the thread.
+  // The verb can land either side of "you": "what have you done", "what did
+  // you change". Both have to reach the same answer.
+  if (
+    /(?:what|which)\b.*\b(?:you|ai)\b.*\b(?:done|chang|did|generat|made|wrote)/i.test(
+      text,
+    ) ||
+    /\b(?:history|activity)\b|ทำอะไร/i.test(text)
+  ) {
+    return [{ tool: "recentAiActivity" }];
+  }
+
   // "what is X" / "explain X" — read-only, always safe.
   const explain = text.match(
     /(?:what (?:is|does)|explain|อธิบาย|คืออะไร)\s*(.*)$/i,
   );
   const asksValue = /(current|right now|ตอนนี้|เท่าไหร่|กี่)/i.test(text);
 
-  const fieldWord = FIELD_WORDS.find(([re]) => re.test(text))?.[1];
+  const matched = FIELD_WORDS.find(([re]) => re.test(text))?.[1];
+  const fieldWord = matched
+    ? (SECTION_OVERRIDES[scope.section ?? ""]?.[matched] ?? matched)
+    : undefined;
 
   if (explain && fieldWord && !asksValue) {
     return [{ tool: "explainField", path: fieldWord }];

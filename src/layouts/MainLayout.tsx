@@ -2,7 +2,12 @@ import React from "react";
 import { Navbar } from "@/components/ui/navbar";
 import { Sidebar } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/toast";
-import { AiChatPanel } from "@/components/dmp/AiChatPanel";
+// Hidden until it's opened, so its tool layer shouldn't be in the first load.
+const AiChatPanel = React.lazy(() =>
+  import("@/components/dmp/AiChatPanel").then((m) => ({
+    default: m.AiChatPanel,
+  })),
+);
 import { ConfirmProvider } from "@/components/ui/confirm-provider";
 import { cn } from "@/utils/cn";
 import { QuotaBar } from "@/components/ui/quota-indicator";
@@ -63,12 +68,16 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
 
           <footer className="border-t py-4">
             <div className="mx-auto w-full max-w-7xl px-6 text-center text-sm text-muted-foreground">
-              <p>© {new Date().getFullYear()} Luis Alamo. MIT License.</p>
+              <p>© {new Date().getFullYear()} DMP-Researcher · MIT License</p>
             </div>
           </footer>
         </div>
 
-        <AiChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
+        {chatOpen && (
+          <React.Suspense fallback={null}>
+            <AiChatPanel open onClose={() => setChatOpen(false)} />
+          </React.Suspense>
+        )}
         <Toaster />
       </div>
     </ConfirmProvider>
