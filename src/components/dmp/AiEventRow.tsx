@@ -16,11 +16,6 @@ const ICONS: Record<AiAction, React.ComponentType<{ className?: string }>> = {
   redraft_steps: Sparkles,
 };
 
-/**
- * An AI action that happened elsewhere in the pipeline, shown in the same
- * thread as the conversation. Deliberately quieter than a chat bubble: it's
- * the record of something done, not something said.
- */
 export const AiEventRow: React.FC<{ event: ThreadEvent }> = ({ event }) => {
   const Icon = ICONS[event.action];
 

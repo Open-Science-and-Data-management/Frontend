@@ -12,12 +12,9 @@ import {
   TaskPriorityBar,
   TaskStatusBox,
 } from "@/components/task/TaskMeta";
-import {
-  evidenceSatisfies,
-  REQUIREMENT_COPY,
-  requirementFor,
-} from "@/config/task-evidence";
+import { requirementFor, toggleState } from "@/config/task-evidence";
 import { useToastStore } from "@/store/toastStore";
+import { usePlanModeFor } from "@/hooks/usePlanMode";
 import { cn } from "@/utils/cn";
 
 interface TaskCardProps {
@@ -41,6 +38,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
 }) => {
   const { deleteTask, completeTask, reopenTask } = useTaskStore();
   const toast = useToastStore((s) => s.toast);
+  const planModeFor = usePlanModeFor();
   const confirm = useConfirm();
 
   const isDone = task.status === "done";
@@ -53,10 +51,10 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     task.dataset_id ? !s.datasetExists(task.dmp_id, task.dataset_id) : false,
   );
 
-  const canToggle = !isCancelled && (isDone || evidenceSatisfies(task));
-
-  const blockedReason =
-    canToggle || isCancelled ? undefined : REQUIREMENT_COPY[requirement].hint;
+  const { canToggle, blockedReason } = toggleState(
+    task,
+    planModeFor(task.dmp_id),
+  );
 
   const toggle = () => {
     if (isDone) {

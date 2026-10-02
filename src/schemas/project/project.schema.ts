@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ProjectStatus } from "../shared/enums";
+import { PlanMode, ProjectStatus } from "../shared/enums";
 
 export const projectSchema = z.object({
   project_id: z.string().optional(),
@@ -7,6 +7,8 @@ export const projectSchema = z.object({
   description: z.string().optional(),
   proposal_file_id: z.string().optional(),
   status: ProjectStatus.default("draft"),
+  /** Decides how this project's plans become active. */
+  plan_mode: PlanMode.default("institutional"),
   created_at: z.coerce.date().optional(),
   updated_at: z.coerce.date().optional(),
 });

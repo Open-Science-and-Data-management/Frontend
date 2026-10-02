@@ -6,6 +6,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { TaskBoard } from "@/components/task/TaskBoard";
 import { TaskKanban } from "@/components/task/TaskKanban";
+import { TaskTimeline } from "@/components/task/TaskTimeline";
+import { TaskTable } from "@/components/task/TaskTable";
 import { useTaskView } from "@/components/task/TaskViewToggle";
 import { TaskFilters, useTaskFilters } from "@/components/task/TaskFilters";
 import { TaskFormDialog } from "@/components/task/TaskFormDialog";
@@ -138,6 +140,20 @@ export const ProjectTasks: React.FC<{ projectId: string }> = ({
             <p className="py-6 text-center text-sm text-muted-foreground">
               No tasks match these filters.
             </p>
+          ) : view === "table" ? (
+            <TaskTable
+              tasks={filters.visible}
+              onEdit={(task: Task) => setEditingId(task.task_id as string)}
+              sort={filters.sort}
+              onSortChange={filters.setSort}
+              descending={filters.descending}
+              onDescendingChange={filters.setDescending}
+            />
+          ) : view === "timeline" ? (
+            <TaskTimeline
+              tasks={filters.visible}
+              onEdit={(task: Task) => setEditingId(task.task_id as string)}
+            />
           ) : view === "board" ? (
             <TaskKanban
               tasks={filters.visible}

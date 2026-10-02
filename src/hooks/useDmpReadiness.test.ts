@@ -30,6 +30,8 @@ const completeDraft = (): DmpDraft => ({
       protection_level: "Stored on institutional storage",
       security_classification_level: "internal",
       keyword: [],
+      domain: "generic",
+      domain_metadata: {},
       preservation: { doi_requested: false },
       distribution: [],
       schema_fields: [],
@@ -54,8 +56,8 @@ describe("computeReadiness", () => {
     const readiness = computeReadiness({});
 
     expect(readiness.canSubmit).toBe(false);
-    expect(labels({})).toContain("Title provided");
-    expect(labels({})).toContain("At least one research output added");
+    expect(labels({})).toContain("Add a title");
+    expect(labels({})).toContain("Add a research output");
   });
 
   it("requires exactly one primary contact", () => {
@@ -65,22 +67,22 @@ describe("computeReadiness", () => {
       { contributor_id: "c2", name: "B", role: "r", is_contact: true },
     ];
 
-    expect(labels(two)).toContain("Exactly one primary contact set");
+    expect(labels(two)).toContain("Mark exactly one primary contact");
     expect(computeReadiness(two).canSubmit).toBe(false);
   });
 
   it("asks for a description only when ethical issues exist", () => {
     const none = completeDraft();
-    expect(labels(none)).not.toContain("Ethical issues described");
+    expect(labels(none)).not.toContain("Describe the ethical issues");
 
     const some = completeDraft();
     some.ethical_issues_exist = true;
-    expect(labels(some)).toContain("Ethical issues described");
+    expect(labels(some)).toContain("Describe the ethical issues");
     expect(computeReadiness(some).canSubmit).toBe(false);
 
     some.ethical_issues_description =
       "Interviews are consented and anonymised.";
-    expect(labels(some)).not.toContain("Ethical issues described");
+    expect(labels(some)).not.toContain("Describe the ethical issues");
     expect(computeReadiness(some).canSubmit).toBe(true);
   });
 
@@ -99,7 +101,7 @@ describe("computeReadiness", () => {
     ];
 
     expect(labels(draft)).toContain(
-      "Every research output has protection & security set",
+      "Set protection & security on every research output",
     );
   });
 });
@@ -154,8 +156,8 @@ describe("the checklist never claims ready while submit is blocked", () => {
     draft.title = "";
 
     const { unmetItems } = computeReadiness(draft);
-    expect(unmetItems.filter((i) => i.label.includes("Title"))).toHaveLength(1);
-    expect(unmetItems[0].label).toBe("Title provided");
+    expect(unmetItems.filter((i) => /title/i.test(i.label))).toHaveLength(1);
+    expect(unmetItems[0].label).toBe("Add a title");
     assertHonest(draft);
   });
 
@@ -170,10 +172,10 @@ describe("the checklist never claims ready while submit is blocked", () => {
       computeReadiness({}).checklistItems.map((i) => [i.label, i.section]),
     );
 
-    expect(sections["Title provided"]).toBe("general");
-    expect(sections["Begin & end dates set"]).toBe("general");
-    expect(sections["Ethical issues answered"]).toBe("ethical");
-    expect(sections["At least one contributor added"]).toBe("people");
-    expect(sections["At least one research output added"]).toBe("dataset");
+    expect(sections["Add a title"]).toBe("general");
+    expect(sections["Set begin & end dates"]).toBe("general");
+    expect(sections["Answer the ethical issues question"]).toBe("ethical");
+    expect(sections["Add a contributor"]).toBe("people");
+    expect(sections["Add a research output"]).toBe("dataset");
   });
 });

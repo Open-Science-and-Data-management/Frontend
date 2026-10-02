@@ -283,6 +283,8 @@ const applyAnalysisDirection = (
       protection_level: "Public repository",
       security_classification_level: "Public",
       keyword: ["software"],
+      domain: "generic" as const,
+      domain_metadata: {},
       preservation: { doi_requested: true },
       distribution: [],
     });
@@ -538,6 +540,12 @@ const CANNED_DRAFT: DmpDraft = {
       protection_level: "Standard",
       security_classification_level: "Internal",
       keyword: ["pollinators", "genomics", "urban ecology"],
+      domain: "life_sciences" as const,
+      domain_metadata: {
+        organism: "Apis mellifera",
+        sequencing_platform: "Illumina",
+        assay_type: "WGS",
+      },
       preservation: { doi_requested: false },
       distribution: [],
       schema_fields: [],

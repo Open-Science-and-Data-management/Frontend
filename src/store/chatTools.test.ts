@@ -48,7 +48,7 @@ const draft = (): DmpDraft => ({
 
 const ctx = (over: Partial<ToolContext> = {}): ToolContext => ({
   draft: draft(),
-  planApproved: true,
+  planActive: true,
   unmet: [],
   ...over,
 });
@@ -202,7 +202,7 @@ describe("task rules still apply through chat", () => {
   it("won't propose a task before the plan is approved", () => {
     const run = runToolCall(
       { tool: "proposeAddTask", title: "Check the backups" },
-      ctx({ planApproved: false }),
+      ctx({ planActive: false }),
     );
 
     expect(run.proposals).toEqual([]);
@@ -329,7 +329,7 @@ describe("accepting is guarded again, not just suggested", () => {
       ctx(),
     ).proposals[0];
 
-    const guard = guardBeforeApply(p, ctx({ planApproved: false }));
+    const guard = guardBeforeApply(p, ctx({ planActive: false }));
     expect(guard.ok).toBe(false);
     expect(guard.reason).toMatch(/no longer approved/i);
   });

@@ -11,6 +11,12 @@ export const Priority       = z.enum(["low", "medium", "high"]);
 export const GeneratedBy    = z.enum(["ai", "user"]);
 
 export const DmpStatus      = z.enum(["draft", "pending", "approved"]);
+/**
+ * Who signs a plan off. Institutional plans go to a committee; independent
+ * researchers finalize their own. Both reach the same active state — see
+ * config/plan-mode.
+ */
+export const PlanMode       = z.enum(["institutional", "independent"]);
 export const VersionStatus  = z.enum(["draft", "pending", "approved", "rejected"]);
 export const EditType       = z.enum(["minor", "major"]);
 export const Decision       = z.enum(["pending", "approved", "rejected"]);
@@ -18,6 +24,7 @@ export const Decision       = z.enum(["pending", "approved", "rejected"]);
 export const NotificationType = z.enum([
   "dmp_submitted",
   "dmp_approved",
+  "dmp_finalized",
   "tasks_generated",
   "proposal_superseded",
 ]);

@@ -1,11 +1,11 @@
 import React from "react";
-import { CheckCircle2, ChevronRight, Circle } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import {
+  DMP_SECTIONS,
   SECTION_LABELS,
   type DmpSection,
   type ReadinessItem,
 } from "@/hooks/useDmpReadiness";
-import { cn } from "@/utils/cn";
 
 interface ReadyChecklistProps {
   items: ReadinessItem[];
@@ -13,68 +13,77 @@ interface ReadyChecklistProps {
   onNavigate?: (section: DmpSection) => void;
 }
 
+/**
+ * What the plan still needs, grouped under the section that owns it.
+ *
+ * Only unmet items appear: the section nav already reports what's done, and a
+ * roll-call of satisfied rows buries the one or two that need you.
+ */
 export const ReadyChecklist: React.FC<ReadyChecklistProps> = ({
   items,
   onNavigate,
 }) => {
-  const doneCount = items.filter((i) => i.done).length;
-  const allDone = doneCount === items.length;
+  const groups = DMP_SECTIONS.map((id) => ({
+    id,
+    label: SECTION_LABELS[id],
+    outstanding: items.filter((item) => item.section === id && !item.done),
+  })).filter((group) => group.outstanding.length > 0);
+
+  const total = groups.reduce((n, group) => n + group.outstanding.length, 0);
+
+  if (total === 0) {
+    return (
+      <div className="rounded-lg border bg-card p-4">
+        <h3 className="text-sm font-semibold text-ok">Ready to submit</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Every required field is filled in.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-lg border bg-card p-4">
-      <h3 className="text-sm font-semibold">Ready to submit?</h3>
-      <p
-        className={cn(
-          "mt-0.5 text-xs",
-          allDone ? "text-ok" : "text-muted-foreground",
-        )}
-      >
-        {doneCount} of {items.length} ready
+      <h3 className="text-sm font-semibold">Before you submit</h3>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        {total} {total === 1 ? "item" : "items"} left in {groups.length}{" "}
+        {groups.length === 1 ? "section" : "sections"}
       </p>
 
-      <ul className="mt-3 space-y-1">
-        {items.map((item) => {
-          const body = (
-            <>
-              {item.done ? (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-ok" />
-              ) : (
-                <Circle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              )}
-              <span className="min-w-0 flex-1">
-                <span className={cn("block", !item.done && "text-foreground")}>
-                  {item.label}
-                </span>
-                {/* Naming the section answers "where do I go to fix this?" */}
-                <span className="block text-xs text-muted-foreground">
-                  {SECTION_LABELS[item.section]}
-                </span>
+      <div className="mt-3 space-y-3">
+        {groups.map((group) => (
+          <div key={group.id}>
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <span className="flex-1">{group.label}</span>
+              {/* The same pill the section nav uses, so the two agree on sight. */}
+              <span className="rounded-full bg-warn-subtle px-1.5 text-[10px] leading-4 text-warn">
+                {group.outstanding.length}
               </span>
-              {onNavigate && (
-                <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-              )}
-            </>
-          );
+            </p>
 
-          return (
-            <li key={item.label}>
-              {onNavigate ? (
-                <button
-                  type="button"
-                  onClick={() => onNavigate(item.section)}
-                  className="flex w-full items-start gap-2 rounded-md p-1.5 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  {body}
-                </button>
-              ) : (
-                <div className="flex items-start gap-2 p-1.5 text-sm">
-                  {body}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+            <ul className="mt-1 space-y-0.5 border-l pl-2">
+              {group.outstanding.map((item) => (
+                <li key={item.label}>
+                  {onNavigate ? (
+                    <button
+                      type="button"
+                      onClick={() => onNavigate(group.id)}
+                      className="flex w-full items-start gap-1.5 rounded-md px-1.5 py-1 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <span className="min-w-0 flex-1">{item.label}</span>
+                      <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    </button>
+                  ) : (
+                    <span className="block px-1.5 py-1 text-sm">
+                      {item.label}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

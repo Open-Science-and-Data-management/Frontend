@@ -1,4 +1,5 @@
 import type { Task } from "@/types/task";
+import type { PlanMode } from "@/types/project";
 
 /**
  * What has to exist before a task can be closed. The rule comes from the work
@@ -40,8 +41,17 @@ export const REQUIREMENT_COPY: Record<
   },
 };
 
-/** True when the attached evidence satisfies the task's requirement. */
-export const evidenceSatisfies = (task: Task): boolean => {
+/**
+ * True when the attached evidence satisfies the task's requirement.
+ *
+ * Independent plans have no committee reading them, so evidence is the only
+ * gate left: preserve and share must carry the repository's own record, not
+ * just a link someone typed.
+ */
+export const evidenceSatisfies = (
+  task: Task,
+  mode: PlanMode = "institutional",
+): boolean => {
   const requirement = requirementFor(task);
   if (requirement === "declared") return true;
 
@@ -49,10 +59,44 @@ export const evidenceSatisfies = (task: Task): boolean => {
   const { type, ref } = task.evidence ?? { type: "none" as const };
   if (!ref?.trim()) return false;
 
+  if (requirement === "system_verified" && mode === "independent")
+    return type === "rdm_deposit";
+
   // Until the RDM integration lands, a link or file is accepted for
   // preserve/share too — it is flagged as awaiting verification rather than
   // blocking the work.
   return type === "file" || type === "url" || type === "rdm_deposit";
+};
+
+/** Why a task can't be closed yet, in the terms its plan mode sets. */
+export const requirementHint = (
+  requirement: EvidenceRequirement,
+  mode: PlanMode = "institutional",
+): string =>
+  requirement === "system_verified" && mode === "independent"
+    ? "Closing this needs the DOI the repository issued — with no committee reviewing the plan, a plain link isn't enough."
+    : REQUIREMENT_COPY[requirement].hint;
+
+/**
+ * Whether the tick box is a real control for this task, and if not, why not.
+ * The rule is the same wherever a row is drawn — list, board, or table — so
+ * every view asks the same function rather than re-deriving it.
+ */
+export const toggleState = (
+  task: Task,
+  mode: PlanMode = "institutional",
+): { canToggle: boolean; blockedReason?: string } => {
+  const isCancelled = task.status === "cancelled";
+  const canToggle =
+    !isCancelled && (task.status === "done" || evidenceSatisfies(task, mode));
+
+  return {
+    canToggle,
+    blockedReason:
+      canToggle || isCancelled
+        ? undefined
+        : requirementHint(requirementFor(task), mode),
+  };
 };
 
 /** Accepted for now, but not yet proof the repository issued it. */

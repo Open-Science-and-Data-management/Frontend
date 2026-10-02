@@ -21,6 +21,7 @@ beforeEach(() => {
         project_id: "p1",
         project_name: "Test project",
         status: "active",
+      plan_mode: "institutional",
         created_at: new Date("2026-01-01"),
         updated_at: new Date("2026-01-01"),
       },
@@ -56,7 +57,6 @@ describe("a project has exactly one active proposal", () => {
     });
 
     const all = proposals("p1");
-    // Both survive: provenance is the whole point of superseding.
     expect(all).toHaveLength(2);
 
     const previous = all.find((f) => f.file_id === first.file_id)!;
@@ -90,6 +90,7 @@ describe("a project has exactly one active proposal", () => {
           project_id: "p2",
           project_name: "Other",
           status: "active" as const,
+          plan_mode: "institutional" as const,
           created_at: new Date(),
           updated_at: new Date(),
         },

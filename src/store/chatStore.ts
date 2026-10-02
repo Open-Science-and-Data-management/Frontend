@@ -8,6 +8,7 @@ import {
 } from "@/api/aiApi";
 import { recordAiEvent } from "@/store/aiThread";
 import { computeReadiness } from "@/hooks/useDmpReadiness";
+import { isActive } from "@/config/plan-mode";
 import { useDmpStore } from "@/store/dmpStore";
 import { useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
@@ -31,11 +32,6 @@ export const estimateTurn = (message: string): number =>
 interface ChatState {
   isThinking: boolean;
   send: (text: string, scope?: { section?: string }) => Promise<void>;
-  /**
-   * The one way AI suggests changes to a plan, whichever button started it.
-   * Either source produces the same reviewable proposals in the same thread,
-   * and neither writes anything.
-   */
   suggestChanges: (input: SuggestInput) => Promise<SuggestResult | null>;
   acceptProposal: (messageId: string, proposalId: string) => void;
   rejectProposal: (messageId: string, proposalId: string) => void;
@@ -61,10 +57,8 @@ const currentContext = (): ToolContext => {
   const dmp = useDmpStore.getState();
   return {
     draft: dmp.draft,
-    planApproved: dmp.status === "approved",
+    planActive: isActive(dmp.status),
     unmet: computeReadiness(dmp.draft).unmetItems.map((i) => i.label),
-    // Read from the thread, so the assistant can answer for work it did in
-    // the editor or on the task board, not just in this conversation.
     activity: thread()
       .entriesFor(dmp.currentDmpId)
       .filter((e) => e.kind === "event")
@@ -118,12 +112,9 @@ const applyProposal = (proposal: ChatProposal) => {
 };
 
 export interface SuggestInput {
-  /** "proposal" re-reads the uploaded document; "current" rewrites what's there. */
   source: "proposal" | "current";
   direction: string;
-  /** Required for "proposal": the file being re-read. */
   filename?: string;
-  /** Required for "current": which eligible fields to rewrite. */
   targetIds?: string[];
 }
 
@@ -133,7 +124,6 @@ export interface SuggestResult {
   rejected: number;
 }
 
-/** Free text maps onto the directions the rewrite endpoint understands. */
 const asRegenerateDirection = (text: string): RegenerateDirection => {
   const trimmed = text.trim();
   if (/^shorter$/i.test(trimmed)) return { kind: "shorter" };
@@ -171,8 +161,6 @@ export const useChatStore = create<ChatState>((set) => ({
     set({ isThinking: true });
 
     try {
-      // The planner sees the message and a count — never the plan's prose, so
-      // text carried in from an uploaded proposal can't choose the tools.
       const calls = planToolCalls(trimmed, {
         datasetCount: (dmp.draft.dataset ?? []).length,
         hasDraft: Boolean(dmp.draft.title || dmp.draft.description),
@@ -231,8 +219,6 @@ export const useChatStore = create<ChatState>((set) => ({
 
   suggestChanges: async ({ source, direction, filename, targetIds }) => {
     const dmp = useDmpStore.getState();
-
-    // Re-derived from field policy, never trusted from the caller.
     const targets = dmp
       .eligibleBatchTargets()
       .filter((t) => (targetIds ?? []).includes(t.id));
@@ -299,9 +285,6 @@ export const useChatStore = create<ChatState>((set) => ({
         token_count = rewritten.reduce((sum, r) => sum + r.spent, 0);
         summary = `Rewrote ${fields.length} field${fields.length === 1 ? "" : "s"} (${describeDirection(steer)})`;
       }
-
-      // Each suggestion goes through the same gate the chat uses: a locked
-      // field is refused, a human field is marked, a bad value never lands.
       const ctx = currentContext();
       const proposals: ChatProposal[] = [];
       const rejections: ChatRejection[] = [];
@@ -358,8 +341,6 @@ export const useChatStore = create<ChatState>((set) => ({
       .find((e) => e.id === messageId) as ThreadTurn | undefined;
     const proposal = entry?.proposals?.find((p) => p.id === proposalId);
     if (!proposal || proposal.status !== "pending") return;
-
-    // Checked against the plan as it is now, not as it was when suggested.
     const guard = guardBeforeApply(proposal, currentContext());
     if (!guard.ok) {
       thread().updateEntry(scope, messageId, (e) =>

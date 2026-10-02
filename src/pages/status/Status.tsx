@@ -17,8 +17,12 @@ import { recordAiEvent } from "@/store/aiThread";
 import { useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
 import { cn } from "@/utils/cn";
+import { activation, isActive } from "@/config/plan-mode";
+import { usePlanMode } from "@/hooks/usePlanMode";
 
 const TRACKER_STAGES = ["Submitted", "Under review", "Decision"];
+/** Independent plans never queue for anyone, so they have no review step. */
+const SELF_STAGES = ["Drafted", "Finalized"];
 
 const GENERATE_STEPS = [
   "Reading the approved plan",
@@ -33,6 +37,7 @@ export const Status: React.FC = () => {
     status,
     tasksGenerated,
     approve,
+    finalize,
     markTasksGenerated,
     hasTokensFor,
     tokensLeft,
@@ -47,8 +52,12 @@ export const Status: React.FC = () => {
 
   const outputs = draft.dataset ?? [];
   const cost = estimateCost.generateTasks(outputs.length);
-  const isApproved = status === "approved";
-  const stageIndex = isApproved ? TRACKER_STAGES.length - 1 : 1;
+  const mode = usePlanMode(draft.project_id);
+  const route = activation(mode);
+  const stages = route.reviewed ? TRACKER_STAGES : SELF_STAGES;
+  // Everything below asks whether the plan is active, not who made it so.
+  const isApproved = isActive(status);
+  const stageIndex = isApproved ? stages.length - 1 : route.reviewed ? 1 : 0;
 
   const runGeneration = async () => {
     if (!currentDmpId) {
@@ -125,18 +134,24 @@ export const Status: React.FC = () => {
       <div className="mx-auto max-w-xl space-y-6 py-10">
         <div className="text-center">
           <h1 className="text-2xl font-bold tracking-tight">
-            {isApproved ? "Approved" : "Pending review"}
+            {isApproved
+              ? route.activeLabel
+              : route.reviewed
+                ? "Pending review"
+                : "Ready to finalize"}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isApproved
-              ? "Your committee approved this plan. You can now break it into tasks."
-              : "We’ll notify you as soon as your committee makes a decision."}
+              ? `${route.by === "self" ? "You finalized this plan" : "Your committee approved this plan"}. You can now break it into tasks.`
+              : route.reviewed
+                ? "We’ll notify you as soon as your committee makes a decision."
+                : "No committee reviews this plan — finalize it yourself when you're ready, and your evidence carries the weight."}
           </p>
         </div>
 
         <div className="rounded-lg border bg-card p-6">
           <ol className="flex items-center justify-between">
-            {TRACKER_STAGES.map((stage, i) => {
+            {stages.map((stage, i) => {
               const state =
                 i < stageIndex
                   ? "done"
@@ -189,7 +204,8 @@ export const Status: React.FC = () => {
             })}
           </ol>
 
-          {!isApproved && (
+          {/* There's no queue to wait in when you sign your own plan off. */}
+          {!isApproved && route.reviewed && (
             <p className="mt-6 text-center text-sm text-muted-foreground">
               Estimated decision: within 5 business days
             </p>
@@ -246,6 +262,24 @@ export const Status: React.FC = () => {
                 )}
               </>
             )}
+          </div>
+        ) : route.by === "self" ? (
+          // Nobody else to wait for: the researcher signs their own plan off.
+          <div className="rounded-lg border p-4 text-center">
+            <p className="text-xs text-muted-foreground">
+              Finalizing makes the plan active and unlocks its tasks. You can
+              still raise a new version later.
+            </p>
+            <Button
+              className="mt-2"
+              size="sm"
+              onClick={() => {
+                finalize();
+                toast({ title: "Plan finalized" });
+              }}
+            >
+              {route.action}
+            </Button>
           </div>
         ) : (
           // No committee UI exists yet, so approval is simulated here.

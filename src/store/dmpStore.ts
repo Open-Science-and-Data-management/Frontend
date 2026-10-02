@@ -232,6 +232,8 @@ export const createEmptyDataset = (type: Dataset["type"]): Dataset => {
     protection_level: "",
     security_classification_level: "",
     keyword: [],
+    domain: "generic" as const,
+    domain_metadata: {},
     preservation: { doi_requested: false },
     distribution: [],
   };
@@ -286,6 +288,8 @@ interface DmpDraftState {
   submitForApproval: () => void;
   /** Stand-in for the committee decision until their screens exist. */
   approve: () => void;
+  /** The independent route to the same active state — no committee, no approval record. */
+  finalize: () => void;
   markTasksGenerated: () => void;
 
   setField: <K extends keyof DmpDraft>(key: K, value: DmpDraft[K]) => void;
@@ -457,6 +461,22 @@ export const useDmpStore = create<DmpDraftState>()(
             type: "dmp_approved",
             title: "Your plan was approved",
             message: `The committee approved ${draft.title?.trim() || "your plan"}.`,
+            link: "/dmp/status",
+            dmp_id: currentDmpId ?? undefined,
+            project_id: draft.project_id,
+          });
+        },
+
+        finalize: () => {
+          // Same destination as approve(), reached by the researcher. Nothing
+          // downstream can tell the two apart, which is the point.
+          set({ status: "approved" });
+          const { draft, currentDmpId } = get();
+          notify({
+            user_id: CURRENT_USER_ID,
+            type: "dmp_finalized",
+            title: "Plan finalized",
+            message: `${draft.title?.trim() || "Your plan"} is active — you can break it into tasks now.`,
             link: "/dmp/status",
             dmp_id: currentDmpId ?? undefined,
             project_id: draft.project_id,

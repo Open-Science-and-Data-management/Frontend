@@ -7,6 +7,8 @@ import { TaskFormDialog } from "@/components/task/TaskFormDialog";
 import { RegenerateTasksDialog } from "@/components/task/RegenerateTasksDialog";
 import { TaskBoard } from "@/components/task/TaskBoard";
 import { TaskKanban } from "@/components/task/TaskKanban";
+import { TaskTimeline } from "@/components/task/TaskTimeline";
+import { TaskTable } from "@/components/task/TaskTable";
 import { useTaskView } from "@/components/task/TaskViewToggle";
 import { TaskFilters, useTaskFilters } from "@/components/task/TaskFilters";
 import { Task } from "@/types/task";
@@ -167,6 +169,30 @@ export const TaskDashboard: React.FC = () => {
                   : "No tasks match these filters."}
             </p>
           </div>
+        ) : view === "table" ? (
+          <TaskTable
+            tasks={filters.visible}
+            planLabel={selected === ALL ? planTitle : undefined}
+            onEdit={(task: Task) => setEditingTaskId(task.task_id as string)}
+            onCreate={
+              targetDmpId
+                ? () => {
+                    setEditingTaskId(null);
+                    setIsCreating(true);
+                  }
+                : undefined
+            }
+            sort={filters.sort}
+            onSortChange={filters.setSort}
+            descending={filters.descending}
+            onDescendingChange={filters.setDescending}
+          />
+        ) : view === "timeline" ? (
+          <TaskTimeline
+            tasks={filters.visible}
+            planLabel={selected === ALL ? planTitle : undefined}
+            onEdit={(task: Task) => setEditingTaskId(task.task_id as string)}
+          />
         ) : view === "board" ? (
           <TaskKanban
             tasks={filters.visible}

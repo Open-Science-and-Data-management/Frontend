@@ -16,7 +16,12 @@ import { ContributorList } from "@/components/dmp/ContributorList";
 import { CostList } from "@/components/dmp/CostList";
 import { ReadyChecklist } from "@/components/dmp/ReadyChecklist";
 import { AiAssistDialog } from "@/components/dmp/AiAssistDialog";
-import { useDmpReadiness } from "@/hooks/useDmpReadiness";
+import {
+  DMP_SECTIONS,
+  SECTION_LABELS,
+  useDmpReadiness,
+  type DmpSection,
+} from "@/hooks/useDmpReadiness";
 import { useDmpStore } from "@/store/dmpStore";
 
 const STEPPER_STEPS = [
@@ -27,27 +32,14 @@ const STEPPER_STEPS = [
   { label: "Approved" },
 ];
 
-const SECTIONS = ["general", "dataset", "ethical", "people", "system"] as const;
-type Section = (typeof SECTIONS)[number];
+// One list of sections, shared with the readiness checklist.
+const SECTIONS = DMP_SECTIONS;
+type Section = DmpSection;
 
 const isSection = (value: string | null): value is Section =>
   SECTIONS.includes(value as Section);
 
-const SECTION_ITEMS: { id: Section; label: string }[] = [
-  { id: "general", label: "General" },
-  { id: "dataset", label: "Research outputs" },
-  { id: "ethical", label: "Ethical" },
-  { id: "people", label: "People & cost" },
-  { id: "system", label: "System info" },
-];
-
-const SECTION_TITLES: Record<Section, string> = {
-  general: "General",
-  dataset: "Research outputs",
-  ethical: "Ethical",
-  people: "People & cost",
-  system: "System info",
-};
+const SECTION_ITEMS = SECTIONS.map((id) => ({ id, label: SECTION_LABELS[id] }));
 
 export const CreateDmp: React.FC = () => {
   const navigate = useNavigate();
@@ -155,7 +147,7 @@ export const CreateDmp: React.FC = () => {
         >
           {section !== "dataset" && (
             <h1 className="text-2xl font-bold tracking-tight">
-              {SECTION_TITLES[section]}
+              {SECTION_LABELS[section]}
             </h1>
           )}
           {section === "general" && <GeneralSection />}
@@ -176,7 +168,7 @@ export const CreateDmp: React.FC = () => {
               {previous ? (
                 <Button variant="outline" onClick={() => setSection(previous)}>
                   <ArrowLeft className="mr-1.5 h-4 w-4" />
-                  {SECTION_TITLES[previous]}
+                  {SECTION_LABELS[previous]}
                 </Button>
               ) : (
                 <span />
@@ -188,7 +180,7 @@ export const CreateDmp: React.FC = () => {
 
             {next ? (
               <Button onClick={() => setSection(next)}>
-                {SECTION_TITLES[next]}
+                {SECTION_LABELS[next]}
                 <ArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
             ) : (

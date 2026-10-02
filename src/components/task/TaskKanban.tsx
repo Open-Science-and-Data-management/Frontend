@@ -1,8 +1,9 @@
 import React from "react";
 import { useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
+import { usePlanModeFor } from "@/hooks/usePlanMode";
 import { TaskCard } from "@/components/task/TaskCard";
-import { REQUIREMENT_COPY, requirementFor } from "@/config/task-evidence";
+import { requirementFor, requirementHint } from "@/config/task-evidence";
 import type { Task } from "@/types/task";
 import { cn } from "@/utils/cn";
 
@@ -38,6 +39,7 @@ export const TaskKanban: React.FC<TaskKanbanProps> = ({
 }) => {
   const { completeTask, reopenTask, cancelTask } = useTaskStore();
   const toast = useToastStore((s) => s.toast);
+  const planModeFor = usePlanModeFor();
   const [dragging, setDragging] = React.useState<string | null>(null);
   const [over, setOver] = React.useState<string | null>(null);
 
@@ -65,7 +67,10 @@ export const TaskKanban: React.FC<TaskKanbanProps> = ({
       if (!completeTask(id)) {
         toast({
           title: "Evidence needed first",
-          description: REQUIREMENT_COPY[requirementFor(task)].hint,
+          description: requirementHint(
+            requirementFor(task),
+            planModeFor(task.dmp_id),
+          ),
           variant: "destructive",
         });
       }

@@ -7,9 +7,11 @@ import { Stepper } from "@/components/ui/stepper";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DmpReview } from "@/components/dmp/DmpReview";
 import { ReadyChecklist } from "@/components/dmp/ReadyChecklist";
-import { SECTION_LABELS, useDmpReadiness } from "@/hooks/useDmpReadiness";
+import { useDmpReadiness } from "@/hooks/useDmpReadiness";
 import { useDmpStore } from "@/store/dmpStore";
 import { useToastStore } from "@/store/toastStore";
+import { activation } from "@/config/plan-mode";
+import { usePlanMode } from "@/hooks/usePlanMode";
 
 const STEPPER_STEPS = [
   { label: "Upload" },
@@ -23,6 +25,8 @@ export const ReviewSubmit: React.FC = () => {
   const navigate = useNavigate();
   const draft = useDmpStore((s) => s.draft);
   const submitForApproval = useDmpStore((s) => s.submitForApproval);
+  const finalize = useDmpStore((s) => s.finalize);
+  const route = activation(usePlanMode(draft.project_id));
   const toast = useToastStore((s) => s.toast);
   const { checklistItems, canSubmit, unmetItems } = useDmpReadiness();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -43,11 +47,17 @@ export const ReviewSubmit: React.FC = () => {
   }
 
   // The only confirmation in the whole authoring flow — fields are edited
-  // freely, and the plan is confirmed once here.
+  // freely, and the plan is confirmed once here. Which transition it runs is
+  // the project's mode; where it lands — an active plan — is the same either way.
   const handleSubmit = () => {
     if (!canSubmit) return;
-    submitForApproval();
-    toast({ title: "Submitted for committee review" });
+    if (route.by === "self") {
+      finalize();
+      toast({ title: "Plan finalized" });
+    } else {
+      submitForApproval();
+      toast({ title: "Submitted for committee review" });
+    }
     setConfirmOpen(false);
     navigate("/dmp/status");
   };
@@ -93,11 +103,12 @@ export const ReviewSubmit: React.FC = () => {
               <>
                 <Button className="w-full" onClick={() => setConfirmOpen(true)}>
                   <Send className="mr-2 h-4 w-4" />
-                  Submit for approval
+                  {route.action}
                 </Button>
                 <p className="text-xs text-muted-foreground">
-                  Your committee reviews and approves the plan — nothing is
-                  approved automatically.
+                  {route.by === "self"
+                    ? "No committee reviews this plan. Finalizing makes it active and unlocks its tasks — your evidence is what stands behind it."
+                    : "Your committee reviews and approves the plan — nothing is approved automatically."}
                 </p>
               </>
             ) : (
@@ -106,22 +117,7 @@ export const ReviewSubmit: React.FC = () => {
                   <AlertTriangle className="h-4 w-4 shrink-0" />
                   Not ready to submit
                 </p>
-                <ul className="mt-2 space-y-1 text-xs">
-                  {unmetItems.map((item) => (
-                    <li key={item.label}>
-                      <button
-                        type="button"
-                        onClick={() => goToSection(item.section)}
-                        className="w-full rounded text-left text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        · {item.label}{" "}
-                        <span className="text-muted-foreground/80">
-                          ({SECTION_LABELS[item.section]})
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                {/* No list here: the checklist above names them, by section. */}
                 <Button
                   className="mt-3 w-full"
                   size="sm"
@@ -141,9 +137,17 @@ export const ReviewSubmit: React.FC = () => {
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title="Submit this plan for approval?"
-        description="Your committee will review it as it stands now. You can keep editing while it's pending, but they'll see this version."
-        confirmLabel="Submit for approval"
+        title={
+          route.by === "self"
+            ? "Finalize this plan?"
+            : "Submit this plan for approval?"
+        }
+        description={
+          route.by === "self"
+            ? "It becomes active as it stands now and its tasks open up. You can raise a new version later."
+            : "Your committee will review it as it stands now. You can keep editing while it's pending, but they'll see this version."
+        }
+        confirmLabel={route.action}
         cancelLabel="Keep reviewing"
         onConfirm={handleSubmit}
       />

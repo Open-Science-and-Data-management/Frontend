@@ -55,7 +55,7 @@ export interface ToolContext {
   /** What the AI has already done to this plan, newest last. */
   activity?: { summary: string; token_count: number }[];
   /** Tasks only exist once the committee has approved the plan. */
-  planApproved: boolean;
+  planActive: boolean;
   unmet: string[];
 }
 
@@ -255,7 +255,7 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
     case "proposeAddTask": {
       // Tasks exist to execute an approved plan; proposing them earlier would
       // invent work against something the committee hasn't agreed to.
-      if (!ctx.planApproved) {
+      if (!ctx.planActive) {
         return {
           ...empty,
           rejections: [
@@ -338,7 +338,7 @@ export const guardBeforeApply = (
   ctx: ToolContext,
 ): GuardResult => {
   if (proposal.kind === "task") {
-    return ctx.planApproved
+    return ctx.planActive
       ? { ok: true }
       : {
           ok: false,

@@ -31,21 +31,10 @@ export interface ThreadTurn {
 }
 
 export type ThreadEntry = ThreadEvent | ThreadTurn;
-
-/** Work done before a plan exists — adopted by the plan once there is one. */
 export const UNSCOPED = "unscoped";
-
 export const scopeKey = (dmpId: string | null | undefined) => dmpId ?? UNSCOPED;
-
 const makeId = () => Math.random().toString(36).substring(2, 10);
-
-/** Stable reference so a selector returning "no entries" doesn't re-render. */
 export const NO_ENTRIES: ThreadEntry[] = [];
-
-/**
- * A thread grows for the life of a plan and lives in localStorage, which is
- * finite. Old turns are the least useful, so the oldest go first.
- */
 export const MAX_THREAD_ENTRIES = 200;
 
 const capped = (entries: ThreadEntry[]) =>
@@ -54,7 +43,6 @@ const capped = (entries: ThreadEntry[]) =>
     : entries;
 
 interface AiThreadState {
-  /** One conversation per plan; the pipeline writes into the plan's own. */
   threads: Record<string, ThreadEntry[]>;
   append: (dmpId: string | null | undefined, entry: ThreadEntry) => void;
   updateEntry: (
@@ -62,7 +50,6 @@ interface AiThreadState {
     entryId: string,
     update: (entry: ThreadEntry) => ThreadEntry,
   ) => void;
-  /** Moves the pre-plan history onto the plan it turned out to be about. */
   adopt: (from: string, to: string) => void;
   clear: (dmpId: string | null | undefined) => void;
   entriesFor: (dmpId: string | null | undefined) => ThreadEntry[];
@@ -127,10 +114,6 @@ export const useAiThread = create<AiThreadState>()(
   ),
 );
 
-/**
- * Logs an AI action into the plan's thread. Call it next to the token charge:
- * anything billed should be visible here, or the quota is a mystery.
- */
 export const recordAiEvent = (
   dmpId: string | null | undefined,
   event: {

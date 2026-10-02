@@ -9,3 +9,5 @@ export { TaskFilters, useTaskFilters } from "./TaskFilters";
 export { ProjectTasks } from "./ProjectTasks";
 export { TaskKanban } from "./TaskKanban";
 export { TaskViewToggle, useTaskView } from "./TaskViewToggle";
+export { TaskTimeline } from "./TaskTimeline";
+export { TaskTable } from "./TaskTable";

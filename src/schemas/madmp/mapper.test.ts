@@ -45,6 +45,8 @@ const form = (over: Partial<DmpForm> = {}): DmpForm => ({
       protection_level: "Institutional storage",
       security_classification_level: "internal",
       keyword: [],
+      domain: "generic",
+      domain_metadata: {},
       preservation: { doi_requested: false },
       distribution: [],
       schema_fields: [],

@@ -9,6 +9,8 @@ import {
 import { CURRENT_USER_ID } from "@/config/current-user";
 import { evidenceSatisfies } from "@/config/task-evidence";
 import { useDmpStore } from "@/store/dmpStore";
+import { useProjectStore } from "@/store/projectStore";
+import { resolvePlanMode } from "@/config/plan-mode";
 import type { Task, TaskChecklistItem, TaskEvidence } from "@/types/task";
 
 // The seeded tasks belong to the approved seeded plan, since tasks only exist
@@ -92,6 +94,16 @@ interface TaskState {
   /** A dataset dropped from the plan: its tasks are cancelled, never deleted. */
   cancelTasksForDataset: (dmpId: string, datasetId: string) => number;
 }
+
+/** A task's plan mode, read through the plan to the project that owns it. */
+const planModeFor = (dmpId: string) => {
+  const dmp = useDmpStore.getState();
+  const projectId =
+    dmp.currentDmpId === dmpId
+      ? dmp.draft.project_id
+      : dmp.dmps.find((d) => d.dmp_id === dmpId)?.draft.project_id;
+  return resolvePlanMode(useProjectStore.getState().projects, projectId);
+};
 
 const mutate = (
   tasks: Task[],
@@ -289,8 +301,10 @@ export const useTaskStore = create<TaskState>()(
 
       completeTask: (taskId) => {
         const task = get().tasks.find((t) => t.task_id === taskId);
-        // The trust boundary: some stages can't be closed on a tick alone.
-        if (!task || !evidenceSatisfies(task)) return false;
+        // The trust boundary: some stages can't be closed on a tick alone, and
+        // an independent plan — with no committee behind it — asks for more.
+        if (!task || !evidenceSatisfies(task, planModeFor(task.dmp_id)))
+          return false;
 
         set((state) => ({
           tasks: mutate(state.tasks, taskId, (t) => ({

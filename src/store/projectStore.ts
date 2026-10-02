@@ -21,6 +21,7 @@ const seedProjects: Project[] = [
       "Genomic diversity survey of pollinator populations across metropolitan green corridors.",
     proposal_file_id: "file-1",
     status: "active",
+    plan_mode: "institutional",
     created_at: new Date("2026-08-01T09:00:00"),
     updated_at: new Date("2026-09-12T14:30:00"),
   },
@@ -28,7 +29,9 @@ const seedProjects: Project[] = [
     project_id: "proj-2",
     project_name: "Coastal Sediment Archive",
     description: "Long-term sediment core sampling and preservation planning.",
+    // No committee on this one — the researcher signs their own plan off.
     status: "draft",
+    plan_mode: "independent",
     created_at: new Date("2026-09-20T11:00:00"),
     updated_at: new Date("2026-09-20T11:00:00"),
   },
@@ -108,6 +111,8 @@ interface ProjectState {
   createProject: (input: {
     project_name: string;
     description?: string;
+    /** How this project's plans become active; institutional by default. */
+    plan_mode?: Project["plan_mode"];
   }) => Project;
   updateProject: (id: string, patch: Partial<Project>) => void;
   removeProject: (id: string) => void;
@@ -138,12 +143,13 @@ export const useProjectStore = create<ProjectState>()(
 
       getUser: (id) => get().users.find((u) => u.user_id === id),
 
-      createProject: ({ project_name, description }) => {
+      createProject: ({ project_name, description, plan_mode }) => {
         const project: Project = {
           project_id: makeId(),
           project_name,
           description,
           status: "draft",
+          plan_mode: plan_mode ?? "institutional",
           created_at: new Date(),
           updated_at: new Date(),
         };

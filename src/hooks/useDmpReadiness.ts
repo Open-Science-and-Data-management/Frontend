@@ -3,9 +3,19 @@ import { dmpSchema } from "@/schemas/dmp";
 import { useDmpStore } from "@/store/dmpStore";
 import type { DmpDraft } from "@/types/dmp";
 
-/** The editor's section ids, so an item can say where to go and fix it. */
-export type DmpSection =
-  "general" | "dataset" | "ethical" | "people" | "system";
+/**
+ * The editor's sections, in the order they're authored — so an item can say
+ * where to go and fix it, and the nav and the checklist stay in step.
+ */
+export const DMP_SECTIONS = [
+  "general",
+  "dataset",
+  "ethical",
+  "people",
+  "system",
+] as const;
+
+export type DmpSection = (typeof DMP_SECTIONS)[number];
 
 export const SECTION_LABELS: Record<DmpSection, string> = {
   general: "General",
@@ -114,31 +124,31 @@ export const computeReadiness = (draft: DmpDraft) => {
   // uncovered failure is appended below rather than left invisible.
   const known: (ReadinessItem & { covers: string[] })[] = [
     {
-      label: "Title provided",
+      label: "Add a title",
       done: Boolean(draft.title),
       section: "general",
       covers: ["title"],
     },
     {
-      label: "Description provided",
+      label: "Add a description",
       done: Boolean(draft.description),
       section: "general",
       covers: ["description"],
     },
     {
-      label: "Language provided",
+      label: "Choose a language",
       done: Boolean(draft.language),
       section: "general",
       covers: ["language"],
     },
     {
-      label: "Begin & end dates set",
+      label: "Set begin & end dates",
       done: Boolean(draft.begin_date && draft.end_date),
       section: "general",
       covers: ["begin_date", "end_date"],
     },
     {
-      label: "Ethical issues answered",
+      label: "Answer the ethical issues question",
       done: draft.ethical_issues_exist !== undefined,
       section: "ethical",
       covers: ["ethical_issues_exist"],
@@ -146,7 +156,7 @@ export const computeReadiness = (draft: DmpDraft) => {
     ...(draft.ethical_issues_exist
       ? [
           {
-            label: "Ethical issues described",
+            label: "Describe the ethical issues",
             done: Boolean(draft.ethical_issues_description),
             section: "ethical" as DmpSection,
             covers: ["ethical_issues_description"],
@@ -154,25 +164,25 @@ export const computeReadiness = (draft: DmpDraft) => {
         ]
       : []),
     {
-      label: "At least one contributor added",
+      label: "Add a contributor",
       done: contributors.length > 0,
       section: "people",
       covers: ["contributor"],
     },
     {
-      label: "Exactly one primary contact set",
+      label: "Mark exactly one primary contact",
       done: contactCount === 1,
       section: "people",
       covers: ["contributor"],
     },
     {
-      label: "At least one research output added",
+      label: "Add a research output",
       done: datasets.length > 0,
       section: "dataset",
       covers: ["dataset"],
     },
     {
-      label: "Every research output has protection & security set",
+      label: "Set protection & security on every research output",
       done:
         datasets.length > 0 &&
         datasets.every(
