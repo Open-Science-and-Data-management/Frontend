@@ -1,126 +1,136 @@
-# React TypeScript Template
+# DMP Researcher
 
-A modern React application template built with TypeScript, React, and Radix UI components. This template provides a solid foundation for building web applications with a beautiful UI and well-organized code structure. It includes a task management feature as an example implementation.
+DMP Researcher is a frontend prototype for helping researchers create and
+manage data management plans (DMPs). It supports a proposal-to-plan workflow,
+structured research-output metadata, review-oriented version history, and
+follow-up tasks. Plan authoring follows a FAIR-oriented maDMP data model.
+
+> **Prototype notice:** The app currently uses seeded demo records and
+> browser-local state. Proposal analysis and AI assistance are deterministic
+> mock implementations, file uploads are held in memory for the current page
+> session, and committee decisions are simulated in the UI. There is no
+> authentication service, backend API, database, durable file storage, or
+> external AI integration wired up.
 
 ## Features
 
-- 🎨 Modern UI with Radix UI components
-- 🌙 Light and dark mode support
-- 📱 Responsive design for all device sizes
-- ✅ Task management (create, update, delete tasks)
-- 🏷️ Task filtering by status
-- 🔄 State management with Zustand
-- 📝 Form validation with Zod and React Hook Form
-- 🚀 Fast development with Vite
-- 🧩 TypeScript for type safety
+- Create projects and associate project members, proposal files, and DMPs.
+- Upload `.docx` proposals (up to 20 MB) and walk through a draft plan.
+- Author DMP details, contributors, costs, datasets, distributions, ethics,
+  preservation, and research-domain metadata.
+- Review DMP readiness and submit the plan for a simulated review workflow.
+- Track plan revisions, pending/approved/rejected states, and minor versus major
+  changes.
+- Generate and manage research tasks with lifecycle stages, priorities,
+  checklists, progress, and evidence such as files, URLs, or repository DOIs.
+- View notifications and switch between light, dark, and system themes.
+- Validate/map DMP form data to the project's maDMP-shaped JSON schema (the
+  mapper is currently code-level, not exposed as an export action in the UI).
 
-## Project Structure
+## Tech stack
 
-This template follows a technical responsibility organization pattern, where code is organized by technical function rather than by domain:
+- React 18 and TypeScript
+- Vite 6
+- React Router (hash-based routing)
+- Zustand for client state and browser persistence
+- Zod and React Hook Form for validation and forms
+- Tailwind CSS 4 and Radix UI primitives
+- Vitest and jsdom for tests
 
-```
-react-typescript-template/
-├── public/                  # Static assets
-├── src/
-│   ├── api/                 # API client and service definitions
-│   ├── assets/              # Images, fonts, and other assets
-│   ├── components/          # Reusable UI components
-│   │   ├── task/            # Task-specific components
-│   │   └── ui/              # UI components (buttons, inputs, etc.)
-│   ├── config/              # Application configuration (Firebase, etc.)
-│   ├── hooks/               # Custom React hooks
-│   ├── layouts/             # Layout components
-│   ├── pages/               # Page components
-│   │   └── tasks/           # Task pages
-│   ├── routes/              # Routing configuration
-│   ├── schemas/             # Zod validation schemas
-│   │   └── task/            # Task-related schemas
-│   ├── store/               # Zustand state management
-│   ├── styles/              # Global styles
-│   ├── types/               # TypeScript type definitions
-│   │   └── task/            # Task-related types
-│   ├── utils/               # Utility functions
-│   ├── App.tsx              # Main App component
-│   └── index.tsx            # Application entry point
-├── index.html               # HTML entry point
-├── package.json             # Dependencies and scripts
-├── postcss.config.js        # PostCSS configuration
-├── tailwind.config.js       # Tailwind CSS configuration
-├── tsconfig.json            # TypeScript configuration
-├── vite.config.js           # Vite configuration
-└── LICENSE                  # MIT License file
-```
+## Getting started
 
-## Getting Started
+### Requirements
 
-### Prerequisites
+- Node.js 18 or newer
+- npm
 
-- Node.js (v16 or higher)
-- npm or yarn
-
-### Installation
-
-1. Clone the repository:
+### Install and run
 
 ```bash
-git clone https://github.com/yourusername/react-typescript-template.git
-cd react-typescript-template
-```
-
-2. Install dependencies:
-
-```bash
-npm install
-# or
-yarn install
-```
-
-3. Start the development server:
-
-```bash
+git clone https://github.com/Open-Science-and-Data-management/Frontend.git
+cd Frontend
+npm ci
 npm run dev
-# or
-yarn dev
 ```
 
-4. Open your browser and navigate to `http://localhost:5173`
+Vite prints the local development URL in the terminal (normally
+`http://localhost:5173`). The router uses hash-based URLs, so routes appear
+after `/#/`.
 
-## Customization
+No environment variables are required by the current frontend.
 
-### Styling
+## Application routes
 
-This template uses Tailwind CSS for styling. You can customize the theme in the `tailwind.config.js` file.
+| Route | Purpose |
+| --- | --- |
+| `/#/` | Home and start of the proposal workflow |
+| `/#/upload` | Upload a proposal and associate it with a project |
+| `/#/dmp/create` | Create or edit a DMP draft |
+| `/#/dmp/review` | Review and submit the draft |
+| `/#/dmp/status` | View status and simulate a review decision |
+| `/#/dmps` | Browse saved DMPs |
+| `/#/tasks` | View and manage DMP tasks |
+| `/#/projects` | Browse projects |
+| `/#/projects/:projectId` | View a project and its files |
+| `/#/notifications` | View and manage notifications |
+| `/#/settings` | Theme and demo-data settings |
+| `/#/help` | In-app workflow guide |
 
-### Adding New Features
+Editing a saved DMP at `/#/dmp/:id/edit` is currently a coming-soon screen.
 
-To add a new feature:
+## Project structure
 
-1. Create appropriate directories in the relevant technical areas (components, pages, types, schemas, etc.)
-2. Add components, pages, and other necessary files
-3. Update the routes in `src/routes/AppRoutes.tsx` to include your new feature
+```text
+src/
+├── api/          Demo AI and file API adapters
+├── components/   Shared UI and feature components
+├── config/       Current-user demo config, plan rules, and field policies
+├── hooks/        Shared React hooks
+├── layouts/      Application shell
+├── pages/        Route-level screens
+├── routes/       Hash-router routes and configuration
+├── schemas/      Zod schemas for DMP, project, task, file, and related data
+├── store/        Persisted Zustand stores and demo seed data
+├── styles/       Global styles
+└── types/        Types inferred from schemas
+```
 
-### Task Management
+The [project ERD](./docs/project-erd.md) describes how the frontend schemas and
+stores relate. It is a logical model of the current client code, not a schema
+for a deployed database.
 
-This template includes a complete task management system with the following features:
+## Local data and demo behavior
 
-- Create, read, update, and delete tasks
-- Filter tasks by status
-- Set task priorities
-- Set due dates for tasks
-- Responsive UI for all device sizes
+Zustand stores persist records in the browser's `localStorage`. Reset the
+sample state from **Settings → Local data → Reset data**. Clearing site data
+for the browser also removes locally saved records.
 
-## Deployment
+The current adapters intentionally do not connect to production services:
 
-To build the application for production:
+- `src/api/aiApi.ts` returns canned proposal-analysis content and uses
+  deterministic rules for regeneration, chat, and task suggestions.
+- `src/api/fileApi.ts` stores uploaded file blobs in memory. Blobs are not
+  durable and do not survive a page reload.
+- `src/config/current-user.ts` supplies a fixed demo user ID; there is no login
+  or authorization boundary.
+- The status screen provides demo-only committee decisions. Decisions are not
+  persisted as separate approval records or attributed to authenticated
+  reviewers.
+
+Do not use this prototype to store confidential research data or treat its
+demo AI output, review decisions, quota counters, or local persistence as
+production-grade.
+
+## Development commands
 
 ```bash
-npm run build
-# or
-yarn build
+npm run dev       # Start the Vite development server
+npm run build     # Run TypeScript checking and create a production build
+npm run preview   # Preview the built app locally
+npm test          # Run the Vitest suite once
+npm run test:watch # Run Vitest in watch mode
 ```
-
-This will generate a `dist` directory with the production-ready files. The application uses hash routing, making it compatible with static hosting services like GitHub Pages, Netlify, or Vercel.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+This project is licensed under the MIT License; see [LICENSE](./LICENSE).
