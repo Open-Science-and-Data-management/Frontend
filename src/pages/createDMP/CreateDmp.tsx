@@ -15,6 +15,7 @@ import { DatasetList } from "@/components/dmp/DatasetList";
 import { ContributorList } from "@/components/dmp/ContributorList";
 import { CostList } from "@/components/dmp/CostList";
 import { ReadyChecklist } from "@/components/dmp/ReadyChecklist";
+import { PlanChanges } from "@/components/dmp/PlanChanges";
 import { AiAssistDialog } from "@/components/dmp/AiAssistDialog";
 import {
   DMP_SECTIONS,
@@ -23,6 +24,7 @@ import {
   type DmpSection,
 } from "@/hooks/useDmpReadiness";
 import { useDmpStore } from "@/store/dmpStore";
+import { isActive } from "@/config/plan-mode";
 
 const STEPPER_STEPS = [
   { label: "Upload" },
@@ -45,6 +47,7 @@ export const CreateDmp: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { draft, resetDraft } = useDmpStore();
+  const status = useDmpStore((s) => s.status);
   const [discardOpen, setDiscardOpen] = React.useState(false);
   const [assistOpen, setAssistOpen] = React.useState(false);
 
@@ -57,6 +60,9 @@ export const CreateDmp: React.FC = () => {
     setSearchParams({ section: next }, { replace: true });
 
   const { checklistItems, canSubmit, unmetItems } = useDmpReadiness();
+  // Once a version is in force, the question stops being "is this ready to
+  // submit" and becomes "what does this change about what was agreed".
+  const planIsActive = isActive(status);
 
   // What each section still needs, so the nav can say so without being opened.
   const outstanding = React.useMemo(() => {
@@ -128,15 +134,18 @@ export const CreateDmp: React.FC = () => {
           }
           rail={
             <>
+              <PlanChanges />
               <ReadyChecklist items={checklistItems} onNavigate={setSection} />
-              <Button
-                className="w-full"
-                disabled={!canSubmit}
-                onClick={() => navigate("/dmp/review")}
-              >
-                Review &amp; submit
-              </Button>
-              {!canSubmit && (
+              {!planIsActive && (
+                <Button
+                  className="w-full"
+                  disabled={!canSubmit}
+                  onClick={() => navigate("/dmp/review")}
+                >
+                  Review &amp; submit
+                </Button>
+              )}
+              {!planIsActive && !canSubmit && (
                 <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                   <Lock className="mt-0.5 h-3 w-3 shrink-0" />
                   Complete the checklist above to unlock submission.
@@ -183,6 +192,10 @@ export const CreateDmp: React.FC = () => {
                 {SECTION_LABELS[next]}
                 <ArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
+            ) : planIsActive ? (
+              <span className="text-xs text-muted-foreground">
+                Changes are reviewed in the panel on the right.
+              </span>
             ) : (
               <div className="flex items-center gap-2">
                 {!canSubmit && (

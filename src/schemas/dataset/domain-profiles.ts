@@ -11,9 +11,12 @@ import type { FieldPermission } from "@/config/field-policy";
 export const DomainKeyEnum = z.enum([
   "generic",
   "life_sciences",
+  "health_medical",
   "social_science",
+  "humanities",
   "geospatial",
   "physical_sciences",
+  "engineering_computing",
 ]);
 
 export type DomainKey = z.infer<typeof DomainKeyEnum>;
@@ -47,20 +50,24 @@ export interface DomainProfile {
 }
 
 const fieldSchema = (field: DomainField): z.ZodTypeAny => {
+  // A field left blank is reported by its own name, so the readiness list and
+  // the input's own error say the same recognisable thing.
+  const required_error = `${field.label} is required`;
+
   switch (field.type) {
     case "number":
-      return z.coerce.number();
+      return z.coerce.number({ required_error });
     case "toggle":
-      return z.boolean();
+      return z.boolean({ required_error });
     case "date":
-      return z.coerce.date();
+      return z.coerce.date({ required_error });
     case "select":
       return field.options?.length
-        ? z.enum(field.options as [string, ...string[]])
-        : z.string();
+        ? z.enum(field.options as [string, ...string[]], { required_error })
+        : z.string({ required_error });
     default:
       return field.required
-        ? z.string().min(1, `${field.label} is required`)
+        ? z.string({ required_error }).min(1, required_error)
         : z.string();
   }
 };
@@ -102,7 +109,6 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
     [],
   ),
 
-  // The domain this project is built around, so it's the one filled out.
   life_sciences: profile(
     "life_sciences",
     "Life sciences",
@@ -129,6 +135,12 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
       },
       { key: "sample_count", label: "Number of samples", type: "number" },
       {
+        key: "collection_site",
+        label: "Collection site",
+        type: "text",
+        help: "Where the material came from — field, plot, or facility.",
+      },
+      {
         key: "collection_date",
         label: "Collected on",
         type: "date",
@@ -148,11 +160,79 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
         permission: "human",
         help: "Tick only once the biosafety review has actually happened.",
       },
+      {
+        key: "material_transfer_terms",
+        label: "Material transfer terms",
+        type: "textarea",
+        permission: "human",
+        help: "Any MTA, ABS or permit that limits who may receive the material.",
+      },
     ],
   ),
 
-  // Deliberately thin — enough to prove the registry drives the UI on its
-  // own. Fill these out when a project actually needs them.
+  health_medical: profile(
+    "health_medical",
+    "Health & medical",
+    "Studies on people, where the paperwork is part of the data.",
+    [
+      {
+        key: "study_type",
+        label: "Study type",
+        type: "select",
+        required: true,
+        options: [
+          "Observational",
+          "Interventional / clinical trial",
+          "Registry",
+          "Secondary analysis",
+          "Case report",
+          "Other",
+        ],
+      },
+      { key: "condition_studied", label: "Condition studied", type: "text" },
+      { key: "participant_count", label: "Participants", type: "number" },
+      {
+        key: "age_range",
+        label: "Age range",
+        type: "text",
+        help: "e.g. 18–65, or “paediatric, under 12”.",
+      },
+      {
+        key: "trial_registration",
+        label: "Trial registration",
+        type: "text",
+        help: "Registry number if there is one, e.g. TCTR20250101000001.",
+      },
+      {
+        key: "ethics_approval_ref",
+        label: "Ethics approval reference",
+        type: "text",
+        permission: "human",
+        help: "The IRB/EC number. Add it before submitting — a model can't vouch for approval.",
+      },
+      {
+        key: "deidentification",
+        label: "De-identification",
+        type: "select",
+        permission: "human",
+        options: [
+          "Fully anonymised",
+          "Pseudonymised",
+          "Identifiable",
+          "Not applicable",
+        ],
+        help: "How re-identifiable the records are once shared.",
+      },
+      {
+        key: "sharing_restrictions",
+        label: "Sharing restrictions",
+        type: "textarea",
+        permission: "human",
+        help: "What consent or regulation stops this being shared openly.",
+      },
+    ],
+  ),
+
   social_science: profile(
     "social_science",
     "Social science",
@@ -173,10 +253,50 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
         options: [
           "Survey",
           "Interview",
+          "Focus group",
           "Observation",
           "Administrative records",
           "Other",
         ],
+      },
+      {
+        key: "sampling_method",
+        label: "Sampling method",
+        type: "select",
+        options: [
+          "Random",
+          "Stratified",
+          "Cluster",
+          "Convenience",
+          "Purposive",
+          "Census",
+          "Other",
+        ],
+      },
+      {
+        key: "geographic_coverage",
+        label: "Geographic coverage",
+        type: "text",
+        help: "Where fieldwork happened, e.g. Nan province, Thailand.",
+      },
+      {
+        key: "fieldwork_start",
+        label: "Fieldwork started",
+        type: "date",
+      },
+      {
+        key: "instrument_language",
+        label: "Language of instrument",
+        type: "text",
+        help: "What language participants answered in.",
+      },
+      {
+        key: "anonymisation",
+        label: "Anonymisation",
+        type: "select",
+        permission: "human",
+        options: ["Fully anonymised", "Pseudonymised", "Identifiable"],
+        help: "Disclosure risk is a judgement about your own data.",
       },
       {
         key: "consent_obtained",
@@ -184,13 +304,85 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
         type: "toggle",
         permission: "human",
       },
+      {
+        key: "ethics_approval_ref",
+        label: "Ethics approval reference",
+        type: "text",
+        permission: "human",
+      },
+    ],
+  ),
+
+  humanities: profile(
+    "humanities",
+    "Humanities",
+    "Sources, where they came from, and who holds rights in them.",
+    [
+      {
+        key: "source_type",
+        label: "Source type",
+        type: "select",
+        required: true,
+        options: [
+          "Manuscript",
+          "Printed text",
+          "Photograph",
+          "Audio recording",
+          "Video",
+          "Artefact",
+          "Oral history",
+          "Other",
+        ],
+      },
+      {
+        key: "period_covered",
+        label: "Period covered",
+        type: "text",
+        help: "e.g. Ayutthaya period, 1351–1767.",
+      },
+      {
+        key: "source_language",
+        label: "Language of sources",
+        type: "text",
+      },
+      {
+        key: "archive_or_collection",
+        label: "Archive or collection",
+        type: "text",
+        help: "Where the originals are held, and their reference if there is one.",
+      },
+      {
+        key: "transcription_standard",
+        label: "Transcription standard",
+        type: "text",
+        help: "e.g. TEI P5, or the romanisation scheme used.",
+      },
+      {
+        key: "item_count",
+        label: "Items digitised",
+        type: "number",
+      },
+      {
+        key: "rights_holder",
+        label: "Rights holder",
+        type: "text",
+        permission: "human",
+        help: "Who owns copyright in the originals — not something to infer.",
+      },
+      {
+        key: "cultural_sensitivity",
+        label: "Cultural sensitivity",
+        type: "textarea",
+        permission: "human",
+        help: "Community or Indigenous restrictions on access, display or reuse.",
+      },
     ],
   ),
 
   geospatial: profile(
     "geospatial",
     "Geospatial",
-    "Where the data sits on the ground.",
+    "Where the data sits on the ground, and how precisely.",
     [
       {
         key: "coordinate_system",
@@ -198,6 +390,12 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
         type: "text",
         required: true,
         help: "EPSG code or CRS name, e.g. EPSG:4326.",
+      },
+      {
+        key: "geometry_type",
+        label: "Geometry type",
+        type: "select",
+        options: ["Point", "Line", "Polygon", "Raster", "Mixed"],
       },
       {
         key: "bounding_box",
@@ -211,6 +409,34 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
         type: "text",
         help: "e.g. 10 m, or 1:50,000.",
       },
+      {
+        key: "positional_accuracy",
+        label: "Positional accuracy",
+        type: "text",
+        help: "e.g. ±2 m horizontal.",
+      },
+      {
+        key: "acquisition_source",
+        label: "Acquisition source",
+        type: "select",
+        options: [
+          "Field survey",
+          "GNSS",
+          "Satellite imagery",
+          "Aerial / drone",
+          "Digitised map",
+          "Modelled",
+          "Other",
+        ],
+      },
+      { key: "survey_date", label: "Surveyed on", type: "date" },
+      {
+        key: "location_sensitive",
+        label: "Locations are sensitive",
+        type: "toggle",
+        permission: "human",
+        help: "Nest sites, private land, protected places — whether precise coordinates must be withheld.",
+      },
     ],
   ),
 
@@ -219,12 +445,96 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
     "Physical sciences",
     "What measured it, and under what conditions.",
     [
+      {
+        key: "measurement_technique",
+        label: "Measurement technique",
+        type: "select",
+        required: true,
+        options: [
+          "Spectroscopy",
+          "Diffraction",
+          "Microscopy",
+          "Chromatography",
+          "Simulation",
+          "Other",
+        ],
+      },
       { key: "instrument", label: "Instrument", type: "text" },
+      {
+        key: "facility",
+        label: "Facility or beamline",
+        type: "text",
+        help: "Where the measurement was taken, if it wasn't your own lab.",
+      },
+      { key: "sample_material", label: "Sample material", type: "text" },
       {
         key: "measurement_conditions",
         label: "Measurement conditions",
         type: "textarea",
         help: "Temperature, pressure, calibration — whatever the reading depends on.",
+      },
+      {
+        key: "uncertainty",
+        label: "Reported uncertainty",
+        type: "text",
+        help: "e.g. ±0.5 K, or the confidence interval used.",
+      },
+      {
+        key: "calibration_reference",
+        label: "Calibration reference",
+        type: "text",
+      },
+      { key: "measurement_date", label: "Measured on", type: "date" },
+    ],
+  ),
+
+  engineering_computing: profile(
+    "engineering_computing",
+    "Engineering & computing",
+    "What it ran on, and what someone needs to run it again.",
+    [
+      {
+        key: "computing_environment",
+        label: "Computing environment",
+        type: "text",
+        required: true,
+        help: "What it ran on — 4 × NVIDIA A100, a cloud instance, or just a standard laptop.",
+      },
+      {
+        key: "model_or_algorithm",
+        label: "Model or algorithm",
+        type: "text",
+      },
+      {
+        key: "training_data_source",
+        label: "Training data source",
+        type: "text",
+        help: "Where the inputs came from, if this is a trained artefact.",
+      },
+      {
+        key: "benchmark",
+        label: "Benchmark used",
+        type: "text",
+      },
+      { key: "compute_hours", label: "Compute hours", type: "number" },
+      {
+        key: "software_dependencies",
+        label: "Software dependencies",
+        type: "textarea",
+        help: "Languages, frameworks and versions a reuser would have to match.",
+      },
+      {
+        key: "reproducibility_notes",
+        label: "Reproducibility notes",
+        type: "textarea",
+        help: "Seeds, configs, anything that makes a run repeatable.",
+      },
+      {
+        key: "third_party_terms",
+        label: "Third-party terms",
+        type: "textarea",
+        permission: "human",
+        help: "Licences on models or data you reused that limit redistribution.",
       },
     ],
   ),

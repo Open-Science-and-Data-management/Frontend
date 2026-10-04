@@ -11,7 +11,15 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { KeywordInput } from "@/components/dmp/KeywordInput";
 import { SchemaFieldTable } from "@/components/dmp/SchemaFieldTable";
 import { DistributionList } from "@/components/dmp/DistributionList";
+import { DomainFields } from "@/components/dmp/DomainFields";
 import { datasetFieldPolicy } from "@/config/field-policy";
+import {
+  DomainKeyEnum,
+  domainProfiles,
+  foreignDomainKeys,
+  getDomainProfile,
+  type DomainKey,
+} from "@/schemas/dataset/domain-profiles";
 import {
   DatasetType,
   DatasetStatus,
@@ -45,7 +53,12 @@ interface DatasetCardProps {
 
 export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
   const [expanded, setExpanded] = React.useState(true);
-  const { updateDataset, changeDatasetType, removeDataset } = useDmpStore();
+  const {
+    updateDataset,
+    changeDatasetType,
+    changeDatasetDomain,
+    removeDataset,
+  } = useDmpStore();
   const currentDmpId = useDmpStore((s) => s.currentDmpId);
   const cancelTasksForDataset = useTaskStore((s) => s.cancelTasksForDataset);
   const toast = useToastStore((s) => s.toast);
@@ -53,6 +66,27 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
 
   const id = dataset.dataset_id as string;
   const patch = (p: Partial<Dataset>) => updateDataset(id, p);
+
+  const profile = getDomainProfile(dataset.domain);
+
+  // Switching domain throws metadata away, so say which fields before doing it.
+  const switchDomain = async (next: DomainKey) => {
+    if (next === (dataset.domain ?? "generic")) return;
+    const dropped = foreignDomainKeys(next, dataset.domain_metadata ?? {});
+
+    if (dropped.length > 0) {
+      const names = dropped.map(
+        (key) => profile.fields.find((f) => f.key === key)?.label ?? key,
+      );
+      const ok = await confirm({
+        title: `Clear ${names.length} ${profile.label} field${names.length === 1 ? "" : "s"}?`,
+        description: `${domainProfiles[next].label} has no place for ${names.join(", ")}, so switching clears ${names.length === 1 ? "it" : "them"}.`,
+        confirmLabel: "Switch domain",
+      });
+      if (!ok) return;
+    }
+    changeDatasetDomain(id, next);
+  };
 
   const composeStatement = () => {
     const { repository, duration, format } = dataset.preservation ?? {};
@@ -140,6 +174,26 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                 ))}
               </Select>
             </div>
+            <div>
+              <label
+                htmlFor={`domain-${id}`}
+                className="mb-1 block text-xs font-medium text-muted-foreground"
+              >
+                Research domain
+              </label>
+              <Select
+                id={`domain-${id}`}
+                className="w-44"
+                value={dataset.domain ?? "generic"}
+                onChange={(e) => void switchDomain(e.target.value as DomainKey)}
+              >
+                {DomainKeyEnum.options.map((option) => (
+                  <option key={option} value={option}>
+                    {domainProfiles[option].label}
+                  </option>
+                ))}
+              </Select>
+            </div>
             <Button
               type="button"
               variant="ghost"
@@ -211,6 +265,26 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               onChange={(keyword) => patch({ keyword })}
             />
           </FormField>
+
+          <section
+            aria-label="Domain details"
+            className="space-y-3 rounded-lg border border-dashed p-3"
+          >
+            <div>
+              <h4 className="text-sm font-medium">{profile.label} details</h4>
+              <p className="text-xs text-muted-foreground">
+                {profile.key === "generic"
+                  ? "Core fields cover every domain."
+                  : profile.description}
+              </p>
+            </div>
+            <DomainFields
+              datasetId={id}
+              domain={dataset.domain}
+              metadata={dataset.domain_metadata ?? {}}
+              onChange={(domain_metadata) => patch({ domain_metadata })}
+            />
+          </section>
 
           <div>
             <label

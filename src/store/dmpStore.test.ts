@@ -18,6 +18,7 @@ const record = (overrides: Partial<DmpRecord> = {}): DmpRecord => {
     dataset_count: 0,
     contributor_count: 0,
     tasks_generated: false,
+    versions: [],
     draft: {},
     ...overrides,
   };

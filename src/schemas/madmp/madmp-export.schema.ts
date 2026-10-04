@@ -27,7 +27,9 @@ const distributionOut = z.object({
   format: z.array(z.string()).optional(),
   byte_size: z.number().optional(),
   data_access: z.enum(["open", "shared", "closed"]),
-  license: z.array(z.object({ license_ref: z.string(), start_date: z.string() })).optional(),
+  license: z
+    .array(z.object({ license_ref: z.string(), start_date: z.string() }))
+    .optional(),
 });
 const datasetOut = z.object({
   title: z.string(),
@@ -43,6 +45,14 @@ const datasetOut = z.object({
   // FAIRer extension
   protection_level: z.string().optional(),
   security_classification_level: z.string().optional(),
+  /**
+   * The research domain and its profile's values. Carried as an extension
+   * rather than squeezed into `keyword`, which would lose which value meant
+   * what; RDA maDMP allows extensions, and dropping them would lose the only
+   * domain-specific detail the plan holds.
+   */
+  domain: z.string().optional(),
+  domain_metadata: z.record(z.unknown()).optional(),
 });
 
 export const madmpExportSchema = z.object({
@@ -50,7 +60,7 @@ export const madmpExportSchema = z.object({
     title: z.string(),
     description: z.string().optional(),
     language: z.string(),
-    created: z.string(),   // ISO 8601
+    created: z.string(), // ISO 8601
     modified: z.string(),
     dmp_id: pid,
     ethical_issues_exist: z.enum(["yes", "no", "unknown"]),
@@ -59,7 +69,15 @@ export const madmpExportSchema = z.object({
     contact: contactOut,
     contributor: z.array(contributorOut).optional(),
     cost: z.array(costOut).optional(),
-    project: z.array(z.object({ title: z.string(), start: z.string().optional(), end: z.string().optional() })).optional(),
+    project: z
+      .array(
+        z.object({
+          title: z.string(),
+          start: z.string().optional(),
+          end: z.string().optional(),
+        }),
+      )
+      .optional(),
     dataset: z.array(datasetOut).min(1),
     // FAIRer extension
     schema_version: z.string().optional(),

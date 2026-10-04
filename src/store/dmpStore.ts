@@ -20,6 +20,10 @@ import { recordAiEvent, useAiThread, UNSCOPED } from "@/store/aiThread";
 import { notify } from "@/store/notificationStore";
 import { CURRENT_USER_ID } from "@/config/current-user";
 import { dmpFieldPolicy, datasetFieldPolicy } from "@/config/field-policy";
+import { getDomainProfile } from "@/schemas/dataset/domain-profiles";
+import { isActive } from "@/config/plan-mode";
+import { EditType, VersionStatus } from "@/schemas/shared";
+import { diffPlans, editTypeOf, type FieldChange } from "@/config/plan-diff";
 
 const TOKEN_LIMIT = 30000;
 
@@ -58,6 +62,25 @@ const STATUS_FOR_STAGE: Record<string, Dataset["status"]> = {
  * record can be reopened in the editor; the summary fields on top are what the
  * list screen searches, filters, and sorts on without walking the payload.
  */
+/**
+ * A numbered revision. Only edits that carry a commitment make one — see
+ * plan-diff: a minor edit is applied to the version in force and logged on it.
+ */
+export interface PlanVersion {
+  number: number;
+  status: z.infer<typeof VersionStatus>;
+  edit_type: z.infer<typeof EditType>;
+  changes: FieldChange[];
+  snapshot: DmpDraft;
+  created_at: Date;
+  decided_at?: Date;
+  decided_by?: string;
+  /** Why it came back, when it came back. */
+  note?: string;
+  /** Minor edits folded into this version without re-review. */
+  minor_edits: { at: Date; by: string; changes: FieldChange[] }[];
+}
+
 export interface DmpRecord {
   dmp_id: string;
   project_id?: string;
@@ -71,6 +94,9 @@ export interface DmpRecord {
   contributor_count: number;
   tasks_generated: boolean;
   draft: DmpDraft;
+  versions: PlanVersion[];
+  /** The version tasks and progress run against. */
+  active_version?: number;
 }
 
 const summarise = (draft: DmpDraft) => ({
@@ -132,7 +158,7 @@ const seedDmps = (): DmpRecord[] => {
         project_id: "proj-2",
         title: "Coastal Sediment Archive DMP",
         description:
-          "Core sample measurements and imagery from the 2025 survey season, awaiting committee review.",
+          "Core sample measurements and imagery from the 2025 survey season, ready for the researcher to finalize.",
         language: "eng",
         dataset: [createEmptyDataset("raw")],
         contributor: [createEmptyContributor()],
@@ -155,15 +181,37 @@ const seedDmps = (): DmpRecord[] => {
     },
   ];
 
-  return seeds.map((seed) => ({
-    dmp_id: seed.dmp_id,
-    status: seed.status,
-    created_at: daysAgo(seed.created),
-    updated_at: daysAgo(seed.updated),
-    tasks_generated: seed.tasks_generated ?? false,
-    draft: seed.draft,
-    ...summarise(seed.draft),
-  }));
+  return seeds.map((seed) => {
+    const created = daysAgo(seed.created);
+    // A plan that is already active got there through a version; without one
+    // there would be nothing to diff the next edit against.
+    const versions: PlanVersion[] = isActive(seed.status)
+      ? [
+          {
+            number: 1,
+            status: "approved",
+            edit_type: "major",
+            changes: [],
+            snapshot: seed.draft,
+            created_at: created,
+            decided_at: daysAgo(seed.updated),
+            minor_edits: [],
+          },
+        ]
+      : [];
+
+    return {
+      dmp_id: seed.dmp_id,
+      status: seed.status,
+      created_at: created,
+      updated_at: daysAgo(seed.updated),
+      tasks_generated: seed.tasks_generated ?? false,
+      draft: seed.draft,
+      versions,
+      active_version: versions.length > 0 ? 1 : undefined,
+      ...summarise(seed.draft),
+    };
+  });
 };
 
 /** True once the editor holds something worth listing. */
@@ -214,6 +262,8 @@ export const buildDmpList = (state: {
       updated_at: state.draftUpdatedAt,
       tasks_generated: state.tasksGenerated,
       draft,
+      // Not yet submitted, so it has no versions behind it.
+      versions: [],
       ...summarise(draft),
     });
   }
@@ -285,6 +335,19 @@ interface DmpDraftState {
   openDmp: (id: string) => DmpRecord | undefined;
   deleteDmp: (id: string) => void;
 
+  /** The version tasks and progress run against, if the plan is active yet. */
+  activeVersion: () => PlanVersion | undefined;
+  /** A numbered revision waiting on a decision, if one is in flight. */
+  pendingVersion: () => PlanVersion | undefined;
+  /** What the open draft changes, measured against the version in force. */
+  pendingChanges: () => FieldChange[];
+  /** Minor-only edits go straight in, recorded against the active version. */
+  saveMinorEdits: () => void;
+  /** Anything major becomes the next numbered version, awaiting a decision. */
+  submitRevision: () => void;
+  /** Sends a pending revision back with a reason; the draft stays editable. */
+  rejectRevision: (note: string) => void;
+
   submitForApproval: () => void;
   /** Stand-in for the committee decision until their screens exist. */
   approve: () => void;
@@ -318,6 +381,8 @@ interface DmpDraftState {
   ) => void;
   removeDataset: (id: string) => void;
   changeDatasetType: (id: string, type: Dataset["type"]) => void;
+  /** Switching domain drops metadata the new profile has no field for. */
+  changeDatasetDomain: (id: string, domain: Dataset["domain"]) => void;
 
   hasToken: () => boolean;
   tokensLeft: () => number;
@@ -354,6 +419,8 @@ const commitDraft = (state: {
 }): DmpRecord[] => {
   if (!state.currentDmpId || !draftHasContent(state.draft)) return state.dmps;
 
+  const existing = state.dmps.find((d) => d.dmp_id === state.currentDmpId);
+
   const record: DmpRecord = {
     dmp_id: state.currentDmpId,
     status: state.status,
@@ -361,6 +428,9 @@ const commitDraft = (state: {
     updated_at: state.draftUpdatedAt,
     tasks_generated: state.tasksGenerated,
     draft: state.draft,
+    // Version history belongs to the record, not to the open editor.
+    versions: existing?.versions ?? [],
+    active_version: existing?.active_version,
     ...summarise(state.draft),
   };
 
@@ -384,6 +454,51 @@ export const useDmpStore = create<DmpDraftState>()(
             ? { ...next, draftUpdatedAt: new Date() }
             : next;
         }, replace as false)) as typeof rawSet;
+
+      /**
+       * Moves whichever revision is waiting into force. With nothing waiting
+       * — the independent researcher finalizing their own edits — the pending
+       * version is created and decided in the same move, since there is no one
+       * else for it to wait on.
+       */
+      const activate = (decidedBy: string) => {
+        const state = get();
+        const record = state.dmps.find((d) => d.dmp_id === state.currentDmpId);
+        const waiting = record?.versions.find((v) => v.status === "pending");
+        const changes = waiting ? waiting.changes : state.pendingChanges();
+
+        const number =
+          waiting?.number ??
+          Math.max(0, ...(record?.versions ?? []).map((v) => v.number)) + 1;
+
+        const decided = {
+          number,
+          status: "approved" as const,
+          edit_type: editTypeOf(changes),
+          changes,
+          snapshot: waiting?.snapshot ?? state.draft,
+          created_at: waiting?.created_at ?? new Date(),
+          decided_at: new Date(),
+          decided_by: decidedBy,
+          minor_edits: waiting?.minor_edits ?? [],
+        };
+
+        set((current) => ({
+          status: "approved",
+          dmps: current.dmps.map((d) =>
+            d.dmp_id === current.currentDmpId
+              ? {
+                  ...d,
+                  status: "approved" as const,
+                  active_version: number,
+                  versions: waiting
+                    ? d.versions.map((v) => (v.number === number ? decided : v))
+                    : [...d.versions, decided],
+                }
+              : d,
+          ),
+        }));
+      };
 
       return {
         draft: emptyDraft,
@@ -439,8 +554,160 @@ export const useDmpStore = create<DmpDraftState>()(
               : {}),
           })),
 
+        activeVersion: () => {
+          const { dmps, currentDmpId } = get();
+          const record = dmps.find((d) => d.dmp_id === currentDmpId);
+          return record?.versions.find(
+            (v) => v.number === record.active_version,
+          );
+        },
+
+        pendingVersion: () => {
+          const { dmps, currentDmpId } = get();
+          return dmps
+            .find((d) => d.dmp_id === currentDmpId)
+            ?.versions.find((v) => v.status === "pending");
+        },
+
+        pendingChanges: () => {
+          const active = get().activeVersion();
+          // Before there is an active version there is nothing to diff against:
+          // the whole plan is the change.
+          return active ? diffPlans(active.snapshot, get().draft) : [];
+        },
+
+        saveMinorEdits: () => {
+          const changes = get().pendingChanges();
+          const active = get().activeVersion();
+          // The guard, not just the button: a major edit can't be slipped in
+          // through the quiet path.
+          if (!active || changes.length === 0) return;
+          if (editTypeOf(changes) === "major") return;
+
+          set((state) => ({
+            dmps: state.dmps.map((d) =>
+              d.dmp_id === state.currentDmpId
+                ? {
+                    ...d,
+                    draft: state.draft,
+                    ...summarise(state.draft),
+                    updated_at: new Date(),
+                    versions: d.versions.map((v) =>
+                      v.number === active.number
+                        ? {
+                            ...v,
+                            snapshot: state.draft,
+                            minor_edits: [
+                              ...v.minor_edits,
+                              {
+                                at: new Date(),
+                                by: CURRENT_USER_ID,
+                                changes,
+                              },
+                            ],
+                          }
+                        : v,
+                    ),
+                  }
+                : d,
+            ),
+          }));
+        },
+
+        submitRevision: () => {
+          const changes = get().pendingChanges();
+          if (changes.length === 0) return;
+
+          const { draft, currentDmpId } = get();
+          const edit_type = editTypeOf(changes);
+
+          set((state) => ({
+            dmps: state.dmps.map((d) => {
+              if (d.dmp_id !== state.currentDmpId) return d;
+              const next = Math.max(0, ...d.versions.map((v) => v.number)) + 1;
+              return {
+                ...d,
+                draft: state.draft,
+                ...summarise(state.draft),
+                updated_at: new Date(),
+                versions: [
+                  ...d.versions,
+                  {
+                    number: next,
+                    status: "pending" as const,
+                    edit_type,
+                    changes,
+                    snapshot: state.draft,
+                    created_at: new Date(),
+                    minor_edits: [],
+                  },
+                ],
+              };
+            }),
+          }));
+
+          notify({
+            user_id: CURRENT_USER_ID,
+            type: "dmp_submitted",
+            title: "Revision submitted",
+            message: `${draft.title?.trim() || "Your plan"} has changes waiting on a decision. The version in force keeps running.`,
+            link: "/dmp/status",
+            dmp_id: currentDmpId ?? undefined,
+            project_id: draft.project_id,
+          });
+        },
+
+        rejectRevision: (note) =>
+          set((state) => ({
+            dmps: state.dmps.map((d) =>
+              d.dmp_id === state.currentDmpId
+                ? {
+                    ...d,
+                    versions: d.versions.map((v) =>
+                      v.status === "pending"
+                        ? {
+                            ...v,
+                            status: "rejected" as const,
+                            decided_at: new Date(),
+                            note,
+                          }
+                        : v,
+                    ),
+                  }
+                : d,
+            ),
+          })),
+
         submitForApproval: () => {
-          set({ status: "pending" });
+          // After the plan is active, submitting means raising a revision —
+          // the first submission is the only one that isn't one.
+          if (get().activeVersion()) {
+            get().submitRevision();
+            return;
+          }
+
+          set((state) => ({
+            status: "pending",
+            dmps: state.dmps.map((d) =>
+              d.dmp_id === state.currentDmpId
+                ? {
+                    ...d,
+                    draft: state.draft,
+                    versions: [
+                      {
+                        number: 1,
+                        status: "pending" as const,
+                        edit_type: "major" as const,
+                        changes: [],
+                        snapshot: state.draft,
+                        created_at: new Date(),
+                        minor_edits: [],
+                      },
+                    ],
+                  }
+                : d,
+            ),
+          }));
           const { draft, currentDmpId } = get();
           notify({
             user_id: CURRENT_USER_ID,
@@ -454,7 +721,7 @@ export const useDmpStore = create<DmpDraftState>()(
         },
 
         approve: () => {
-          set({ status: "approved" });
+          activate("committee");
           const { draft, currentDmpId } = get();
           notify({
             user_id: CURRENT_USER_ID,
@@ -470,7 +737,7 @@ export const useDmpStore = create<DmpDraftState>()(
         finalize: () => {
           // Same destination as approve(), reached by the researcher. Nothing
           // downstream can tell the two apart, which is the point.
-          set({ status: "approved" });
+          activate(CURRENT_USER_ID);
           const { draft, currentDmpId } = get();
           notify({
             user_id: CURRENT_USER_ID,
@@ -636,6 +903,31 @@ export const useDmpStore = create<DmpDraftState>()(
               dataset: (state.draft.dataset ?? []).filter(
                 (d) => d.dataset_id !== id,
               ),
+            },
+          })),
+
+        changeDatasetDomain: (id, domain) =>
+          set((state) => ({
+            draft: {
+              ...state.draft,
+              dataset: (state.draft.dataset ?? []).map((d) => {
+                if (d.dataset_id !== id) return d;
+                // Profiles are strict, so a value the new domain doesn't know
+                // about would fail validation forever. Same-named fields carry
+                // over; everything else goes, and the card warns first.
+                const known = new Set(
+                  getDomainProfile(domain).fields.map((f) => f.key),
+                );
+                return {
+                  ...d,
+                  domain,
+                  domain_metadata: Object.fromEntries(
+                    Object.entries(d.domain_metadata ?? {}).filter(([key]) =>
+                      known.has(key),
+                    ),
+                  ),
+                };
+              }),
             },
           })),
 

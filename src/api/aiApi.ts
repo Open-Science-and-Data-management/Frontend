@@ -1,4 +1,8 @@
 import type { DmpDraft } from "@/types/dmp";
+import {
+  getDomainProfile,
+  type DomainKey,
+} from "@/schemas/dataset/domain-profiles";
 
 export type RegenerateDirection =
   | { kind: "shorter" | "formal" }
@@ -227,6 +231,165 @@ const planForDirection = (direction: string) => {
 };
 
 /**
+ * AI may draft domain values, but never a field the profile reserves for a
+ * person — a compliance claim is the researcher's to make, in domain metadata
+ * exactly as in the core fields.
+ */
+const aiFillable = (
+  domain: DomainKey,
+  metadata: Record<string, unknown>,
+): Record<string, unknown> => {
+  const humanOwned = new Set(
+    getDomainProfile(domain)
+      .fields.filter((f) => f.permission === "human")
+      .map((f) => f.key),
+  );
+  return Object.fromEntries(
+    Object.entries(metadata).filter(
+      ([key, value]) => value !== undefined && !humanOwned.has(key),
+    ),
+  );
+};
+
+/**
+ * What each domain sounds like in a proposal, and what can be read straight
+ * out of the words. Checked in order, first match wins — the specific ones
+ * (patients, archives) come before the broad ones.
+ */
+const DOMAIN_HINTS: {
+  domain: DomainKey;
+  test: RegExp;
+  read?: (text: string) => Record<string, unknown>;
+}[] = [
+  {
+    domain: "health_medical",
+    test: /patient|clinical|randomi[sz]ed|\btrial\b|irb|ethics committee|hospital|cohort|diagnos|ผู้ป่วย|คลินิก/,
+    read: (t) => ({
+      study_type: /trial|interventional|randomi[sz]ed/.test(t)
+        ? "Interventional / clinical trial"
+        : /cohort|observational/.test(t)
+          ? "Observational"
+          : /registry/.test(t)
+            ? "Registry"
+            : undefined,
+      // ethics_approval_ref and de-identification are the researcher's.
+      ethics_approval_ref: "pending",
+      deidentification: "Fully anonymised",
+    }),
+  },
+  {
+    domain: "life_sciences",
+    test: /rice|ข้าว|sequenc|genom|organism|dna|rna|specimen|cultivar|assay/,
+    read: (t) => ({
+      organism: /rice|ข้าว/.test(t)
+        ? "Oryza sativa"
+        : /pollinator|bee/.test(t)
+          ? "Apis mellifera"
+          : undefined,
+      sequencing_platform: /nanopore/.test(t)
+        ? "Oxford Nanopore"
+        : /illumina/.test(t)
+          ? "Illumina"
+          : undefined,
+      assay_type: /rna-?seq/.test(t)
+        ? "RNA-seq"
+        : /wgs|whole genome/.test(t)
+          ? "WGS"
+          : undefined,
+      biosafety_reviewed: true,
+    }),
+  },
+  {
+    domain: "humanities",
+    test: /manuscript|archive|oral history|philolog|palm.?leaf|inscription|historical text|โบราณ|จารึก/,
+    read: (t) => ({
+      source_type: /manuscript|palm.?leaf/.test(t)
+        ? "Manuscript"
+        : /oral history/.test(t)
+          ? "Oral history"
+          : /photograph/.test(t)
+            ? "Photograph"
+            : undefined,
+      rights_holder: "unknown",
+    }),
+  },
+  {
+    domain: "social_science",
+    test: /survey|interview|focus group|participant|household|questionnaire|แบบสอบถาม/,
+    read: (t) => ({
+      collection_instrument: /interview/.test(t)
+        ? "Interview"
+        : /focus group/.test(t)
+          ? "Focus group"
+          : /survey|questionnaire|แบบสอบถาม/.test(t)
+            ? "Survey"
+            : undefined,
+      consent_obtained: true,
+    }),
+  },
+  {
+    domain: "geospatial",
+    test: /geospatial|\bgis\b|satellite|remote sensing|coordinate|แผนที่|mapping|land ?cover/,
+    read: (t) => ({
+      coordinate_system: /epsg:?\s?4326|wgs ?84|gps/.test(t)
+        ? "EPSG:4326"
+        : undefined,
+      acquisition_source: /satellite|remote sensing/.test(t)
+        ? "Satellite imagery"
+        : /drone|aerial/.test(t)
+          ? "Aerial / drone"
+          : undefined,
+      location_sensitive: true,
+    }),
+  },
+  {
+    domain: "physical_sciences",
+    test: /spectroscop|diffraction|microscop|chromatograph|beamline|calibration|crystallograph/,
+    read: (t) => ({
+      measurement_technique: /spectroscop/.test(t)
+        ? "Spectroscopy"
+        : /diffraction|crystallograph/.test(t)
+          ? "Diffraction"
+          : /microscop/.test(t)
+            ? "Microscopy"
+            : /chromatograph/.test(t)
+              ? "Chromatography"
+              : undefined,
+    }),
+  },
+  {
+    domain: "engineering_computing",
+    test: /machine learning|deep learning|neural|training a model|benchmark|\bgpu\b|source code|firmware|โมเดล/,
+    read: (t) => ({
+      model_or_algorithm: /neural|deep learning/.test(t)
+        ? "Neural network"
+        : undefined,
+      third_party_terms: "see licence",
+    }),
+  },
+];
+
+/**
+ * Reads a domain out of what the proposal talks about, and fills in whatever
+ * the text already answers. A suggestion only: the researcher can change it,
+ * and the values arrive marked AI like any other drafted field.
+ */
+export const suggestDomain = (
+  text: string,
+): { domain: DomainKey; domain_metadata: Record<string, unknown> } => {
+  const t = text.toLowerCase();
+  const hit = DOMAIN_HINTS.find((hint) => hint.test.test(t));
+  if (!hit) return { domain: "generic", domain_metadata: {} };
+
+  return {
+    domain: hit.domain,
+    // aiFillable drops the human-owned keys above, so a hint can be written
+    // naively and the boundary still holds.
+    domain_metadata: aiFillable(hit.domain, hit.read?.(t) ?? {}),
+  };
+};
+
+/**
  * Shapes the drafted plan by what the researcher told us to aim for. A
  * direction that quietly changed nothing would be worse than none at all, so
  * every branch here is observable in the result.
@@ -266,6 +429,18 @@ const applyAnalysisDirection = (
         ...set.preservation,
         duration: "10 years",
         repository: set.preservation?.repository ?? "Institutional repository",
+      };
+    });
+  }
+
+  // A steer that names a field moves the outputs into that domain.
+  const suggested = suggestDomain(d);
+  if (suggested.domain !== "generic") {
+    datasets.forEach((set) => {
+      set.domain = suggested.domain;
+      set.domain_metadata = {
+        ...(set.domain_metadata ?? {}),
+        ...suggested.domain_metadata,
       };
     });
   }

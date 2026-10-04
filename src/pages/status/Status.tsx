@@ -9,6 +9,7 @@ import {
   ListChecks,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AiProgress } from "@/components/ui/ai-progress";
 import { estimateCost, generateTasks } from "@/api/aiApi";
@@ -47,6 +48,15 @@ export const Status: React.FC = () => {
   const toast = useToastStore((s) => s.toast);
 
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [rejectNote, setRejectNote] = React.useState("");
+  const dmps = useDmpStore((s) => s.dmps);
+  const rejectRevision = useDmpStore((s) => s.rejectRevision);
+  const record = dmps.find((d) => d.dmp_id === currentDmpId);
+  // A revision, as opposed to the first submission: something is already live.
+  const revision =
+    record?.active_version !== undefined
+      ? record.versions.find((v) => v.status === "pending")
+      : undefined;
   const [generating, setGenerating] = React.useState(false);
   const [step, setStep] = React.useState(0);
 
@@ -148,6 +158,84 @@ export const Status: React.FC = () => {
                 : "No committee reviews this plan — finalize it yourself when you're ready, and your evidence carries the weight."}
           </p>
         </div>
+
+        {revision && (
+          <div className="rounded-lg border bg-card p-5 text-left">
+            <h2 className="text-sm font-semibold">
+              Version {revision.number} is waiting on a decision
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Version {record?.active_version} stays in force meanwhile — its
+              tasks keep running.
+            </p>
+
+            <ul className="mt-3 space-y-1.5">
+              {revision.changes.map((change) => (
+                <li key={change.path} className="text-xs">
+                  <span className="font-medium">{change.label}</span>
+                  <span className="text-muted-foreground">
+                    {" "}
+                    · {change.from} → {change.to}
+                  </span>
+                </li>
+              ))}
+            </ul>
+
+            {route.by === "self" ? (
+              <Button
+                className="mt-4"
+                size="sm"
+                onClick={() => {
+                  finalize();
+                  toast({
+                    title: `Version ${revision.number} is now in force`,
+                  });
+                }}
+              >
+                Finalize version {revision.number}
+              </Button>
+            ) : (
+              <div className="mt-4 rounded-lg border border-dashed p-3">
+                <p className="text-xs text-muted-foreground">
+                  Demo only — stands in for the committee decision.
+                </p>
+                <Textarea
+                  rows={2}
+                  value={rejectNote}
+                  onChange={(e) => setRejectNote(e.target.value)}
+                  aria-label="Reason for sending it back"
+                  placeholder="Reason, if sending it back"
+                  className="mt-2 text-sm"
+                />
+                <div className="mt-2 flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      approve();
+                      toast({
+                        title: `Version ${revision.number} approved`,
+                      });
+                    }}
+                  >
+                    Approve version {revision.number}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!rejectNote.trim()}
+                    onClick={() => {
+                      rejectRevision(rejectNote.trim());
+                      setRejectNote("");
+                      toast({ title: "Sent back to the researcher" });
+                    }}
+                  >
+                    Send back
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="rounded-lg border bg-card p-6">
           <ol className="flex items-center justify-between">

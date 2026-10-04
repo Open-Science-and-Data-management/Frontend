@@ -221,6 +221,8 @@ describe("closing a task moves its dataset along the lifecycle", () => {
             protection_level: "x",
             security_classification_level: "y",
             keyword: [],
+            domain: "generic",
+            domain_metadata: {},
             preservation: { doi_requested: false },
             distribution: [],
             schema_fields: [],

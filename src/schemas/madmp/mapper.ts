@@ -3,6 +3,15 @@ import { contributorFullName } from "../contributor/contributor.schema";
 import { madmpExportSchema, type MadmpExport } from "./madmp-export.schema";
 
 const yn = (b: boolean): "yes" | "no" => (b ? "yes" : "no");
+
+/** Domain values are JSON in the export, so dates leave as ISO strings. */
+const exportableMetadata = (metadata: Record<string, unknown> = {}) => {
+  const entries = Object.entries(metadata).map(([key, value]) => [
+    key,
+    value instanceof Date ? value.toISOString() : value,
+  ]);
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+};
 const nowIso = () => new Date().toISOString();
 
 // map DmpForm (from react-hook-form) to maDMP export schema (for submission)
@@ -71,6 +80,8 @@ export function mapFormToMadmp(
         })),
         protection_level: d.protection_level,
         security_classification_level: d.security_classification_level,
+        domain: d.domain && d.domain !== "generic" ? d.domain : undefined,
+        domain_metadata: exportableMetadata(d.domain_metadata),
       })),
       schema_version: form.schema_version,
     },

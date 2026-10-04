@@ -74,6 +74,8 @@ const FIELD_LABELS: Record<string, string> = {
   protection_level: "Protection level",
   security_classification_level: "Security classification level",
   keyword: "Keywords",
+  domain: "Research domain",
+  domain_metadata: "Domain details",
   preservation: "Preservation",
   distribution: "Distribution",
   schema_version: "Schema version",
