@@ -171,3 +171,39 @@ describe("removing files and projects", () => {
     ).toHaveLength(1);
   });
 });
+
+describe("updateUser", () => {
+  it("patches only the matching user", () => {
+    useProjectStore.setState({
+      users: [
+        {
+          user_id: "u1",
+          name: "A",
+          surname: "B",
+          email: "a@b.edu",
+          role: "researcher",
+          ai_token_limit: 4500,
+          ai_token_used: 0,
+        },
+        {
+          user_id: "u2",
+          name: "C",
+          surname: "D",
+          email: "c@d.edu",
+          role: "committee",
+          ai_token_limit: 4500,
+          ai_token_used: 0,
+        },
+      ],
+    });
+
+    state().updateUser("u1", { name: "Alex", email: "alex@b.edu" });
+
+    expect(state().getUser("u1")).toMatchObject({
+      name: "Alex",
+      email: "alex@b.edu",
+      role: "researcher",
+    });
+    expect(state().getUser("u2")?.name).toBe("C");
+  });
+});

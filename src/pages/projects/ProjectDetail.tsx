@@ -69,13 +69,8 @@ export const ProjectDetail: React.FC = () => {
             <StatusBadge status={project.status} />
           </div>
         </div>
-
-        {/* min-w-0: a grid item defaults to min-width:auto, and a `truncate`
-            title inside is nowrap — its full width would widen the track and
-            push the page sideways instead of ellipsising. */}
         <ProjectTasks projectId={id as string} />
-
-        <div className="grid gap-4 [&>*]:min-w-0 md:grid-cols-2">
+        <div className="grid gap-4 *:min-w-0 md:grid-cols-2">
           <section className="rounded-lg border bg-card p-5">
             <h2 className="font-semibold">Proposal</h2>
             {proposal ? (

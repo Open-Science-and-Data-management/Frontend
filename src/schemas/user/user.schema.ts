@@ -13,5 +13,16 @@ export const userSchema = z.object({
 });
 export type User = z.infer<typeof userSchema>;
 
+/** The fields a person may change about themselves; role and quota are not. */
+export const userProfileSchema = userSchema
+  .pick({ title: true, name: true, surname: true, email: true })
+  .extend({
+    title: z.string().trim().optional(),
+    name: z.string().trim().min(1, "Name is required"),
+    surname: z.string().trim().min(1, "Surname is required"),
+    email: z.string().trim().email("Enter a valid email address"),
+  });
+export type UserProfile = z.infer<typeof userProfileSchema>;
+
 export const userFullName = (u: Pick<User, "title" | "name" | "surname">) =>
   [u.title, u.name, u.surname].filter(Boolean).join(" ");

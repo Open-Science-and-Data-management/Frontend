@@ -60,7 +60,6 @@ const seedFiles: FileRecord[] = [
   },
 ];
 
-// Stands in for a real user directory until auth lands.
 const seedUsers: User[] = [
   {
     user_id: CURRENT_USER_ID,
@@ -107,11 +106,11 @@ interface ProjectState {
   uploadingFor: string | null;
 
   getUser: (id: string) => User | undefined;
+  updateUser: (id: string, patch: Partial<User>) => void;
 
   createProject: (input: {
     project_name: string;
     description?: string;
-    /** How this project's plans become active; institutional by default. */
     plan_mode?: Project["plan_mode"];
   }) => Project;
   updateProject: (id: string, patch: Partial<Project>) => void;
@@ -142,6 +141,13 @@ export const useProjectStore = create<ProjectState>()(
       uploadingFor: null,
 
       getUser: (id) => get().users.find((u) => u.user_id === id),
+
+      updateUser: (id, patch) =>
+        set((state) => ({
+          users: state.users.map((u) =>
+            u.user_id === id ? { ...u, ...patch } : u,
+          ),
+        })),
 
       createProject: ({ project_name, description, plan_mode }) => {
         const project: Project = {
@@ -231,7 +237,6 @@ export const useProjectStore = create<ProjectState>()(
               record,
             ],
             uploadingFor: null,
-            // A project's active proposal is tracked on the project itself.
             projects:
               purpose === "proposal"
                 ? state.projects.map((p) =>
@@ -251,7 +256,6 @@ export const useProjectStore = create<ProjectState>()(
               title: "Proposal replaced",
               description: `${superseded[0].filename} kept as a previous version.`,
             });
-            // Worth finding later, not just in the moment the toast shows.
             notify({
               user_id: CURRENT_USER_ID,
               type: "proposal_superseded",
@@ -291,8 +295,6 @@ export const useProjectStore = create<ProjectState>()(
       name: storageKey("projects"),
       storage: jsonStorage,
       version: 1,
-      // Only the records. `uploadingFor` would restore a spinner for an upload
-      // that died with the last session.
       partialize: (state) => ({
         projects: state.projects,
         files: state.files,

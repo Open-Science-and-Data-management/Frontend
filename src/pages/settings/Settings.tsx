@@ -7,6 +7,137 @@ import { useTheme } from "@/components/ui/ThemeProvider";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-provider";
 import { clearPersistedState } from "@/store/persist";
+import { useProjectStore, CURRENT_USER_ID } from "@/store/projectStore";
+import { useToastStore } from "@/store/toastStore";
+import { userProfileSchema } from "@/schemas/user";
+
+type ProfileField = "title" | "name" | "surname" | "email";
+
+const PROFILE_FIELDS: { key: ProfileField; label: string; type?: string }[] = [
+  { key: "title", label: "Title" },
+  { key: "name", label: "Name" },
+  { key: "surname", label: "Surname" },
+  { key: "email", label: "Email", type: "email" },
+];
+
+const ProfileSection: React.FC = () => {
+  const user = useProjectStore((s) => s.getUser(CURRENT_USER_ID));
+  const updateUser = useProjectStore((s) => s.updateUser);
+  const toast = useToastStore((s) => s.toast);
+
+  const fromUser = () => ({
+    title: user?.title ?? "",
+    name: user?.name ?? "",
+    surname: user?.surname ?? "",
+    email: user?.email ?? "",
+  });
+
+  const [editing, setEditing] = React.useState(false);
+  const [values, setValues] = React.useState(fromUser);
+  const [errors, setErrors] = React.useState<
+    Partial<Record<ProfileField, string>>
+  >({});
+
+  const startEditing = () => {
+    setValues(fromUser());
+    setErrors({});
+    setEditing(true);
+  };
+
+  const cancel = () => {
+    setErrors({});
+    setEditing(false);
+  };
+
+  const save = (e: React.FormEvent) => {
+    e.preventDefault();
+    const result = userProfileSchema.safeParse(values);
+    if (!result.success) {
+      const next: Partial<Record<ProfileField, string>> = {};
+      result.error.issues.forEach((issue) => {
+        const key = issue.path[0] as ProfileField;
+        next[key] ??= issue.message;
+      });
+      setErrors(next);
+      return;
+    }
+    updateUser(CURRENT_USER_ID, {
+      ...result.data,
+      title: result.data.title || undefined,
+    });
+    setErrors({});
+    setEditing(false);
+    toast({ title: "Profile saved" });
+  };
+
+  if (!user) return null;
+
+  const current = fromUser();
+
+  return (
+    <form
+      onSubmit={save}
+      noValidate
+      className="space-y-4 rounded-lg border bg-card p-5"
+    >
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="font-semibold">Profile</h2>
+        {!editing && (
+          <Button type="button" variant="outline" onClick={startEditing}>
+            Edit profile
+          </Button>
+        )}
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {PROFILE_FIELDS.map(({ key, label, type }) => (
+          <div key={key}>
+            {editing ? (
+              <>
+                <label
+                  htmlFor={`settings-${key}`}
+                  className="mb-1 block text-sm font-medium"
+                >
+                  {label}
+                </label>
+                <Input
+                  id={`settings-${key}`}
+                  type={type}
+                  value={values[key]}
+                  aria-invalid={Boolean(errors[key])}
+                  onChange={(e) =>
+                    setValues((v) => ({ ...v, [key]: e.target.value }))
+                  }
+                />
+                {errors[key] && (
+                  <p className="mt-1 text-xs text-destructive">
+                    {errors[key]}
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="mb-1 text-sm font-medium">{label}</p>
+                <p className="text-sm text-muted-foreground">
+                  {current[key] || "—"}
+                </p>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {editing && (
+        <div className="flex gap-2">
+          <Button type="submit">Save changes</Button>
+          <Button type="button" variant="outline" onClick={cancel}>
+            Cancel
+          </Button>
+        </div>
+      )}
+    </form>
+  );
+};
 
 export const Settings: React.FC = () => {
   const { theme, setTheme } = useTheme();
@@ -37,33 +168,7 @@ export const Settings: React.FC = () => {
       <div className="max-w-2xl space-y-8">
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
 
-        <section className="space-y-4 rounded-lg border bg-card p-5">
-          <h2 className="font-semibold">Profile</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label
-                htmlFor="settings-name"
-                className="mb-1 block text-sm font-medium"
-              >
-                Name
-              </label>
-              <Input id="settings-name" defaultValue="Researcher" />
-            </div>
-            <div>
-              <label
-                htmlFor="settings-email"
-                className="mb-1 block text-sm font-medium"
-              >
-                Email
-              </label>
-              <Input
-                id="settings-email"
-                type="email"
-                defaultValue="researcher@example.edu"
-              />
-            </div>
-          </div>
-        </section>
+        <ProfileSection />
 
         <section className="space-y-4 rounded-lg border bg-card p-5">
           <h2 className="font-semibold">Appearance</h2>
