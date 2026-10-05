@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { HashRouter } from "react-router-dom";
+import { BrowserRouter } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
 import App from "./App";
 import "./styles/globals.css";
@@ -10,11 +10,11 @@ import { routerConfig } from "./routes/routerConfig";
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <HelmetProvider>
-      <HashRouter {...routerConfig}>
+      <BrowserRouter {...routerConfig}>
         <ThemeProvider defaultTheme="light" storageKey="task-manager-theme">
           <App />
         </ThemeProvider>
-      </HashRouter>
+      </BrowserRouter>
     </HelmetProvider>
   </React.StrictMode>,
 );

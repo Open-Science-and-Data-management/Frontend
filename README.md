@@ -31,7 +31,7 @@ follow-up tasks. Plan authoring follows a FAIR-oriented maDMP data model.
 
 - React 18 and TypeScript
 - Vite 6
-- React Router (hash-based routing)
+- React Router (browser history routing)
 - Zustand for client state and browser persistence
 - Zod and React Hook Form for validation and forms
 - Tailwind CSS 4 and Radix UI primitives
@@ -54,8 +54,9 @@ npm run dev
 ```
 
 Vite prints the local development URL in the terminal (normally
-`http://localhost:5173`). The router uses hash-based URLs, so routes appear
-after `/#/`.
+`http://localhost:5173`). The router uses clean browser-history URLs such as
+`/settings`. A production host must serve `index.html` for every path (an SPA
+fallback), otherwise refreshing or opening a deep link returns a 404.
 
 No environment variables are required by the current frontend.
 
@@ -63,20 +64,20 @@ No environment variables are required by the current frontend.
 
 | Route | Purpose |
 | --- | --- |
-| `/#/` | Home and start of the proposal workflow |
-| `/#/upload` | Upload a proposal and associate it with a project |
-| `/#/dmp/create` | Create or edit a DMP draft |
-| `/#/dmp/review` | Review and submit the draft |
-| `/#/dmp/status` | View status and simulate a review decision |
-| `/#/dmps` | Browse saved DMPs |
-| `/#/tasks` | View and manage DMP tasks |
-| `/#/projects` | Browse projects |
-| `/#/projects/:projectId` | View a project and its files |
-| `/#/notifications` | View and manage notifications |
-| `/#/settings` | Theme and demo-data settings |
-| `/#/help` | In-app workflow guide |
+| `/` | Home and start of the proposal workflow |
+| `/upload` | Upload a proposal and associate it with a project |
+| `/dmp/create` | Create or edit a DMP draft |
+| `/dmp/review` | Review and submit the draft |
+| `/dmp/status` | View status and simulate a review decision |
+| `/dmps` | Browse saved DMPs |
+| `/tasks` | View and manage DMP tasks |
+| `/projects` | Browse projects |
+| `/projects/:projectId` | View a project and its files |
+| `/notifications` | View and manage notifications |
+| `/settings` | Theme and demo-data settings |
+| `/help` | In-app workflow guide |
 
-Editing a saved DMP at `/#/dmp/:id/edit` is currently a coming-soon screen.
+Editing a saved DMP at `/dmp/:id/edit` is currently a coming-soon screen.
 
 ## Project structure
 
@@ -88,7 +89,7 @@ src/
 ├── hooks/        Shared React hooks
 ├── layouts/      Application shell
 ├── pages/        Route-level screens
-├── routes/       Hash-router routes and configuration
+├── routes/       Route definitions and router configuration
 ├── schemas/      Zod schemas for DMP, project, task, file, and related data
 ├── store/        Persisted Zustand stores and demo seed data
 ├── styles/       Global styles
