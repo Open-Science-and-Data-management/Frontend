@@ -1,5 +1,6 @@
 import React from "react";
 import { Helmet } from "react-helmet-async";
+import { useSearchParams } from "react-router-dom";
 import { Sparkles } from "lucide-react";
 import { useTaskStore } from "@/store/taskStore";
 import { buildDmpList, useDmpStore } from "@/store/dmpStore";
@@ -29,7 +30,16 @@ export const TaskDashboard: React.FC = () => {
   const tasksGenerated = useDmpStore((s) => s.tasksGenerated);
 
   const [isCreating, setIsCreating] = React.useState(false);
-  const [editingTaskId, setEditingTaskId] = React.useState<string | null>(null);
+  // `?task=<id>` opens that task straight away — how the dashboard links in.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [editingTaskId, setEditingTaskId] = React.useState<string | null>(() =>
+    searchParams.get("task"),
+  );
+  React.useEffect(() => {
+    // Consumed once, so closing the task doesn't leave a link that reopens it.
+    if (searchParams.has("task")) setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [regenOpen, setRegenOpen] = React.useState(false);
   const [view, setView] = useTaskView();
 

@@ -2,17 +2,7 @@ import React from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
-import {
-  Bell,
-  CheckCircle2,
-  FileUp,
-  ListChecks,
-  Send,
-  Undo2,
-  ClipboardCheck,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { Bell, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useConfirm } from "@/components/ui/confirm-provider";
@@ -20,28 +10,13 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { useAuthStore } from "@/store/authStore";
 import type { Notification } from "@/types/notification";
 import { cn } from "@/utils/cn";
+import {
+  NOTIFICATION_ICONS,
+  NOTIFICATION_TONES,
+} from "@/config/notification-style";
 
-const ICONS: Record<Notification["type"], LucideIcon> = {
-  dmp_submitted: Send,
-  dmp_approved: CheckCircle2,
-  dmp_finalized: CheckCircle2,
-  tasks_generated: ListChecks,
-  tasks_cancelled: ListChecks,
-  proposal_superseded: FileUp,
-  review_requested: ClipboardCheck,
-  dmp_returned: Undo2,
-};
-
-const TONES: Record<Notification["type"], string> = {
-  dmp_submitted: "bg-warn-subtle text-warn",
-  dmp_approved: "bg-ok-subtle text-ok",
-  dmp_finalized: "bg-ok-subtle text-ok",
-  tasks_generated: "bg-primary/10 text-primary",
-  tasks_cancelled: "bg-primary/10 text-primary",
-  proposal_superseded: "bg-muted text-muted-foreground",
-  review_requested: "bg-ai-subtle text-ai",
-  dmp_returned: "bg-warn-subtle text-warn",
-};
+const ICONS = NOTIFICATION_ICONS;
+const TONES = NOTIFICATION_TONES;
 
 export const Notifications: React.FC = () => {
   const navigate = useNavigate();
