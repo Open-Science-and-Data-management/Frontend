@@ -1,6 +1,6 @@
 import React from "react";
 import { Helmet } from "react-helmet-async";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -44,7 +44,9 @@ export const Login: React.FC = () => {
 
       <div className="flex min-h-dvh flex-col bg-background">
         <header className="flex h-16 items-center justify-between border-b px-6">
-          <span className="text-xl font-bold">Logo</span>
+          <Link to="/" className="text-xl font-bold">
+            Logo
+          </Link>
           <ThemeToggle />
         </header>
 
@@ -126,6 +128,14 @@ export const Login: React.FC = () => {
 
             <p className="text-center text-xs text-muted-foreground">
               You can switch accounts any time from the menu in the top right.
+            </p>
+            <p className="text-center text-xs">
+              <Link
+                to="/"
+                className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              >
+                New here? See how DMP-Researcher works
+              </Link>
             </p>
           </div>
         </main>

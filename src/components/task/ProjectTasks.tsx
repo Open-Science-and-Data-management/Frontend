@@ -14,7 +14,7 @@ import { TaskFormDialog } from "@/components/task/TaskFormDialog";
 import { TaskReadOnlyList } from "@/components/task/TaskReadOnlyList";
 import { useTaskStore } from "@/store/taskStore";
 import { buildDmpList, useDmpStore } from "@/store/dmpStore";
-import { LifecycleStage } from "@/types/task";
+import { lifecycleProgress } from "@/config/progress";
 import type { Task } from "@/types/task";
 
 /**
@@ -70,24 +70,7 @@ export const ProjectTasks: React.FC<{
   const editing = tasks.find((t) => t.task_id === editingId) ?? null;
   const datasets = plans.find((p) => planIds.includes(p.dmp_id))?.draft.dataset;
 
-  // Progress is the lifecycle's, not a raw task count: each stage counts once
-  // its tasks are done, and the datasets' own status carries the rest.
-  const stageProgress = LifecycleStage.options.map((stage) => {
-    const forStage = projectTasks.filter(
-      (t) => t.lifecycle_stage === stage && t.status !== "cancelled",
-    );
-    const done = forStage.filter((t) => t.status === "done").length;
-    return { stage, total: forStage.length, done };
-  });
-  const tracked = stageProgress.filter((s) => s.total > 0);
-  const overall =
-    tracked.length === 0
-      ? 0
-      : Math.round(
-          (tracked.reduce((sum, s) => sum + s.done / s.total, 0) /
-            tracked.length) *
-            100,
-        );
+  const { stages: tracked, overall } = lifecycleProgress(projectTasks);
 
   return (
     <section className="space-y-4 rounded-lg border bg-card p-5">

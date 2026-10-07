@@ -42,7 +42,8 @@ export const UserMenu: React.FC = () => {
   const signOut = () => {
     setOpen(false);
     logout();
-    navigate("/login", { replace: true });
+    // Back to the front door, which is the landing page when signed out.
+    navigate("/", { replace: true });
   };
 
   const itemClass =
@@ -102,7 +103,9 @@ export const UserMenu: React.FC = () => {
                   <span className="min-w-0 flex-1 truncate">
                     {userFullName(other)}
                   </span>
-                  <Chip variant={other.role === "researcher" ? "neutral" : "ai"}>
+                  <Chip
+                    variant={other.role === "researcher" ? "neutral" : "ai"}
+                  >
                     {ROLE_LABELS[other.role]}
                   </Chip>
                 </button>
