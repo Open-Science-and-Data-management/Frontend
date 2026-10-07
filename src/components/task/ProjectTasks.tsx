@@ -11,6 +11,7 @@ import { TaskTable } from "@/components/task/TaskTable";
 import { useTaskView } from "@/components/task/TaskViewToggle";
 import { TaskFilters, useTaskFilters } from "@/components/task/TaskFilters";
 import { TaskFormDialog } from "@/components/task/TaskFormDialog";
+import { TaskReadOnlyList } from "@/components/task/TaskReadOnlyList";
 import { useTaskStore } from "@/store/taskStore";
 import { buildDmpList, useDmpStore } from "@/store/dmpStore";
 import { LifecycleStage } from "@/types/task";
@@ -19,10 +20,13 @@ import type { Task } from "@/types/task";
 /**
  * The project's own slice of the board. Same tasks as My Tasks, narrowed to
  * this project — one place to work from, two ways in.
+ *
+ * `readOnly` is the committee's view: the same progress, but nothing to tick.
  */
-export const ProjectTasks: React.FC<{ projectId: string }> = ({
-  projectId,
-}) => {
+export const ProjectTasks: React.FC<{
+  projectId: string;
+  readOnly?: boolean;
+}> = ({ projectId, readOnly }) => {
   const navigate = useNavigate();
   const tasks = useTaskStore((s) => s.tasks);
   const dmps = useDmpStore((s) => s.dmps);
@@ -95,9 +99,15 @@ export const ProjectTasks: React.FC<{ projectId: string }> = ({
             this project.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => navigate("/tasks")}>
-          Open My Tasks
-        </Button>
+        {!readOnly && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/tasks")}
+          >
+            Open My Tasks
+          </Button>
+        )}
       </div>
 
       {projectTasks.length === 0 ? (
@@ -129,52 +139,65 @@ export const ProjectTasks: React.FC<{ projectId: string }> = ({
             </div>
           </div>
 
-          <TaskFilters
-            {...filters}
-            total={projectTasks.length}
-            view={view}
-            onViewChange={setView}
-          />
-
-          {filters.visible.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No tasks match these filters.
-            </p>
-          ) : view === "table" ? (
-            <TaskTable
-              tasks={filters.visible}
-              onEdit={(task: Task) => setEditingId(task.task_id as string)}
-              sort={filters.sort}
-              onSortChange={filters.setSort}
-              descending={filters.descending}
-              onDescendingChange={filters.setDescending}
-            />
-          ) : view === "timeline" ? (
-            <TaskTimeline
-              tasks={filters.visible}
-              onEdit={(task: Task) => setEditingId(task.task_id as string)}
-            />
-          ) : view === "board" ? (
-            <TaskKanban
-              tasks={filters.visible}
-              onEdit={(task: Task) => setEditingId(task.task_id as string)}
+          {readOnly ? (
+            <TaskReadOnlyList
+              tasks={projectTasks}
+              datasets={plans
+                .filter((p) => planIds.includes(p.dmp_id))
+                .flatMap((p) => p.draft.dataset ?? [])}
             />
           ) : (
-            <TaskBoard
-              tasks={filters.visible}
-              onEdit={(task: Task) => setEditingId(task.task_id as string)}
-            />
+            <>
+              <TaskFilters
+                {...filters}
+                total={projectTasks.length}
+                view={view}
+                onViewChange={setView}
+              />
+
+              {filters.visible.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No tasks match these filters.
+                </p>
+              ) : view === "table" ? (
+                <TaskTable
+                  tasks={filters.visible}
+                  onEdit={(task: Task) => setEditingId(task.task_id as string)}
+                  sort={filters.sort}
+                  onSortChange={filters.setSort}
+                  descending={filters.descending}
+                  onDescendingChange={filters.setDescending}
+                />
+              ) : view === "timeline" ? (
+                <TaskTimeline
+                  tasks={filters.visible}
+                  onEdit={(task: Task) => setEditingId(task.task_id as string)}
+                />
+              ) : view === "board" ? (
+                <TaskKanban
+                  tasks={filters.visible}
+                  onEdit={(task: Task) => setEditingId(task.task_id as string)}
+                />
+              ) : (
+                <TaskBoard
+                  tasks={filters.visible}
+                  onEdit={(task: Task) => setEditingId(task.task_id as string)}
+                />
+              )}
+            </>
           )}
         </>
       )}
 
-      <TaskFormDialog
-        task={editing ?? undefined}
-        dmpId={editing?.dmp_id ?? planIds[0]}
-        open={Boolean(editing)}
-        onOpenChange={(open) => !open && setEditingId(null)}
-        onSuccess={() => setEditingId(null)}
-      />
+      {!readOnly && (
+        <TaskFormDialog
+          task={editing ?? undefined}
+          dmpId={editing?.dmp_id ?? planIds[0]}
+          open={Boolean(editing)}
+          onOpenChange={(open) => !open && setEditingId(null)}
+          onSuccess={() => setEditingId(null)}
+        />
+      )}
     </section>
   );
 };

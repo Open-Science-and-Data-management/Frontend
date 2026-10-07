@@ -35,9 +35,11 @@ export const formatBytes = (bytes: number | undefined) => {
 
 interface FileListProps {
   projectId: string;
+  /** Download only — for reviewers looking at someone else's project. */
+  readOnly?: boolean;
 }
 
-export const FileList: React.FC<FileListProps> = ({ projectId }) => {
+export const FileList: React.FC<FileListProps> = ({ projectId, readOnly }) => {
   const { files, projects, uploadFile, removeFile, uploadingFor } =
     useProjectStore();
   const confirm = useConfirm();
@@ -101,46 +103,52 @@ export const FileList: React.FC<FileListProps> = ({ projectId }) => {
             Proposals, task deliverables, and supporting evidence.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Select
-            aria-label="File purpose"
-            className="w-36"
-            value={effectivePurpose}
-            onChange={(e) =>
-              setPurpose(e.target.value as FileRecord["purpose"])
-            }
-          >
-            {purposeOptions.map((option) => (
-              <option key={option} value={option}>
-                {PURPOSE_LABELS[option]}
-              </option>
-            ))}
-          </Select>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            isLoading={isUploading}
-            onClick={() => inputRef.current?.click()}
-          >
-            <UploadIcon className="mr-1.5 h-3.5 w-3.5" />
-            Upload file
-          </Button>
-          <input
-            ref={inputRef}
-            type="file"
-            className="sr-only"
-            aria-label="Upload a file to this project"
-            onChange={(e) => handleFiles(e.target.files)}
-          />
-        </div>
+        {!readOnly && (
+          <div className="flex items-center gap-2">
+            <Select
+              aria-label="File purpose"
+              className="w-36"
+              value={effectivePurpose}
+              onChange={(e) =>
+                setPurpose(e.target.value as FileRecord["purpose"])
+              }
+            >
+              {purposeOptions.map((option) => (
+                <option key={option} value={option}>
+                  {PURPOSE_LABELS[option]}
+                </option>
+              ))}
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              isLoading={isUploading}
+              onClick={() => inputRef.current?.click()}
+            >
+              <UploadIcon className="mr-1.5 h-3.5 w-3.5" />
+              Upload file
+            </Button>
+            <input
+              ref={inputRef}
+              type="file"
+              className="sr-only"
+              aria-label="Upload a file to this project"
+              onChange={(e) => handleFiles(e.target.files)}
+            />
+          </div>
+        )}
       </div>
 
       {projectFiles.length === 0 ? (
         <EmptyState
           icon={FileText}
           title="No files yet"
-          description="Upload a proposal, a task deliverable, or supporting evidence."
+          description={
+            readOnly
+              ? "Nothing has been uploaded to this project."
+              : "Upload a proposal, a task deliverable, or supporting evidence."
+          }
         />
       ) : (
         <ul className="space-y-2">
@@ -184,28 +192,30 @@ export const FileList: React.FC<FileListProps> = ({ projectId }) => {
                 >
                   <Download className="h-4 w-4" />
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                  aria-label={`Remove ${record.filename}`}
-                  onClick={async () => {
-                    if (
-                      !(await confirm({
-                        title: `Remove ${record.filename}?`,
-                        description:
-                          "The file and anything referencing it lose this attachment.",
-                        confirmLabel: "Remove file",
-                      }))
-                    )
-                      return;
-                    await removeFile(record.file_id as string);
-                    toast({ title: `${record.filename} removed` });
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {!readOnly && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                    aria-label={`Remove ${record.filename}`}
+                    onClick={async () => {
+                      if (
+                        !(await confirm({
+                          title: `Remove ${record.filename}?`,
+                          description:
+                            "The file and anything referencing it lose this attachment.",
+                          confirmLabel: "Remove file",
+                        }))
+                      )
+                        return;
+                      await removeFile(record.file_id as string);
+                      toast({ title: `${record.filename} removed` });
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </li>
           ))}

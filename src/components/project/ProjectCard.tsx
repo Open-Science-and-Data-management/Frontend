@@ -1,8 +1,9 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import { FileText, Users } from "lucide-react";
+import { ClipboardCheck, FileText, Users } from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useProjectStore } from "@/store/projectStore";
+import { useDmpLibrary } from "@/hooks/useDmpLibrary";
 import type { Project } from "@/types/project";
 
 interface ProjectCardProps {
@@ -15,6 +16,10 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
   const fileCount = files.filter((f) => f.project_id === id).length;
   const memberCount = members.filter((m) => m.project_id === id).length;
   const hasProposal = Boolean(project.proposal_file_id);
+  const plans = useDmpLibrary().filter((d) => d.project_id === id);
+  const awaitingReview = plans.some((d) =>
+    d.versions.some((v) => v.status === "pending"),
+  );
 
   return (
     <Link
@@ -40,7 +45,15 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({ project }) => {
           <Users className="h-3.5 w-3.5" />
           {memberCount} {memberCount === 1 ? "member" : "members"}
         </span>
-        {!hasProposal && <span className="text-warn">No proposal uploaded</span>}
+        {!hasProposal && (
+          <span className="text-warn">No proposal uploaded</span>
+        )}
+        {awaitingReview && (
+          <span className="flex items-center gap-1.5 text-warn">
+            <ClipboardCheck className="h-3.5 w-3.5" />
+            Waiting on the committee
+          </span>
+        )}
       </div>
     </Link>
   );

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useDmpStore } from "@/store/dmpStore";
+import { useNotificationStore } from "@/store/notificationStore";
 import type { DmpDraft } from "@/types/dmp";
 import type { Dataset } from "@/types/dataset";
 
@@ -492,5 +493,124 @@ describe("restoring a version", () => {
     state().submitRevision();
     expect(state().restoreVersion(2)).toBe(false);
     expect(state().restoreVersion(99)).toBe(false);
+  });
+});
+
+describe("the committee deciding from its queue", () => {
+  const notificationsFor = (userId: string, type: string) =>
+    useNotificationStore
+      .getState()
+      .notifications.filter(
+        (n) => n.user_id === userId && n.type === type && n.dmp_id === "dmp-x",
+      );
+
+  const mali = {
+    user_id: "user-2",
+    name: "Prof. Mali Chaiyasit",
+    position: "Committee member",
+    mbox: "mali@example.edu",
+  };
+
+  /** The researcher has moved on to a different plan in the editor. */
+  const openOtherPlan = () => {
+    const other: DmpDraft = { project_id: "proj-2", title: "Other plan" };
+    useDmpStore.setState((s) => ({
+      currentDmpId: "dmp-other",
+      draft: other,
+      status: "draft",
+      dmps: [
+        ...s.dmps,
+        { ...s.dmps[0], dmp_id: "dmp-other", draft: other, versions: [] },
+      ],
+    }));
+  };
+
+  beforeEach(() => {
+    useNotificationStore.setState({ notifications: [] });
+  });
+
+  it("records a brand-new plan in the library when it is submitted", () => {
+    // Drafted this session and never checked in — not in `dmps` yet.
+    useDmpStore.setState({ dmps: [] });
+    state().submitForApproval();
+
+    expect(record().status).toBe("pending");
+    expect(record().versions).toHaveLength(1);
+    expect(record().versions[0].status).toBe("pending");
+  });
+
+  it("puts a submission in front of every reviewer", () => {
+    state().submitForApproval();
+    expect(notificationsFor("user-2", "review_requested")).toHaveLength(1);
+  });
+
+  it("approves a plan that isn't the one open in the editor", () => {
+    state().submitForApproval();
+    openOtherPlan();
+
+    expect(state().approveDmp("dmp-x", mali, "Looks good.")).toBe(true);
+
+    expect(record()).toMatchObject({ status: "approved", active_version: 1 });
+    expect(record().versions[0]).toMatchObject({
+      status: "approved",
+      decided_by: "user-2",
+      approver: mali,
+      note: "Looks good.",
+    });
+    // The researcher's editor is exactly as they left it.
+    expect(state().currentDmpId).toBe("dmp-other");
+    expect(state().draft.title).toBe("Other plan");
+    expect(state().status).toBe("draft");
+    expect(notificationsFor("user-1", "dmp_approved")).toHaveLength(1);
+  });
+
+  it("approves a revision from the queue through the same path", () => {
+    state().submitForApproval();
+    state().approve(mali);
+    edit({ dataset: [output({ access: "open" })] });
+    state().submitRevision();
+    expect(notificationsFor("user-2", "review_requested")).toHaveLength(2);
+    openOtherPlan();
+
+    state().approveDmp("dmp-x", mali);
+
+    expect(record().active_version).toBe(2);
+    expect(record().versions[1]).toMatchObject({
+      status: "approved",
+      approver: mali,
+    });
+    expect(state().currentDmpId).toBe("dmp-other");
+  });
+
+  it("sends a first submission back to draft with the reason", () => {
+    state().submitForApproval();
+    state().returnDmp("dmp-x", mali, "Add a preservation statement.");
+
+    expect(record().status).toBe("draft");
+    expect(state().status).toBe("draft");
+    expect(record().active_version).toBeUndefined();
+    expect(record().versions[0]).toMatchObject({
+      status: "rejected",
+      decided_by: "user-2",
+      note: "Add a preservation statement.",
+    });
+    expect(notificationsFor("user-1", "dmp_returned")).toHaveLength(1);
+  });
+
+  it("numbers the resubmission after the one that came back", () => {
+    state().submitForApproval();
+    state().returnDmp("dmp-x", mali, "Not yet.");
+    state().submitForApproval();
+
+    expect(record().versions.map((v) => [v.number, v.status])).toEqual([
+      [1, "rejected"],
+      [2, "pending"],
+    ]);
+  });
+
+  it("does nothing when no version is waiting", () => {
+    expect(state().approveDmp("dmp-x", mali)).toBe(false);
+    expect(record().status).toBe("draft");
+    expect(record().versions).toHaveLength(0);
   });
 });

@@ -51,7 +51,23 @@ export const PlanChanges: React.FC = () => {
     );
   }, [active, pending, draft]);
 
-  if (!active) return null;
+  // Before anything is in force the panel has one job: carry the committee's
+  // reason back to the editor where it gets acted on.
+  if (!active) {
+    if (!rejected || pending) return null;
+    return (
+      <div className="space-y-1.5 rounded-lg border border-warn/40 bg-warn-subtle/40 p-4">
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-warn">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          Version {rejected.number} was sent back
+        </h3>
+        {rejected.note && <p className="text-xs">“{rejected.note}”</p>}
+        <p className="text-xs text-muted-foreground">
+          Revise the plan, then review &amp; submit it again.
+        </p>
+      </div>
+    );
+  }
 
   const { minor, major } = countBy(changes);
   const needsReview = editTypeOf(changes) === "major" && changes.length > 0;

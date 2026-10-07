@@ -7,7 +7,8 @@ import { useTheme } from "@/components/ui/ThemeProvider";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-provider";
 import { clearPersistedState } from "@/store/persist";
-import { useProjectStore, CURRENT_USER_ID } from "@/store/projectStore";
+import { useProjectStore } from "@/store/projectStore";
+import { useCurrentUser } from "@/store/authStore";
 import { useToastStore } from "@/store/toastStore";
 import { userProfileSchema } from "@/schemas/user";
 
@@ -21,7 +22,8 @@ const PROFILE_FIELDS: { key: ProfileField; label: string; type?: string }[] = [
 ];
 
 const ProfileSection: React.FC = () => {
-  const user = useProjectStore((s) => s.getUser(CURRENT_USER_ID));
+  // Whoever is signed in edits their own profile.
+  const user = useCurrentUser();
   const updateUser = useProjectStore((s) => s.updateUser);
   const toast = useToastStore((s) => s.toast);
 
@@ -61,7 +63,8 @@ const ProfileSection: React.FC = () => {
       setErrors(next);
       return;
     }
-    updateUser(CURRENT_USER_ID, {
+    if (!user?.user_id) return;
+    updateUser(user.user_id, {
       ...result.data,
       title: result.data.title || undefined,
     });
@@ -110,9 +113,7 @@ const ProfileSection: React.FC = () => {
                   }
                 />
                 {errors[key] && (
-                  <p className="mt-1 text-xs text-destructive">
-                    {errors[key]}
-                  </p>
+                  <p className="mt-1 text-xs text-destructive">{errors[key]}</p>
                 )}
               </>
             ) : (
@@ -142,6 +143,7 @@ const ProfileSection: React.FC = () => {
 export const Settings: React.FC = () => {
   const { theme, setTheme } = useTheme();
   const confirm = useConfirm();
+  const user = useCurrentUser();
   const [emailNotifications, setEmailNotifications] = React.useState(true);
 
   const resetData = async () => {
@@ -168,7 +170,8 @@ export const Settings: React.FC = () => {
       <div className="max-w-2xl space-y-8">
         <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
 
-        <ProfileSection />
+        {/* Keyed so switching accounts never shows the last one's form. */}
+        <ProfileSection key={user?.user_id} />
 
         <section className="space-y-4 rounded-lg border bg-card p-5">
           <h2 className="font-semibold">Appearance</h2>

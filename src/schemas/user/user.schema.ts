@@ -26,3 +26,6 @@ export type UserProfile = z.infer<typeof userProfileSchema>;
 
 export const userFullName = (u: Pick<User, "title" | "name" | "surname">) =>
   [u.title, u.name, u.surname].filter(Boolean).join(" ");
+
+export const userInitials = (u: Pick<User, "name" | "surname">) =>
+  `${u.name[0] ?? ""}${u.surname[0] ?? ""}`.toUpperCase();

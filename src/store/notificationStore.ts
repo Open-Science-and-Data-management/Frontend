@@ -32,15 +32,28 @@ const seedNotifications = (): Notification[] => [
     dmp_id: "dmp-sediment",
     created_at: daysAgo(3),
   },
+  {
+    notification_id: "ntf-review-soil",
+    // The seeded committee member, so their side isn't empty either.
+    user_id: "user-2",
+    type: "review_requested",
+    title: "New plan to review",
+    message: "Soil Microbiome Survey DMP was submitted for approval.",
+    link: "/review/dmp-soil",
+    dmp_id: "dmp-soil",
+    project_id: "proj-3",
+    created_at: daysAgo(2),
+  },
 ];
 
 interface NotificationState {
   notifications: Notification[];
   notify: (input: CreateNotification) => Notification;
   markRead: (id: string) => void;
-  markAllRead: () => void;
+  /** Everyone's, or only `userId`'s — one browser holds every demo account. */
+  markAllRead: (userId?: string) => void;
   remove: (id: string) => void;
-  clearAll: () => void;
+  clearAll: (userId?: string) => void;
   unreadCount: () => number;
 }
 
@@ -71,12 +84,14 @@ export const useNotificationStore = create<NotificationState>()(
           ),
         })),
 
-      markAllRead: () =>
+      markAllRead: (userId) =>
         set((state) => {
           const now = new Date();
           return {
             notifications: state.notifications.map((n) =>
-              n.read_at ? n : { ...n, read_at: now },
+              n.read_at || (userId && n.user_id !== userId)
+                ? n
+                : { ...n, read_at: now },
             ),
           };
         }),
@@ -88,7 +103,12 @@ export const useNotificationStore = create<NotificationState>()(
           ),
         })),
 
-      clearAll: () => set({ notifications: [] }),
+      clearAll: (userId) =>
+        set((state) => ({
+          notifications: userId
+            ? state.notifications.filter((n) => n.user_id !== userId)
+            : [],
+        })),
 
       unreadCount: () => get().notifications.filter((n) => !n.read_at).length,
     }),

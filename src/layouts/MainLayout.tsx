@@ -11,6 +11,8 @@ const AiChatPanel = React.lazy(() =>
 import { ConfirmProvider } from "@/components/ui/confirm-provider";
 import { cn } from "@/utils/cn";
 import { QuotaBar } from "@/components/ui/quota-indicator";
+import { useCurrentUser } from "@/store/authStore";
+import { isReviewer } from "@/config/roles";
 
 const SIDEBAR_KEY = "sidebar-collapsed";
 
@@ -20,7 +22,10 @@ interface MainLayoutProps {
 
 export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-  const [chatOpen, setChatOpen] = React.useState(false);
+  const [chatOpenState, setChatOpen] = React.useState(false);
+  // The assistant and its token budget are for drafting; reviewers only read.
+  const reviewer = isReviewer(useCurrentUser()?.role);
+  const chatOpen = chatOpenState && !reviewer;
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(
     () => localStorage.getItem(SIDEBAR_KEY) === "true",
   );
@@ -47,10 +52,10 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             onMenuClick={() => setMobileNavOpen(true)}
             onToggleSidebar={toggleSidebar}
             sidebarCollapsed={sidebarCollapsed}
-            onToggleChat={() => setChatOpen((o) => !o)}
+            onToggleChat={reviewer ? undefined : () => setChatOpen((o) => !o)}
             chatOpen={chatOpen}
           >
-            <QuotaBar />
+            {!reviewer && <QuotaBar />}
           </Navbar>
 
           <div className="flex flex-1">

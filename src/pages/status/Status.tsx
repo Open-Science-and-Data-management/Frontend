@@ -8,15 +8,13 @@ import {
   Clock,
   Sparkles,
   ListChecks,
+  Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { ApproverPicker } from "@/components/dmp/ApproverPicker";
 import { ExportPanel } from "@/components/dmp/ExportPanel";
 import { EditApprovedPlan } from "@/components/dmp/EditApprovedPlan";
 import { VersionHistory } from "@/components/dmp/VersionHistory";
 import { ReopenTasksPrompt } from "@/components/task/ReopenTasksPrompt";
-import type { Approver } from "@/store/dmpStore";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AiProgress } from "@/components/ui/ai-progress";
 import { estimateCost, generateTasks } from "@/api/aiApi";
@@ -45,7 +43,6 @@ export const Status: React.FC = () => {
     draft,
     status,
     tasksGenerated,
-    approve,
     finalize,
     markTasksGenerated,
     hasTokensFor,
@@ -56,10 +53,7 @@ export const Status: React.FC = () => {
   const toast = useToastStore((s) => s.toast);
 
   const [confirmOpen, setConfirmOpen] = React.useState(false);
-  const [rejectNote, setRejectNote] = React.useState("");
-  const [approver, setApprover] = React.useState<Approver>();
   const dmps = useDmpStore((s) => s.dmps);
-  const rejectRevision = useDmpStore((s) => s.rejectRevision);
   const record = dmps.find((d) => d.dmp_id === currentDmpId);
   // Who approved the version in force, as recorded when they did.
   const decider = record?.versions.find(
@@ -69,6 +63,13 @@ export const Status: React.FC = () => {
   const revision =
     record?.active_version !== undefined
       ? record.versions.find((v) => v.status === "pending")
+      : undefined;
+  // A first submission the committee handed back: the plan is a draft again.
+  const returned =
+    status === "draft"
+      ? [...(record?.versions ?? [])]
+          .reverse()
+          .find((v) => v.status === "rejected")
       : undefined;
   const [generating, setGenerating] = React.useState(false);
   const [step, setStep] = React.useState(0);
@@ -148,6 +149,44 @@ export const Status: React.FC = () => {
     }
   };
 
+  if (returned) {
+    return (
+      <>
+        <Helmet>
+          <title>Status | DMP-Researcher</title>
+        </Helmet>
+        <div className="mx-auto max-w-xl space-y-6 py-10">
+          <div className="text-center">
+            <Undo2 className="mx-auto h-8 w-8 text-warn" />
+            <h1 className="mt-2 text-2xl font-bold tracking-tight">
+              Sent back for changes
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {returned.approver
+                ? `${returned.approver.name} (${returned.approver.position})`
+                : "Your committee"}{" "}
+              returned version {returned.number}. Revise the plan and submit it
+              again.
+            </p>
+          </div>
+          {returned.note && (
+            <blockquote className="rounded-lg border border-warn/40 bg-warn-subtle/40 p-4 text-sm">
+              “{returned.note}”
+            </blockquote>
+          )}
+          <div className="flex justify-center gap-2">
+            <Button asChild>
+              <Link to="/dmp/create">Revise the plan</Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link to="/">Back to home</Link>
+            </Button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <Helmet>
@@ -208,50 +247,9 @@ export const Status: React.FC = () => {
                 Finalize version {revision.number}
               </Button>
             ) : (
-              <div className="mt-4 rounded-lg border border-dashed p-3">
-                <p className="mb-2 text-xs text-muted-foreground">
-                  Demo only — stands in for the committee's own screen.
-                </p>
-                <ApproverPicker
-                  projectId={draft.project_id}
-                  onChange={setApprover}
-                />
-                <Textarea
-                  rows={2}
-                  value={rejectNote}
-                  onChange={(e) => setRejectNote(e.target.value)}
-                  aria-label="Reason for sending it back"
-                  placeholder="Reason, if sending it back"
-                  className="mt-2 text-sm"
-                />
-                <div className="mt-2 flex gap-2">
-                  <Button
-                    size="sm"
-                    disabled={!approver}
-                    onClick={() => {
-                      approve(approver);
-                      toast({
-                        title: `Version ${revision.number} approved`,
-                        description: `Recorded as decided by ${approver?.name}.`,
-                      });
-                    }}
-                  >
-                    Approve version {revision.number}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!rejectNote.trim() || !approver}
-                    onClick={() => {
-                      rejectRevision(rejectNote.trim(), approver);
-                      setRejectNote("");
-                      toast({ title: "Sent back to the researcher" });
-                    }}
-                  >
-                    Send back
-                  </Button>
-                </div>
-              </div>
+              <p className="mt-4 text-xs text-muted-foreground">
+                Your committee has it. You'll be notified when they decide.
+              </p>
             )}
           </div>
         )}
@@ -289,7 +287,7 @@ export const Status: React.FC = () => {
                     {state === "upcoming" && (
                       <Circle className="h-6 w-6 shrink-0 text-muted-foreground" />
                     )}
-                    {i < TRACKER_STAGES.length - 1 && (
+                    {i < stages.length - 1 && (
                       <div
                         className={cn(
                           "h-px flex-1",
@@ -389,32 +387,11 @@ export const Status: React.FC = () => {
             </Button>
           </div>
         ) : (
-          // No committee UI exists yet, so approval is simulated here — but it
-          // records who decided, as the real screen will.
-          <div className="space-y-3 rounded-lg border border-dashed p-4">
-            <p className="text-center text-xs text-muted-foreground">
-              Demo only — stands in for the committee's own screen.
+          <div className="rounded-lg border p-4 text-center">
+            <p className="text-xs text-muted-foreground">
+              Nothing to do for now — your committee is reviewing the version
+              you submitted. You can keep editing; they'll see what you sent.
             </p>
-            <ApproverPicker
-              projectId={draft.project_id}
-              onChange={setApprover}
-            />
-            <div className="text-center">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!approver}
-                onClick={() => {
-                  approve(approver);
-                  toast({
-                    title: "Plan approved by committee",
-                    description: `Recorded as decided by ${approver?.name}.`,
-                  });
-                }}
-              >
-                Simulate approval
-              </Button>
-            </div>
           </div>
         )}
 

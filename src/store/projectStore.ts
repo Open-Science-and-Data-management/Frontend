@@ -35,6 +35,16 @@ const seedProjects: Project[] = [
     created_at: new Date("2026-09-20T11:00:00"),
     updated_at: new Date("2026-09-20T11:00:00"),
   },
+  {
+    project_id: "proj-3",
+    project_name: "Soil Microbiome Survey",
+    description:
+      "Amplicon sequencing of soil samples from organic and conventional rice paddies.",
+    status: "active",
+    plan_mode: "institutional",
+    created_at: new Date("2026-09-28T10:00:00"),
+    updated_at: new Date("2026-10-05T15:00:00"),
+  },
 ];
 
 const seedFiles: FileRecord[] = [
@@ -95,6 +105,12 @@ const seedMembers: ProjectMember[] = [
     user_id: CURRENT_USER_ID,
     project_role: "researcher",
   },
+  {
+    project_id: "proj-3",
+    user_id: CURRENT_USER_ID,
+    project_role: "researcher",
+  },
+  { project_id: "proj-3", user_id: "user-2", project_role: "committee" },
 ];
 
 const memberKey = (m: Pick<ProjectMember, "project_id" | "user_id">) =>
@@ -124,6 +140,10 @@ interface ProjectState {
 
   getUser: (id: string) => User | undefined;
   updateUser: (id: string, patch: Partial<User>) => void;
+  /** The researcher who owns a project's plans — who hears about decisions. */
+  getResearcherFor: (projectId?: string) => User | undefined;
+  /** Everyone who decides on plans, for review-request notifications. */
+  getReviewers: () => User[];
 
   createProject: (input: {
     project_name: string;
@@ -179,6 +199,15 @@ export const useProjectStore = create<ProjectState>()(
             u.user_id === id ? { ...u, ...patch } : u,
           ),
         })),
+      getResearcherFor: (projectId) => {
+        const member = get().members.find(
+          (m) => m.project_id === projectId && m.project_role === "researcher",
+        );
+        return member ? get().getUser(member.user_id) : undefined;
+      },
+
+      getReviewers: () =>
+        get().users.filter((u) => u.role === "committee" || u.role === "chief"),
 
       createProject: ({ project_name, description, plan_mode }) => {
         const project: Project = {

@@ -28,6 +28,10 @@ export const NotificationType = z.enum([
   "tasks_generated",
   "tasks_cancelled",
   "proposal_superseded",
+  // Sent to the committee when a plan or revision lands in their queue.
+  "review_requested",
+  // Sent to the researcher when the committee hands a version back.
+  "dmp_returned",
 ]);
 
 export const UserRole       = z.enum(["admin", "chief", "committee", "researcher"]);

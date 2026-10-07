@@ -8,6 +8,8 @@ import {
   FileUp,
   ListChecks,
   Send,
+  Undo2,
+  ClipboardCheck,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -15,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useConfirm } from "@/components/ui/confirm-provider";
 import { useNotificationStore } from "@/store/notificationStore";
+import { useAuthStore } from "@/store/authStore";
 import type { Notification } from "@/types/notification";
 import { cn } from "@/utils/cn";
 
@@ -25,6 +28,8 @@ const ICONS: Record<Notification["type"], LucideIcon> = {
   tasks_generated: ListChecks,
   tasks_cancelled: ListChecks,
   proposal_superseded: FileUp,
+  review_requested: ClipboardCheck,
+  dmp_returned: Undo2,
 };
 
 const TONES: Record<Notification["type"], string> = {
@@ -34,12 +39,20 @@ const TONES: Record<Notification["type"], string> = {
   tasks_generated: "bg-primary/10 text-primary",
   tasks_cancelled: "bg-primary/10 text-primary",
   proposal_superseded: "bg-muted text-muted-foreground",
+  review_requested: "bg-ai-subtle text-ai",
+  dmp_returned: "bg-warn-subtle text-warn",
 };
 
 export const Notifications: React.FC = () => {
   const navigate = useNavigate();
   const confirm = useConfirm();
-  const notifications = useNotificationStore((s) => s.notifications);
+  const userId = useAuthStore((s) => s.userId) ?? undefined;
+  const all = useNotificationStore((s) => s.notifications);
+  // Every demo account shares this browser; each sees only its own.
+  const notifications = React.useMemo(
+    () => all.filter((n) => n.user_id === userId),
+    [all, userId],
+  );
   const markRead = useNotificationStore((s) => s.markRead);
   const markAllRead = useNotificationStore((s) => s.markAllRead);
   const remove = useNotificationStore((s) => s.remove);
@@ -67,7 +80,7 @@ export const Notifications: React.FC = () => {
       description: "They're removed from this device and can't be restored.",
       confirmLabel: "Clear all",
     });
-    if (ok) clearAll();
+    if (ok) clearAll(userId);
   };
 
   return (
@@ -91,7 +104,7 @@ export const Notifications: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={markAllRead}
+                onClick={() => markAllRead(userId)}
                 disabled={unread === 0}
               >
                 Mark all read

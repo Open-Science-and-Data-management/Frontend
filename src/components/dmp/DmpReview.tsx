@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { contributorFullName } from "@/schemas/contributor";
 import { useDmpStore } from "@/store/dmpStore";
 import { useProjectStore } from "@/store/projectStore";
+import type { DmpDraft } from "@/types/dmp";
 
 const EMPTY = "—";
 
@@ -18,16 +19,18 @@ const fmtDate = (d: Date | undefined) => (d ? format(d, "PP") : EMPTY);
 
 const Section: React.FC<{
   title: string;
-  onEdit: () => void;
+  onEdit?: () => void;
   children: React.ReactNode;
 }> = ({ title, onEdit, children }) => (
   <section className="rounded-lg border bg-card p-5">
-    <div className="mb-4 flex items-center justify-between gap-4">
+    <div className="mb-4 flex min-h-9 items-center justify-between gap-4">
       <h2 className="font-semibold">{title}</h2>
-      <Button variant="ghost" size="sm" onClick={onEdit}>
-        <Pencil className="mr-1.5 h-3.5 w-3.5" />
-        Edit
-      </Button>
+      {onEdit && (
+        <Button variant="ghost" size="sm" onClick={onEdit}>
+          <Pencil className="mr-1.5 h-3.5 w-3.5" />
+          Edit
+        </Button>
+      )}
     </div>
     {children}
   </section>
@@ -44,11 +47,20 @@ const Field: React.FC<{ label: string; children: React.ReactNode }> = ({
 );
 
 interface DmpReviewProps {
-  onEditSection: (section: string) => void;
+  /** Without it the plan is read-only — how a reviewer sees it. */
+  onEditSection?: (section: string) => void;
+  /** The plan to show; defaults to the one open in the editor. */
+  draft?: DmpDraft;
 }
 
-export const DmpReview: React.FC<DmpReviewProps> = ({ onEditSection }) => {
-  const { draft } = useDmpStore();
+export const DmpReview: React.FC<DmpReviewProps> = ({
+  onEditSection,
+  draft: shown,
+}) => {
+  const open = useDmpStore((s) => s.draft);
+  const draft = shown ?? open;
+  const edit = (section: string) =>
+    onEditSection ? () => onEditSection(section) : undefined;
   const project = useProjectStore((s) =>
     s.projects.find((p) => p.project_id === draft.project_id),
   );
@@ -59,7 +71,7 @@ export const DmpReview: React.FC<DmpReviewProps> = ({ onEditSection }) => {
 
   return (
     <div className="space-y-4">
-      <Section title="General" onEdit={() => onEditSection("general")}>
+      <Section title="General" onEdit={edit("general")}>
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Title">{draft.title}</Field>
           <Field label="Language">{draft.language}</Field>
@@ -77,7 +89,7 @@ export const DmpReview: React.FC<DmpReviewProps> = ({ onEditSection }) => {
         </dl>
       </Section>
 
-      <Section title="Ethical" onEdit={() => onEditSection("ethical")}>
+      <Section title="Ethical" onEdit={edit("ethical")}>
         <dl className="grid grid-cols-1 gap-4">
           <Field label="Ethical issues">
             {draft.ethical_issues_exist
@@ -111,7 +123,7 @@ export const DmpReview: React.FC<DmpReviewProps> = ({ onEditSection }) => {
 
       <Section
         title={`Research outputs (${datasets.length})`}
-        onEdit={() => onEditSection("dataset")}
+        onEdit={edit("dataset")}
       >
         <div className="space-y-4">
           {datasets.map((d) => (
@@ -170,7 +182,7 @@ export const DmpReview: React.FC<DmpReviewProps> = ({ onEditSection }) => {
         </div>
       </Section>
 
-      <Section title="People & cost" onEdit={() => onEditSection("people")}>
+      <Section title="People & cost" onEdit={edit("people")}>
         <div className="space-y-4">
           <div>
             <p className="mb-2 text-xs font-medium text-muted-foreground">
@@ -228,7 +240,7 @@ export const DmpReview: React.FC<DmpReviewProps> = ({ onEditSection }) => {
         </div>
       </Section>
 
-      <Section title="System info" onEdit={() => onEditSection("system")}>
+      <Section title="System info" onEdit={edit("system")}>
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Schema version">
             {MADMP_SCHEMA_NAME} {MADMP_SCHEMA_VERSION}

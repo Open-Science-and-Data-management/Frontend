@@ -9,17 +9,23 @@ import {
   HelpCircle,
   X,
   Home,
+  ClipboardCheck,
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useNotificationStore } from "@/store/notificationStore";
+import { useAuthStore, useCurrentUser } from "@/store/authStore";
+import { usePendingReviewCount } from "@/hooks/useDmpLibrary";
+import { isReviewer } from "@/config/roles";
 import { cn } from "@/utils/cn";
+
+type BadgeKind = "notifications" | "reviews";
 
 interface SidebarNavItem {
   label: string;
   to: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** Marks the item that carries the unread-notification count. */
-  badge?: "notifications";
+  /** Which count the item carries, if any. */
+  badge?: BadgeKind;
 }
 
 interface SidebarSection {
@@ -27,7 +33,42 @@ interface SidebarSection {
   items: SidebarNavItem[];
 }
 
-const SECTIONS: SidebarSection[] = [
+/** How a count reads to a screen reader, per kind. */
+const BADGE_NOUN: Record<BadgeKind, string> = {
+  notifications: "unread",
+  reviews: "waiting",
+};
+
+/** Committee members read and decide; they don't draft, so no editor or tasks. */
+const REVIEWER_SECTIONS: SidebarSection[] = [
+  {
+    label: "Review",
+    items: [
+      {
+        label: "Review queue",
+        to: "/review",
+        icon: ClipboardCheck,
+        badge: "reviews",
+      },
+      { label: "Projects", to: "/projects", icon: FolderKanban },
+      {
+        label: "Notifications",
+        to: "/notifications",
+        icon: Bell,
+        badge: "notifications",
+      },
+    ],
+  },
+  {
+    label: "General",
+    items: [
+      { label: "Settings", to: "/settings", icon: SettingsIcon },
+      { label: "Help & Guide", to: "/help", icon: HelpCircle },
+    ],
+  },
+];
+
+const RESEARCHER_SECTIONS: SidebarSection[] = [
   {
     label: "Workspace",
     items: [
@@ -63,9 +104,20 @@ const SidebarNav: React.FC<{ onNavigate: () => void; collapsed?: boolean }> = ({
   collapsed,
 }) => {
   const { pathname } = useLocation();
+  const user = useCurrentUser();
+  const userId = useAuthStore((s) => s.userId);
   const unread = useNotificationStore(
-    (s) => s.notifications.filter((n) => !n.read_at).length,
+    (s) =>
+      s.notifications.filter((n) => !n.read_at && n.user_id === userId).length,
   );
+  const waiting = usePendingReviewCount();
+  const counts: Record<BadgeKind, number> = {
+    notifications: unread,
+    reviews: waiting,
+  };
+  const SECTIONS = isReviewer(user?.role)
+    ? REVIEWER_SECTIONS
+    : RESEARCHER_SECTIONS;
 
   return (
     <nav
@@ -88,7 +140,7 @@ const SidebarNav: React.FC<{ onNavigate: () => void; collapsed?: boolean }> = ({
             {section.items.map((item) => {
               const isActive =
                 pathname === item.to || pathname.startsWith(`${item.to}/`);
-              const count = item.badge === "notifications" ? unread : 0;
+              const count = item.badge ? counts[item.badge] : 0;
 
               const link = (
                 <NavLink
@@ -96,7 +148,7 @@ const SidebarNav: React.FC<{ onNavigate: () => void; collapsed?: boolean }> = ({
                   onClick={onNavigate}
                   aria-label={
                     count > 0
-                      ? `${item.label}, ${count} unread`
+                      ? `${item.label}, ${count} ${BADGE_NOUN[item.badge!]}`
                       : collapsed
                         ? item.label
                         : undefined
@@ -140,7 +192,7 @@ const SidebarNav: React.FC<{ onNavigate: () => void; collapsed?: boolean }> = ({
                     <Tooltip
                       content={
                         count > 0
-                          ? `${item.label} (${count} unread)`
+                          ? `${item.label} (${count} ${BADGE_NOUN[item.badge!]})`
                           : item.label
                       }
                     >

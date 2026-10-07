@@ -1,5 +1,27 @@
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import { useCurrentUser } from "@/store/authStore";
+import { homePathFor, isReviewer } from "@/config/roles";
+
+/**
+ * Keeps each side to its own screens. Landing on the other side's page — an
+ * old bookmark, a notification link — goes to your own start page instead.
+ */
+const ForSide: React.FC<{
+  side: "researcher" | "reviewer";
+  children: React.ReactElement;
+}> = ({ side, children }) => {
+  const role = useCurrentUser()?.role;
+  const onSide = side === "reviewer" ? isReviewer(role) : !isReviewer(role);
+  return onSide ? children : <Navigate to={homePathFor(role)} replace />;
+};
+
+const researcher = (element: React.ReactElement) => (
+  <ForSide side="researcher">{element}</ForSide>
+);
+const reviewer = (element: React.ReactElement) => (
+  <ForSide side="reviewer">{element}</ForSide>
+);
 
 /**
  * Routes load on demand. The Suspense boundary below was already here but
@@ -28,6 +50,8 @@ const Projects = page(() => import("@/pages/projects"), "Projects");
 const ProjectDetail = page(() => import("@/pages/projects"), "ProjectDetail");
 const Settings = page(() => import("@/pages/settings"), "Settings");
 const HelpGuide = page(() => import("@/pages/help"), "HelpGuide");
+const ReviewQueue = page(() => import("@/pages/review"), "ReviewQueue");
+const ReviewDetail = page(() => import("@/pages/review"), "ReviewDetail");
 
 const ComingSoon: React.FC<{ label: string }> = ({ label }) => (
   <div className="flex h-[60vh] flex-col items-center justify-center gap-2 text-center">
@@ -49,15 +73,24 @@ const AppRoutes: React.FC = () => {
     >
       <Routes>
         {/* Researcher DMP flow */}
-        <Route path="/" element={<Home />} />
-        <Route path="/upload" element={<Upload />} />
-        <Route path="/dmp/create" element={<CreateDmp />} />
-        <Route path="/dmp/review" element={<ReviewSubmit />} />
-        <Route path="/dmp/:id/edit" element={<ComingSoon label="Edit DMP" />} />
-        <Route path="/dmp/status" element={<Status />} />
-        <Route path="/tasks" element={<TaskDashboard />} />
+        <Route path="/" element={researcher(<Home />)} />
+        <Route path="/upload" element={researcher(<Upload />)} />
+        <Route path="/dmp/create" element={researcher(<CreateDmp />)} />
+        <Route path="/dmp/review" element={researcher(<ReviewSubmit />)} />
+        <Route
+          path="/dmp/:id/edit"
+          element={researcher(<ComingSoon label="Edit DMP" />)}
+        />
+        <Route path="/dmp/status" element={researcher(<Status />)} />
+        <Route path="/tasks" element={researcher(<TaskDashboard />)} />
+        <Route path="/dmps" element={researcher(<MyDmps />)} />
+
+        {/* Committee */}
+        <Route path="/review" element={reviewer(<ReviewQueue />)} />
+        <Route path="/review/:dmpId" element={reviewer(<ReviewDetail />)} />
+
+        {/* Both sides */}
         <Route path="/notifications" element={<Notifications />} />
-        <Route path="/dmps" element={<MyDmps />} />
         {/* The dashboard has always lived at "/". */}
         <Route path="/home" element={<Navigate to="/" replace />} />
         <Route path="/drafts" element={<Navigate to="/dmps" replace />} />

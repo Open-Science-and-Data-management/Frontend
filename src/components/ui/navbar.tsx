@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { UserMenu } from "@/components/ui/user-menu";
 import { Helmet } from "react-helmet-async";
 
 interface NavbarProps {
@@ -110,6 +111,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <span className="mx-1 hidden h-6 w-px bg-border sm:block" />
           <ThemeToggle />
+          <UserMenu />
         </div>
       </div>
     </header>

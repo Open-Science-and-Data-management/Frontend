@@ -18,6 +18,7 @@ import {
 import { useToastStore } from "@/store/toastStore";
 import { recordAiEvent, useAiThread, UNSCOPED } from "@/store/aiThread";
 import { notify } from "@/store/notificationStore";
+import type { CreateNotification } from "@/types/notification";
 import { CURRENT_USER_ID } from "@/config/current-user";
 import { dmpFieldPolicy, datasetFieldPolicy } from "@/config/field-policy";
 import { getDomainProfile } from "@/schemas/dataset/domain-profiles";
@@ -176,6 +177,8 @@ const seedDmps = (): DmpRecord[] => {
     created: number;
     updated: number;
     tasks_generated?: boolean;
+    /** Sent to the committee as v1 and still waiting on them. */
+    submitted?: boolean;
     draft: DmpDraft;
   }[] = [
     {
@@ -237,6 +240,57 @@ const seedDmps = (): DmpRecord[] => {
         contributor: [],
       },
     },
+    {
+      dmp_id: "dmp-soil",
+      status: "pending",
+      created: 6,
+      updated: 2,
+      submitted: true,
+      draft: {
+        project_id: "proj-3",
+        title: "Soil Microbiome Survey DMP",
+        description:
+          "16S amplicon reads and soil chemistry from 40 paddy plots, deposited openly once the main paper is accepted.",
+        language: "eng",
+        begin_date: new Date("2026-11-01T00:00:00"),
+        end_date: new Date("2028-10-31T00:00:00"),
+        ethical_issues_exist: false,
+        contributor: [
+          {
+            contributor_id: "ct-soil-pi",
+            title: "Dr.",
+            name: "Aran",
+            surname: "Suwannachot",
+            role: "Principal investigator",
+            email: "aran@example.edu",
+            is_contact: true,
+          },
+        ],
+        cost: [],
+        dataset: [
+          {
+            ...createEmptyDataset("raw"),
+            dataset_id: "ds-soil-reads",
+            title: "16S amplicon sequence reads",
+            description: "Raw FASTQ reads from 40 plots, two seasons.",
+            access: "open",
+            protection_level: "Standard",
+            security_classification_level: "Public",
+            keyword: ["soil", "microbiome", "16S"],
+          },
+          {
+            ...createEmptyDataset("raw"),
+            dataset_id: "ds-soil-chem",
+            title: "Soil chemistry measurements",
+            description: "pH, organic carbon and nitrogen per plot.",
+            access: "shared",
+            protection_level: "Standard",
+            security_classification_level: "Internal",
+          },
+        ],
+        schema_version: "FAIRer maDMP 1.2",
+      },
+    },
   ];
 
   const records = seeds.map((seed) => {
@@ -256,7 +310,19 @@ const seedDmps = (): DmpRecord[] => {
             minor_edits: [],
           },
         ]
-      : [];
+      : seed.submitted
+        ? [
+            {
+              number: 1,
+              status: "pending",
+              edit_type: "major",
+              changes: [],
+              snapshot: seed.draft,
+              created_at: daysAgo(seed.updated),
+              minor_edits: [],
+            },
+          ]
+        : [];
 
     return {
       dmp_id: seed.dmp_id,
@@ -439,6 +505,18 @@ interface DmpDraftState {
   submitForApproval: () => void;
   /** Stand-in for the committee decision until their screens exist. */
   approve: (approver?: Approver) => void;
+  /**
+   * The committee's decision on whichever version of `dmpId` is waiting, from
+   * the review queue — the plan needn't be the one open in the editor. Runs
+   * the same path as `approve`, so carried-over fixes and the working copy
+   * are handled identically. False when nothing is waiting.
+   */
+  approveDmp: (dmpId: string, approver: Approver, note?: string) => boolean;
+  /**
+   * Hands the waiting version of `dmpId` back with a reason. A revision leaves
+   * the version in force running; a first submission goes back to draft.
+   */
+  returnDmp: (dmpId: string, approver: Approver, note: string) => boolean;
   /** The independent route to the same active state — no committee, no approval record. */
   finalize: () => void;
   markTasksGenerated: () => void;
@@ -498,6 +576,20 @@ interface DmpDraftState {
 }
 
 const emptyDraft: DmpDraft = {};
+
+/** Who hears about a decision on a plan: the researcher on its project. */
+const researcherIdFor = (projectId?: string) =>
+  useProjectStore.getState().getResearcherFor(projectId)?.user_id ??
+  CURRENT_USER_ID;
+
+/** Every reviewer gets the same queue, so every reviewer hears of a new item. */
+const notifyReviewers = (input: Omit<CreateNotification, "user_id">) =>
+  useProjectStore
+    .getState()
+    .getReviewers()
+    .forEach((reviewer) =>
+      notify({ ...input, user_id: reviewer.user_id as string }),
+    );
 
 /** Writes the open draft into the library, inserting it if it's new. */
 const commitDraft = (state: {
@@ -643,6 +735,49 @@ export const useDmpStore = create<DmpDraftState>()(
               : d,
           ),
         }));
+      };
+
+      /**
+       * Runs `work` with `dmpId` as the open plan, then puts the editor back as
+       * it was. Decisions reuse the open-plan paths above rather than a second
+       * copy of their rules; in a real deployment the committee has its own
+       * client, and this swap is only how one shared browser stands in for two.
+       */
+      const withPlanOpen = <T>(dmpId: string, work: () => T): T | undefined => {
+        const before = get();
+        if (before.currentDmpId === dmpId) return work();
+
+        const editor = {
+          draft: before.draft,
+          status: before.status,
+          currentDmpId: before.currentDmpId,
+          draftCreatedAt: before.draftCreatedAt,
+          draftUpdatedAt: before.draftUpdatedAt,
+          tasksGenerated: before.tasksGenerated,
+          coverage: before.coverage,
+          aiGenerated: before.aiGenerated,
+          restoredFrom: before.restoredFrom,
+        };
+        if (!get().openDmp(dmpId)) return undefined;
+        const result = work();
+        fileOpenPlan();
+
+        // The plan that was open comes back from the library, so anything the
+        // decision changed on its record is what the editor shows.
+        const reopened = editor.currentDmpId
+          ? get().dmps.find((d) => d.dmp_id === editor.currentDmpId)
+          : undefined;
+        rawSet(
+          reopened
+            ? {
+                ...editor,
+                draft: reopened.draft,
+                status: reopened.status,
+                tasksGenerated: reopened.tasks_generated,
+              }
+            : editor,
+        );
+        return result;
       };
 
       return {
@@ -854,11 +989,19 @@ export const useDmpStore = create<DmpDraftState>()(
           }));
 
           notify({
-            user_id: CURRENT_USER_ID,
+            user_id: researcherIdFor(draft.project_id),
             type: "dmp_submitted",
             title: "Revision submitted",
             message: `${draft.title?.trim() || "Your plan"} has changes waiting on a decision. The version in force keeps running.`,
             link: "/dmp/status",
+            dmp_id: currentDmpId ?? undefined,
+            project_id: draft.project_id,
+          });
+          notifyReviewers({
+            type: "review_requested",
+            title: "Revision to review",
+            message: `${draft.title?.trim() || "A plan"} has changes that need a decision.`,
+            link: `/review/${currentDmpId}`,
             dmp_id: currentDmpId ?? undefined,
             project_id: draft.project_id,
           });
@@ -895,15 +1038,21 @@ export const useDmpStore = create<DmpDraftState>()(
                             ...v,
                             status: "rejected" as const,
                             decided_at: new Date(),
-                            decided_by: "committee",
+                            decided_by: approver?.user_id ?? "committee",
                             approver,
                             note,
                           }
                         : v,
                     ),
+                    // Nothing in force to fall back to: a returned first
+                    // submission is a draft again, for the researcher to fix.
+                    ...(d.active_version === undefined
+                      ? { status: "draft" as const }
+                      : {}),
                   }
                 : d,
             ),
+            ...(state.activeVersion() ? {} : { status: "draft" as DmpStatus }),
           }));
         },
 
@@ -923,10 +1072,15 @@ export const useDmpStore = create<DmpDraftState>()(
                 ? {
                     ...d,
                     draft: state.draft,
+                    status: "pending" as const,
                     plan_mode: pinnedMode(d, state.draft.project_id),
+                    // A plan sent back before keeps that history; this attempt
+                    // is numbered after it.
                     versions: [
+                      ...d.versions,
                       {
-                        number: 1,
+                        number:
+                          Math.max(0, ...d.versions.map((v) => v.number)) + 1,
                         status: "pending" as const,
                         edit_type: "major" as const,
                         changes: [],
@@ -941,7 +1095,7 @@ export const useDmpStore = create<DmpDraftState>()(
           }));
           const { draft, currentDmpId } = get();
           notify({
-            user_id: CURRENT_USER_ID,
+            user_id: researcherIdFor(draft.project_id),
             type: "dmp_submitted",
             title: "Plan submitted for approval",
             message: `${draft.title?.trim() || "Untitled DMP"} is waiting on the committee.`,
@@ -949,13 +1103,21 @@ export const useDmpStore = create<DmpDraftState>()(
             dmp_id: currentDmpId ?? undefined,
             project_id: draft.project_id,
           });
+          notifyReviewers({
+            type: "review_requested",
+            title: "New plan to review",
+            message: `${draft.title?.trim() || "Untitled DMP"} was submitted for approval.`,
+            link: `/review/${currentDmpId}`,
+            dmp_id: currentDmpId ?? undefined,
+            project_id: draft.project_id,
+          });
         },
 
         approve: (approver) => {
-          activate("committee", approver);
+          activate(approver?.user_id ?? "committee", approver);
           const { draft, currentDmpId } = get();
           notify({
-            user_id: CURRENT_USER_ID,
+            user_id: researcherIdFor(draft.project_id),
             type: "dmp_approved",
             title: "Your plan was approved",
             message: `${approver ? `${approver.name} (${approver.position})` : "The committee"} approved ${draft.title?.trim() || "your plan"}.`,
@@ -964,6 +1126,47 @@ export const useDmpStore = create<DmpDraftState>()(
             project_id: draft.project_id,
           });
         },
+
+        approveDmp: (dmpId, approver, note) =>
+          withPlanOpen(dmpId, () => {
+            const waiting = get().pendingVersion();
+            if (!waiting) return false;
+            get().approve(approver);
+            if (note?.trim())
+              rawSet((state) => ({
+                dmps: state.dmps.map((d) =>
+                  d.dmp_id === dmpId
+                    ? {
+                        ...d,
+                        versions: d.versions.map((v) =>
+                          v.number === waiting.number
+                            ? { ...v, note: note.trim() }
+                            : v,
+                        ),
+                      }
+                    : d,
+                ),
+              }));
+            return true;
+          }) ?? false,
+
+        returnDmp: (dmpId, approver, note) =>
+          withPlanOpen(dmpId, () => {
+            const waiting = get().pendingVersion();
+            if (!waiting) return false;
+            const { draft } = get();
+            get().rejectRevision(note, approver);
+            notify({
+              user_id: researcherIdFor(draft.project_id),
+              type: "dmp_returned",
+              title: `Version ${waiting.number} was sent back`,
+              message: `${approver.name} (${approver.position}) on ${draft.title?.trim() || "your plan"}: ${note}`,
+              link: "/dmps",
+              dmp_id: dmpId,
+              project_id: draft.project_id,
+            });
+            return true;
+          }) ?? false,
 
         finalize: () => {
           // Same destination as approve(), reached by the researcher. Nothing
