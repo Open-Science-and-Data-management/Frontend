@@ -1,4 +1,5 @@
 import React from "react";
+import { dayString, fromDayString } from "@/utils/calendarDate";
 import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,11 +25,10 @@ const isBlank = (value: unknown) =>
 
 const asText = (value: unknown) => (isBlank(value) ? "" : String(value));
 
-/** Dates are stored as Dates but edited as yyyy-MM-dd. */
+/** Dates are stored as calendar dates but edited as yyyy-MM-dd. */
 const asDateInput = (value: unknown) => {
   if (isBlank(value)) return "";
-  const date = value instanceof Date ? value : new Date(String(value));
-  return Number.isNaN(date.getTime()) ? "" : date.toISOString().slice(0, 10);
+  return dayString(value instanceof Date ? value : new Date(String(value)));
 };
 
 /**
@@ -113,10 +113,7 @@ export const DomainFields: React.FC<DomainFieldsProps> = ({
             type="date"
             value={asDateInput(value)}
             onChange={(e) =>
-              set(
-                field.key,
-                e.target.value ? new Date(`${e.target.value}T00:00:00`) : "",
-              )
+              set(field.key, fromDayString(e.target.value) ?? "")
             }
           />
         );

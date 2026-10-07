@@ -21,9 +21,21 @@ import { notify } from "@/store/notificationStore";
 import { CURRENT_USER_ID } from "@/config/current-user";
 import { dmpFieldPolicy, datasetFieldPolicy } from "@/config/field-policy";
 import { getDomainProfile } from "@/schemas/dataset/domain-profiles";
-import { isActive } from "@/config/plan-mode";
+import {
+  freezeSubmittedModes,
+  isActive,
+  resolvePlanMode,
+} from "@/config/plan-mode";
+import { useProjectStore } from "@/store/projectStore";
+import type { PlanMode } from "@/types/project";
 import { EditType, VersionStatus } from "@/schemas/shared";
-import { diffPlans, editTypeOf, type FieldChange } from "@/config/plan-diff";
+import {
+  applyChanges,
+  diffPlans,
+  editTypeOf,
+  sameAt,
+  type FieldChange,
+} from "@/config/plan-diff";
 
 const TOKEN_LIMIT = 30000;
 
@@ -62,6 +74,15 @@ const STATUS_FOR_STAGE: Record<string, Dataset["status"]> = {
  * record can be reopened in the editor; the summary fields on top are what the
  * list screen searches, filters, and sorts on without walking the payload.
  */
+/** Who decided a version, as it stood when they decided it. */
+export interface Approver {
+  /** Set when the approver is a member of the project's committee. */
+  user_id?: string;
+  name: string;
+  position: string;
+  mbox?: string;
+}
+
 /**
  * A numbered revision. Only edits that carry a commitment make one — see
  * plan-diff: a minor edit is applied to the version in force and logged on it.
@@ -75,11 +96,38 @@ export interface PlanVersion {
   created_at: Date;
   decided_at?: Date;
   decided_by?: string;
+  /**
+   * The committee member who made the decision, recorded at the time — the
+   * exports name them, and a later change of committee doesn't rewrite it.
+   */
+  approver?: Approver;
   /** Why it came back, when it came back. */
   note?: string;
   /** Minor edits folded into this version without re-review. */
-  minor_edits: { at: Date; by: string; changes: FieldChange[] }[];
+  minor_edits: {
+    at: Date;
+    by: string;
+    changes: FieldChange[];
+    /** Set when the edit brought back an earlier version's content. */
+    restored_from?: number;
+    /** Set when the fix was made while this revision number waited. */
+    during_pending?: number;
+  }[];
+  /** Set when this revision brought back an earlier version's content. */
+  restored_from?: number;
+  /**
+   * The version in force when this revision was submitted, as it was then.
+   * Minor fixes made to that version while this one waited are the difference
+   * between this and its current snapshot, and are merged in on approval.
+   */
+  based_on?: { number: number; snapshot: DmpDraft };
+  /** Minor fixes merged in from the version in force when this was approved. */
+  carried_minor_edits?: FieldChange[];
+  /** Fixes that couldn't be merged (their output was removed by this version). */
+  dropped_minor_edits?: FieldChange[];
 }
+
+export type ArchiveResult = { ok: true } | { ok: false; reason: string };
 
 export interface DmpRecord {
   dmp_id: string;
@@ -97,6 +145,16 @@ export interface DmpRecord {
   versions: PlanVersion[];
   /** The version tasks and progress run against. */
   active_version?: number;
+  /**
+   * Set when the plan was archived. Plans are never deleted: a plan's tasks
+   * and their evidence are the record of work actually done.
+   */
+  archived_at?: Date;
+  /**
+   * Pinned when the plan is first submitted, so the route it's on can't change
+   * underneath it if its project's mode changes or the project is deleted.
+   */
+  plan_mode?: PlanMode;
 }
 
 const summarise = (draft: DmpDraft) => ({
@@ -181,7 +239,7 @@ const seedDmps = (): DmpRecord[] => {
     },
   ];
 
-  return seeds.map((seed) => {
+  const records = seeds.map((seed) => {
     const created = daysAgo(seed.created);
     // A plan that is already active got there through a version; without one
     // there would be nothing to diff the next edit against.
@@ -212,6 +270,8 @@ const seedDmps = (): DmpRecord[] => {
       ...summarise(seed.draft),
     };
   });
+  // Seeded plans past draft were "submitted" before the app ran; freeze them.
+  return freezeSubmittedModes(records, useProjectStore.getState().projects);
 };
 
 /** True once the editor holds something worth listing. */
@@ -236,6 +296,8 @@ export const buildDmpList = (state: {
   draftCreatedAt: Date;
   draftUpdatedAt: Date;
   tasksGenerated: boolean;
+  /** Archived plans are left out unless asked for (My DMPs' Archived filter). */
+  includeArchived?: boolean;
 }): DmpRecord[] => {
   const { dmps, draft, status, currentDmpId } = state;
   const live = draftHasContent(draft);
@@ -268,7 +330,7 @@ export const buildDmpList = (state: {
     });
   }
 
-  return list;
+  return state.includeArchived ? list : list.filter((d) => !d.archived_at);
 };
 
 export const createEmptyDataset = (type: Dataset["type"]): Dataset => {
@@ -333,7 +395,12 @@ interface DmpDraftState {
 
   /** Files the open draft back into the library and checks out another. */
   openDmp: (id: string) => DmpRecord | undefined;
-  deleteDmp: (id: string) => void;
+  /**
+   * Sets a plan aside. Refused while the plan is in force — its tasks and
+   * evidence are live work. There is deliberately no way to delete a plan.
+   */
+  archiveDmp: (id: string) => ArchiveResult;
+  unarchiveDmp: (id: string) => void;
 
   /** The version tasks and progress run against, if the plan is active yet. */
   activeVersion: () => PlanVersion | undefined;
@@ -344,13 +411,34 @@ interface DmpDraftState {
   /** Minor-only edits go straight in, recorded against the active version. */
   saveMinorEdits: () => void;
   /** Anything major becomes the next numbered version, awaiting a decision. */
-  submitRevision: () => void;
+  /**
+   * Submits the draft's major changes as the next version. Refused while
+   * another revision is waiting: one decision at a time.
+   */
+  submitRevision: () => boolean;
+  /**
+   * What the draft changes that isn't already with the committee. With no
+   * revision waiting, that's every change against the version in force; with
+   * one waiting, only edits that match neither the version in force nor the
+   * frozen revision.
+   */
+  newEdits: () => FieldChange[];
   /** Sends a pending revision back with a reason; the draft stays editable. */
-  rejectRevision: (note: string) => void;
+  rejectRevision: (note: string, approver?: Approver) => void;
+  /**
+   * Loads a version's content into the working draft. Restoring the version in
+   * force discards unsubmitted edits; restoring any other version is an
+   * ordinary edit from then on — judged minor or major, saved or submitted
+   * like any other. A version still waiting on a decision can't be restored.
+   * Returns false when there's nothing to restore.
+   */
+  restoreVersion: (number: number) => boolean;
+  /** The version the working draft was last restored from, if any. */
+  restoredFrom: number | null;
 
   submitForApproval: () => void;
   /** Stand-in for the committee decision until their screens exist. */
-  approve: () => void;
+  approve: (approver?: Approver) => void;
   /** The independent route to the same active state — no committee, no approval record. */
   finalize: () => void;
   markTasksGenerated: () => void;
@@ -402,7 +490,11 @@ interface DmpDraftState {
 
   eligibleBatchTargets: () => BatchTarget[];
 
-  resetDraft: () => void;
+  /**
+   * Leaves the editor. A plan in force keeps everything and only loses
+   * unsubmitted edits; an unsubmitted plan is archived, not deleted.
+   */
+  closeDraft: () => "discarded" | "kept" | "archived" | "cleared";
 }
 
 const emptyDraft: DmpDraft = {};
@@ -431,6 +523,8 @@ const commitDraft = (state: {
     // Version history belongs to the record, not to the open editor.
     versions: existing?.versions ?? [],
     active_version: existing?.active_version,
+    plan_mode: existing?.plan_mode,
+    archived_at: existing?.archived_at,
     ...summarise(state.draft),
   };
 
@@ -461,36 +555,87 @@ export const useDmpStore = create<DmpDraftState>()(
        * version is created and decided in the same move, since there is no one
        * else for it to wait on.
        */
-      const activate = (decidedBy: string) => {
+      /**
+       * Version history lives on the library record, so the open plan has to
+       * be filed there first — a plan fresh from analysis isn't yet, and its
+       * versions (and who approved them) would otherwise go nowhere.
+       */
+      const fileOpenPlan = () =>
+        rawSet((state) => ({ dmps: commitDraft(state) }));
+
+      /** The mode to pin on first submission: the project's, as it is now. */
+      const pinnedMode = (record: DmpRecord | undefined, projectId?: string) =>
+        record?.plan_mode ??
+        resolvePlanMode(useProjectStore.getState().projects, projectId);
+
+      const activate = (decidedBy: string, approver?: Approver) => {
+        fileOpenPlan();
         const state = get();
         const record = state.dmps.find((d) => d.dmp_id === state.currentDmpId);
         const waiting = record?.versions.find((v) => v.status === "pending");
         const changes = waiting ? waiting.changes : state.pendingChanges();
+        // Edits in the working copy beyond both the version in force and the
+        // revision being decided — the only part of it that's still news.
+        const unsubmitted = waiting?.based_on ? state.newEdits() : [];
 
         const number =
           waiting?.number ??
           Math.max(0, ...(record?.versions ?? []).map((v) => v.number)) + 1;
+
+        // Fixes made to the version in force while this waited would be lost
+        // if its frozen snapshot simply replaced it, so they're replayed in.
+        const inForce = record?.versions.find(
+          (v) => v.number === record.active_version,
+        );
+        const merge =
+          waiting?.based_on && inForce
+            ? applyChanges(
+                waiting.snapshot,
+                inForce.snapshot,
+                diffPlans(waiting.based_on.snapshot, inForce.snapshot),
+              )
+            : undefined;
 
         const decided = {
           number,
           status: "approved" as const,
           edit_type: editTypeOf(changes),
           changes,
-          snapshot: waiting?.snapshot ?? state.draft,
+          snapshot: merge?.plan ?? waiting?.snapshot ?? state.draft,
+          based_on: waiting?.based_on,
+          carried_minor_edits: merge?.applied.length
+            ? merge.applied
+            : undefined,
+          dropped_minor_edits: merge?.skipped.length
+            ? merge.skipped
+            : undefined,
           created_at: waiting?.created_at ?? new Date(),
           decided_at: new Date(),
           decided_by: decidedBy,
+          approver,
           minor_edits: waiting?.minor_edits ?? [],
+          restored_from:
+            waiting?.restored_from ?? state.restoredFrom ?? undefined,
         };
+
+        // Rebase the working copy onto what's now in force: its approved
+        // content, plus only those unsubmitted edits. Left as it was, a copy
+        // that didn't carry the revision would read as an edit undoing it.
+        const rebased = waiting?.based_on
+          ? applyChanges(decided.snapshot, state.draft, unsubmitted).plan
+          : undefined;
 
         set((current) => ({
           status: "approved",
+          restoredFrom: null,
+          ...(rebased ? { draft: rebased } : {}),
           dmps: current.dmps.map((d) =>
             d.dmp_id === current.currentDmpId
               ? {
                   ...d,
                   status: "approved" as const,
                   active_version: number,
+                  plan_mode: pinnedMode(d, current.draft.project_id),
                   versions: waiting
                     ? d.versions.map((v) => (v.number === number ? decided : v))
                     : [...d.versions, decided],
@@ -501,6 +646,7 @@ export const useDmpStore = create<DmpDraftState>()(
       };
 
       return {
+        restoredFrom: null,
         draft: emptyDraft,
         regeneratingFields: {},
         coverage: null,
@@ -525,6 +671,7 @@ export const useDmpStore = create<DmpDraftState>()(
 
           set({
             dmps,
+            restoredFrom: null,
             draft: target.draft,
             status: target.status,
             currentDmpId: target.dmp_id,
@@ -539,19 +686,43 @@ export const useDmpStore = create<DmpDraftState>()(
           return target;
         },
 
-        deleteDmp: (id) =>
+        archiveDmp: (id) => {
+          fileOpenPlan();
+          const record = get().dmps.find((d) => d.dmp_id === id);
+          if (!record)
+            return { ok: false, reason: "That plan isn't in your library." };
+          if (record.active_version !== undefined)
+            return {
+              ok: false,
+              reason:
+                "This plan is in force. Its tasks and evidence are the record of work done, so it can't be archived.",
+            };
+
           set((state) => ({
-            dmps: state.dmps.filter((d) => d.dmp_id !== id),
+            dmps: state.dmps.map((d) =>
+              d.dmp_id === id ? { ...d, archived_at: new Date() } : d,
+            ),
+            // Archiving the plan that's open takes it out of the editor.
             ...(state.currentDmpId === id
               ? {
                   draft: emptyDraft,
                   currentDmpId: null,
                   status: "draft" as DmpStatus,
+                  restoredFrom: null,
                   coverage: null,
                   aiGenerated: false,
                   tasksGenerated: false,
                 }
               : {}),
+          }));
+          return { ok: true };
+        },
+
+        unarchiveDmp: (id) =>
+          set((state) => ({
+            dmps: state.dmps.map((d) =>
+              d.dmp_id === id ? { ...d, archived_at: undefined } : d,
+            ),
           })),
 
         activeVersion: () => {
@@ -576,8 +747,23 @@ export const useDmpStore = create<DmpDraftState>()(
           return active ? diffPlans(active.snapshot, get().draft) : [];
         },
 
+        newEdits: () => {
+          const active = get().activeVersion();
+          const waiting = get().pendingVersion();
+          if (!active) return [];
+          if (!waiting) return get().pendingChanges();
+          const draft = get().draft;
+          // Beyond the frozen revision, and not simply the version in force.
+          return diffPlans(waiting.snapshot, draft).filter(
+            (change) =>
+              !change.target || !sameAt(draft, active.snapshot, change.target),
+          );
+        },
+
         saveMinorEdits: () => {
-          const changes = get().pendingChanges();
+          fileOpenPlan();
+          const waiting = get().pendingVersion();
+          const changes = get().newEdits();
           const active = get().activeVersion();
           // The guard, not just the button: a major edit can't be slipped in
           // through the quiet path.
@@ -596,13 +782,20 @@ export const useDmpStore = create<DmpDraftState>()(
                       v.number === active.number
                         ? {
                             ...v,
-                            snapshot: state.draft,
+                            // With a revision waiting, only the fix lands on
+                            // the version in force; the revision stays frozen.
+                            snapshot: waiting
+                              ? applyChanges(v.snapshot, state.draft, changes)
+                                  .plan
+                              : state.draft,
                             minor_edits: [
                               ...v.minor_edits,
                               {
                                 at: new Date(),
                                 by: CURRENT_USER_ID,
                                 changes,
+                                restored_from: state.restoredFrom ?? undefined,
+                                during_pending: waiting?.number,
                               },
                             ],
                           }
@@ -611,12 +804,18 @@ export const useDmpStore = create<DmpDraftState>()(
                   }
                 : d,
             ),
+            restoredFrom: null,
           }));
         },
 
         submitRevision: () => {
+          fileOpenPlan();
+          // One decision at a time: a second revision would be built on a
+          // version that may never be approved.
+          if (get().pendingVersion()) return false;
+          const base = get().activeVersion();
           const changes = get().pendingChanges();
-          if (changes.length === 0) return;
+          if (changes.length === 0) return false;
 
           const { draft, currentDmpId } = get();
           const edit_type = editTypeOf(changes);
@@ -640,10 +839,18 @@ export const useDmpStore = create<DmpDraftState>()(
                     snapshot: state.draft,
                     created_at: new Date(),
                     minor_edits: [],
+                    restored_from: state.restoredFrom ?? undefined,
+                    based_on: base
+                      ? {
+                          number: base.number,
+                          snapshot: structuredClone(base.snapshot),
+                        }
+                      : undefined,
                   },
                 ],
               };
             }),
+            restoredFrom: null,
           }));
 
           notify({
@@ -655,9 +862,28 @@ export const useDmpStore = create<DmpDraftState>()(
             dmp_id: currentDmpId ?? undefined,
             project_id: draft.project_id,
           });
+          return true;
         },
 
-        rejectRevision: (note) =>
+        restoreVersion: (number) => {
+          fileOpenPlan();
+          const state = get();
+          const record = state.dmps.find(
+            (d) => d.dmp_id === state.currentDmpId,
+          );
+          const version = record?.versions.find((v) => v.number === number);
+          if (!record || !version || version.status === "pending") return false;
+
+          set({
+            // A copy: later edits to the draft must never reach the record.
+            draft: structuredClone(version.snapshot),
+            restoredFrom: number === record.active_version ? null : number,
+          });
+          return true;
+        },
+
+        rejectRevision: (note, approver) => {
+          fileOpenPlan();
           set((state) => ({
             dmps: state.dmps.map((d) =>
               d.dmp_id === state.currentDmpId
@@ -669,6 +895,8 @@ export const useDmpStore = create<DmpDraftState>()(
                             ...v,
                             status: "rejected" as const,
                             decided_at: new Date(),
+                            decided_by: "committee",
+                            approver,
                             note,
                           }
                         : v,
@@ -676,9 +904,11 @@ export const useDmpStore = create<DmpDraftState>()(
                   }
                 : d,
             ),
-          })),
+          }));
+        },
 
         submitForApproval: () => {
+          fileOpenPlan();
           // After the plan is active, submitting means raising a revision —
           // the first submission is the only one that isn't one.
           if (get().activeVersion()) {
@@ -693,6 +923,7 @@ export const useDmpStore = create<DmpDraftState>()(
                 ? {
                     ...d,
                     draft: state.draft,
+                    plan_mode: pinnedMode(d, state.draft.project_id),
                     versions: [
                       {
                         number: 1,
@@ -720,14 +951,14 @@ export const useDmpStore = create<DmpDraftState>()(
           });
         },
 
-        approve: () => {
-          activate("committee");
+        approve: (approver) => {
+          activate("committee", approver);
           const { draft, currentDmpId } = get();
           notify({
             user_id: CURRENT_USER_ID,
             type: "dmp_approved",
             title: "Your plan was approved",
-            message: `The committee approved ${draft.title?.trim() || "your plan"}.`,
+            message: `${approver ? `${approver.name} (${approver.position})` : "The committee"} approved ${draft.title?.trim() || "your plan"}.`,
             link: "/dmp/status",
             dmp_id: currentDmpId ?? undefined,
             project_id: draft.project_id,
@@ -845,10 +1076,17 @@ export const useDmpStore = create<DmpDraftState>()(
 
         datasetExists: (dmpId, datasetId) => {
           const state = get();
-          const list =
-            state.currentDmpId === dmpId
+          const record = state.dmps.find((d) => d.dmp_id === dmpId);
+          const active = record?.versions.find(
+            (v) => v.number === record.active_version,
+          );
+          // A plan in force answers from that version: an output removed in an
+          // unapproved edit still exists, and its tasks still run.
+          const list = active
+            ? active.snapshot.dataset
+            : state.currentDmpId === dmpId
               ? state.draft.dataset
-              : state.dmps.find((d) => d.dmp_id === dmpId)?.draft.dataset;
+              : record?.draft.dataset;
           return (list ?? []).some((d) => d.dataset_id === datasetId);
         },
 
@@ -950,14 +1188,22 @@ export const useDmpStore = create<DmpDraftState>()(
                   sensitive_data: d.sensitive_data,
                   personal_data_plan: d.personal_data_plan,
                   protection_level: d.protection_level,
+                  protection_level_other_nomenclature:
+                    d.protection_level_other_nomenclature,
                   protection_level_other: d.protection_level_other,
                   security_classification_level:
                     d.security_classification_level,
+                  security_classification_level_other_nomenclature:
+                    d.security_classification_level_other_nomenclature,
                   security_classification_level_other:
                     d.security_classification_level_other,
                   data_quality_assurance: d.data_quality_assurance,
                   keyword: d.keyword,
                   language: d.language,
+                  // The research domain is a separate axis from type; a type
+                  // change must not reset it.
+                  domain: d.domain,
+                  domain_metadata: d.domain_metadata,
                   preservation: d.preservation,
                   distribution: d.distribution,
                 };
@@ -1151,22 +1397,65 @@ export const useDmpStore = create<DmpDraftState>()(
         },
 
         // Discard: the plan leaves the library too, rather than being filed.
-        resetDraft: () =>
-          set((state) => ({
-            dmps: state.dmps.filter((d) => d.dmp_id !== state.currentDmpId),
-            draft: emptyDraft,
-            currentDmpId: null,
-            status: "draft" as DmpStatus,
-            tasksGenerated: false,
-            coverage: null,
-            aiGenerated: false,
-          })),
+        closeDraft: () => {
+          fileOpenPlan();
+          const state = get();
+          const record = state.dmps.find(
+            (d) => d.dmp_id === state.currentDmpId,
+          );
+          const clear = () =>
+            set({
+              draft: emptyDraft,
+              currentDmpId: null,
+              status: "draft" as DmpStatus,
+              restoredFrom: null,
+              coverage: null,
+              aiGenerated: false,
+              tasksGenerated: false,
+            });
+
+          if (record?.active_version !== undefined) {
+            // In force: drop unsubmitted edits, keep the plan and its work.
+            get().restoreVersion(record.active_version);
+            fileOpenPlan();
+            clear();
+            return "discarded";
+          }
+          // Waiting on its first decision: leaving the editor must not quietly
+          // withdraw it from the committee. Keep it as submitted.
+          const submitted = record?.versions.find(
+            (v) => v.status === "pending",
+          );
+          if (record && submitted) {
+            set({ draft: structuredClone(submitted.snapshot) });
+            fileOpenPlan();
+            clear();
+            return "kept";
+          }
+          if (record) {
+            get().archiveDmp(record.dmp_id);
+            return "archived";
+          }
+          clear();
+          return "cleared";
+        },
       };
     },
     {
       name: storageKey("dmps"),
       storage: jsonStorage,
-      version: 1,
+      version: 2,
+      // v2: plans saved before modes were frozen get theirs now, so a later
+      // change to their project can't move them between routes.
+      migrate: (persisted, version) => {
+        const state = persisted as { dmps?: DmpRecord[] };
+        if (version < 2 && state?.dmps)
+          state.dmps = freezeSubmittedModes(
+            state.dmps,
+            useProjectStore.getState().projects,
+          );
+        return state as never;
+      },
       // `tokenLimit` stays out so a change to the budget takes effect, and
       // `regeneratingFields` is in-flight UI state that must not outlive the
       // request it belongs to.

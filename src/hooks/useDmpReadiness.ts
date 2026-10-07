@@ -29,7 +29,54 @@ export interface ReadinessItem {
   label: string;
   done: boolean;
   section: DmpSection;
+  /** The input to focus, so "where do I fix this" ends at the field itself. */
+  fieldId?: string;
 }
+
+/** DatasetCard names a few inputs by a short form of the field. */
+const DATASET_INPUT: Record<string, string> = {
+  protection_level: "protection",
+  security_classification_level: "security",
+  type: "type",
+  status: "status",
+  domain: "domain",
+};
+
+/**
+ * The DOM id of the input a schema path points at, following the ids the
+ * editor's sections give their inputs. Best effort: an unknown path still
+ * opens the right section, it just doesn't focus anything.
+ */
+export const fieldIdFor = (
+  path: (string | number)[],
+  draft: DmpDraft,
+): string | undefined => {
+  const [root, index, key, subIndex, subKey] = path;
+  if (root === "contributor" && typeof index === "number" && key) {
+    const id = draft.contributor?.[index]?.contributor_id;
+    return id ? `contributor-${String(key)}-${id}` : undefined;
+  }
+  if (root === "dataset" && typeof index === "number") {
+    const id = draft.dataset?.[index]?.dataset_id;
+    if (!id) return undefined;
+    if (key === "distribution" && typeof subIndex === "number" && subKey)
+      return `distribution-${String(subKey)}-${id}-${subIndex}`;
+    if (key === "domain_metadata" && subIndex !== undefined)
+      return `${String(subIndex)}-${id}`;
+    if (typeof key === "string") return `${DATASET_INPUT[key] ?? key}-${id}`;
+    return undefined;
+  }
+  return typeof root === "string" ? root : undefined;
+};
+
+/** A cover like "dataset.*.protection_level" matches exactly that path shape. */
+const coversPath = (pattern: string, path: (string | number)[]) => {
+  const parts = pattern.split(".");
+  return (
+    parts.length === path.length &&
+    parts.every((part, i) => part === "*" || part === String(path[i]))
+  );
+};
 
 /** Which section owns each top-level field of the plan. */
 const SECTION_OF: Record<string, DmpSection> = {
@@ -74,6 +121,8 @@ const FIELD_LABELS: Record<string, string> = {
   protection_level: "Protection level",
   security_classification_level: "Security classification level",
   keyword: "Keywords",
+  license: "Licence",
+  user_id: "Linked account",
   domain: "Research domain",
   domain_metadata: "Domain details",
   preservation: "Preservation",
@@ -121,6 +170,11 @@ export const computeReadiness = (draft: DmpDraft) => {
   const contributors = draft.contributor ?? [];
   const contactCount = contributors.filter((c) => c.is_contact).length;
   const datasets = draft.dataset ?? [];
+  const unprotected = datasets
+    .map((d, i) =>
+      d.protection_level && d.security_classification_level ? -1 : i,
+    )
+    .filter((i) => i >= 0);
 
   // The hand-written items, each owning the schema paths it speaks for. An
   // uncovered failure is appended below rather than left invisible.
@@ -130,30 +184,35 @@ export const computeReadiness = (draft: DmpDraft) => {
       done: Boolean(draft.title),
       section: "general",
       covers: ["title"],
+      fieldId: "title",
     },
     {
       label: "Add a description",
       done: Boolean(draft.description),
       section: "general",
       covers: ["description"],
+      fieldId: "description",
     },
     {
       label: "Choose a language",
       done: Boolean(draft.language),
       section: "general",
       covers: ["language"],
+      fieldId: "language",
     },
     {
       label: "Set begin & end dates",
       done: Boolean(draft.begin_date && draft.end_date),
       section: "general",
       covers: ["begin_date", "end_date"],
+      fieldId: draft.begin_date ? "end_date" : "begin_date",
     },
     {
       label: "Answer the ethical issues question",
       done: draft.ethical_issues_exist !== undefined,
       section: "ethical",
       covers: ["ethical_issues_exist"],
+      fieldId: "ethical_issues_exist",
     },
     ...(draft.ethical_issues_exist
       ? [
@@ -162,6 +221,7 @@ export const computeReadiness = (draft: DmpDraft) => {
             done: Boolean(draft.ethical_issues_description),
             section: "ethical" as DmpSection,
             covers: ["ethical_issues_description"],
+            fieldId: "ethical_issues_description",
           },
         ]
       : []),
@@ -184,16 +244,26 @@ export const computeReadiness = (draft: DmpDraft) => {
       covers: ["dataset"],
     },
     {
-      label: "Set protection & security on every research output",
-      done:
-        datasets.length > 0 &&
-        datasets.every(
-          (d) =>
-            Boolean(d.protection_level) &&
-            Boolean(d.security_classification_level),
-        ),
+      // Names the outputs, so with several the reader knows which one.
+      label:
+        unprotected.length > 0 && unprotected.length < datasets.length
+          ? `Set protection & security on research output ${unprotected.map((i) => i + 1).join(", ")}`
+          : "Set protection & security on every research output",
+      done: datasets.length > 0 && unprotected.length === 0,
       section: "dataset",
-      covers: ["dataset"],
+      // Only the fields it speaks for — claiming all of "dataset" hid every
+      // other output problem (a missing licence, say) behind this one.
+      covers: [
+        "dataset.*.protection_level",
+        "dataset.*.security_classification_level",
+      ],
+      fieldId: (() => {
+        const first = datasets[unprotected[0]];
+        if (!first?.dataset_id) return undefined;
+        return first.protection_level
+          ? `security-${first.dataset_id}`
+          : `protection-${first.dataset_id}`;
+      })(),
     },
   ];
 
@@ -205,9 +275,11 @@ export const computeReadiness = (draft: DmpDraft) => {
 
   if (!schemaResult.success) {
     schemaResult.error.issues.forEach((issue: z.ZodIssue) => {
-      const root = String(issue.path[0] ?? "");
+      // An unmet item speaks for exactly the paths it names, nothing broader.
       const spokenFor = known.some(
-        (item) => !item.done && item.covers.includes(root),
+        (item) =>
+          !item.done &&
+          item.covers.some((pattern) => coversPath(pattern, issue.path)),
       );
       if (spokenFor) return;
 
@@ -219,6 +291,7 @@ export const computeReadiness = (draft: DmpDraft) => {
         label,
         done: false,
         section: sectionForPath(issue.path),
+        fieldId: fieldIdFor(issue.path, draft),
       });
     });
   }

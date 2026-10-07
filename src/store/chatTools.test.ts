@@ -12,7 +12,7 @@ const draft = (): DmpDraft => ({
   description: "Sequencing and trait data.",
   language: "eng",
   begin_date: new Date("2026-01-01"),
-  schema_version: "FAIRer maDMP 1.2",
+  schema_version: "v3.0",
   dataset: [
     {
       dataset_id: "d1",

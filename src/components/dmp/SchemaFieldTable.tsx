@@ -19,7 +19,8 @@ export const SchemaFieldTable: React.FC<SchemaFieldTableProps> = ({
   const update = (index: number, patch: Partial<SchemaField>) =>
     onChange(fields.map((f, i) => (i === index ? { ...f, ...patch } : f)));
 
-  const remove = (index: number) => onChange(fields.filter((_, i) => i !== index));
+  const remove = (index: number) =>
+    onChange(fields.filter((_, i) => i !== index));
 
   const add = () => onChange([...fields, { name: "", type: "" }]);
 
@@ -60,7 +61,9 @@ export const SchemaFieldTable: React.FC<SchemaFieldTableProps> = ({
                     <Input
                       aria-label="Field description"
                       value={field.description ?? ""}
-                      onChange={(e) => update(i, { description: e.target.value })}
+                      onChange={(e) =>
+                        update(i, { description: e.target.value })
+                      }
                       className="h-8"
                     />
                   </td>

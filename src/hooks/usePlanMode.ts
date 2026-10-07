@@ -1,13 +1,17 @@
 import React from "react";
-import { resolvePlanMode } from "@/config/plan-mode";
+import { planModeOf } from "@/config/plan-mode";
 import { useDmpStore } from "@/store/dmpStore";
 import { useProjectStore } from "@/store/projectStore";
 import type { PlanMode } from "@/types/project";
 
-/** The mode of one project, for a page that already knows which one it's on. */
-export const usePlanMode = (projectId?: string): PlanMode => {
+/** The mode of the plan open in the editor — pinned once it's been submitted. */
+export const useOpenPlanMode = (): PlanMode => {
   const projects = useProjectStore((s) => s.projects);
-  return resolvePlanMode(projects, projectId);
+  const record = useDmpStore((s) =>
+    s.dmps.find((d) => d.dmp_id === s.currentDmpId),
+  );
+  const projectId = useDmpStore((s) => s.draft.project_id);
+  return planModeOf(record, projects, projectId);
 };
 
 /**
@@ -22,12 +26,11 @@ export const usePlanModeFor = (): ((dmpId?: string) => PlanMode) => {
 
   return React.useCallback(
     (dmpId?: string) =>
-      resolvePlanMode(
+      planModeOf(
+        dmps.find((d) => d.dmp_id === dmpId),
         projects,
         // The plan open in the editor isn't in `dmps` until it's checked back in.
-        dmpId && dmpId === currentDmpId
-          ? draftProjectId
-          : dmps.find((d) => d.dmp_id === dmpId)?.draft.project_id,
+        dmpId && dmpId === currentDmpId ? draftProjectId : undefined,
       ),
     [projects, dmps, draftProjectId, currentDmpId],
   );

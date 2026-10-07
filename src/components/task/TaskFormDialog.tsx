@@ -3,10 +3,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X, Lock, Pencil } from "lucide-react";
 import { TaskForm } from "@/components/task/TaskForm";
 import { TaskEvidence } from "@/components/task/TaskEvidence";
-import {
-  TaskLifecycleTag,
-  TaskStatusBox,
-} from "@/components/task/TaskMeta";
+import { TaskLifecycleTag, TaskStatusBox } from "@/components/task/TaskMeta";
 import type { Task } from "@/types/task";
 import { cn } from "@/utils/cn";
 

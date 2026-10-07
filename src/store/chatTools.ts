@@ -208,7 +208,7 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
             {
               label: target.label,
               reason: target.policy.editableBeforeApproval
-                ? "This field is locked to me by policy. You can still edit it yourself in the form until the committee approves the plan."
+                ? "This field is locked to me by policy. You can edit it yourself in the form — after approval, a change to it goes back for sign-off."
                 : "This field is locked by policy, so I can't propose a change to it.",
             },
           ],

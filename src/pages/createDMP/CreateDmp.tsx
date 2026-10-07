@@ -24,6 +24,7 @@ import {
   type DmpSection,
 } from "@/hooks/useDmpReadiness";
 import { useDmpStore } from "@/store/dmpStore";
+import { useToastStore } from "@/store/toastStore";
 import { isActive } from "@/config/plan-mode";
 
 const STEPPER_STEPS = [
@@ -46,7 +47,8 @@ const SECTION_ITEMS = SECTIONS.map((id) => ({ id, label: SECTION_LABELS[id] }));
 export const CreateDmp: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { draft, resetDraft } = useDmpStore();
+  const { draft, closeDraft } = useDmpStore();
+  const toast = useToastStore((s) => s.toast);
   const status = useDmpStore((s) => s.status);
   const [discardOpen, setDiscardOpen] = React.useState(false);
   const [assistOpen, setAssistOpen] = React.useState(false);
@@ -56,13 +58,36 @@ export const CreateDmp: React.FC = () => {
   // since the component doesn't remount on a query-only change.
   const requested = searchParams.get("section");
   const section: Section = isSection(requested) ? requested : "general";
-  const setSection = (next: Section) =>
-    setSearchParams({ section: next }, { replace: true });
+  // `field` names an input to bring into view — set by the readiness list, so
+  // a problem three levels deep ends at the input, not the top of a section.
+  const setSection = (next: Section, field?: string) =>
+    setSearchParams(field ? { section: next, field } : { section: next }, {
+      replace: true,
+    });
+  const field = searchParams.get("field");
+  React.useEffect(() => {
+    if (!field) return;
+    let tries = 0;
+    // The section may still be rendering; give it a few frames to appear.
+    const find = () => {
+      const el = document.getElementById(field);
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        (el as HTMLElement).focus({ preventScroll: true });
+        setSearchParams({ section }, { replace: true });
+      } else if (tries++ < 10) {
+        requestAnimationFrame(find);
+      }
+    };
+    requestAnimationFrame(find);
+  }, [field, section, setSearchParams]);
 
   const { checklistItems, canSubmit, unmetItems } = useDmpReadiness();
   // Once a version is in force, the question stops being "is this ready to
   // submit" and becomes "what does this change about what was agreed".
   const planIsActive = isActive(status);
+  // Submitted, not yet decided: Cancel must not withdraw it.
+  const awaitingDecision = status === "pending";
 
   // What each section still needs, so the nav can say so without being opened.
   const outstanding = React.useMemo(() => {
@@ -221,13 +246,32 @@ export const CreateDmp: React.FC = () => {
       <ConfirmDialog
         open={discardOpen}
         onOpenChange={setDiscardOpen}
-        title="Discard this draft?"
-        description="Your progress is auto-saved as you go. Discard it and return home, or keep editing."
-        confirmLabel="Discard"
+        // A plan in force only loses unsubmitted edits; anything else is
+        // archived. Nothing here deletes a plan or its tasks.
+        title={
+          planIsActive || awaitingDecision
+            ? "Discard your changes?"
+            : "Set this draft aside?"
+        }
+        description={
+          planIsActive
+            ? "The plan in force, its tasks and evidence stay as they are. Only edits you haven't saved or submitted are dropped."
+            : awaitingDecision
+              ? "The plan stays with your committee exactly as you submitted it. Only edits made since then are dropped."
+              : "It's archived, not deleted — you can bring it back from My DMPs."
+        }
+        confirmLabel={
+          planIsActive || awaitingDecision ? "Discard changes" : "Archive draft"
+        }
         cancelLabel="Keep editing"
         confirmVariant="destructive"
         onConfirm={() => {
-          resetDraft();
+          const outcome = closeDraft();
+          if (outcome === "archived")
+            toast({
+              title: "Draft archived",
+              description: "Find it under Archived in My DMPs.",
+            });
           navigate("/");
         }}
       />

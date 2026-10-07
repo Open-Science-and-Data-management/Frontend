@@ -6,6 +6,10 @@ import App from "./App";
 import "./styles/globals.css";
 import { ThemeProvider } from "./components/ui/ThemeProvider";
 import { routerConfig } from "./routes/routerConfig";
+import { installPlanEffects } from "./store/planEffects";
+
+// Cross-store consequences of a plan version coming into force.
+installPlanEffects();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

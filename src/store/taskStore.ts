@@ -10,7 +10,7 @@ import { CURRENT_USER_ID } from "@/config/current-user";
 import { evidenceSatisfies } from "@/config/task-evidence";
 import { useDmpStore } from "@/store/dmpStore";
 import { useProjectStore } from "@/store/projectStore";
-import { resolvePlanMode } from "@/config/plan-mode";
+import { planModeOf } from "@/config/plan-mode";
 import type { Task, TaskChecklistItem, TaskEvidence } from "@/types/task";
 
 // The seeded tasks belong to the approved seeded plan, since tasks only exist
@@ -79,7 +79,12 @@ interface TaskState {
   reopenTask: (taskId: string) => void;
   cancelTask: (taskId: string) => void;
 
-  deleteTask: (id: string) => void;
+  /**
+   * Deletes a task only if no work is recorded on it. A task with evidence,
+   * a ticked step, or a completion is the record of work done: it can be
+   * cancelled, never deleted. Returns false when refused.
+   */
+  deleteTask: (id: string) => boolean;
   getTaskById: (id: string) => Task | undefined;
   /** Tasks belong to exactly one plan; the board never mixes them by accident. */
   getTasksForDmp: (dmpId: string) => Task[];
@@ -92,18 +97,103 @@ interface TaskState {
     tasks: NewTask[],
   ) => { added: number; removed: number; kept: number };
   /** A dataset dropped from the plan: its tasks are cancelled, never deleted. */
-  cancelTasksForDataset: (dmpId: string, datasetId: string) => number;
+  cancelTasksForDataset: (
+    dmpId: string,
+    datasetId: string,
+    datasetTitle?: string,
+  ) => number;
+  /** Offers to reopen tasks whose output came back; never acted on unasked. */
+  reopenOffers: ReopenOffer[];
+  offerReopen: (offer: Omit<ReopenOffer, "offer_id" | "created_at">) => void;
+  /**
+   * Reopens the chosen tasks of an offer, each to the status it had before it
+   * was cancelled and linked to the output that came back. The rest stay
+   * cancelled: the offer is answered, and closed.
+   */
+  reopenFromOffer: (offerId: string, taskIds: string[]) => number;
+  dismissReopenOffer: (offerId: string) => void;
 }
 
 /** A task's plan mode, read through the plan to the project that owns it. */
 const planModeFor = (dmpId: string) => {
   const dmp = useDmpStore.getState();
-  const projectId =
-    dmp.currentDmpId === dmpId
-      ? dmp.draft.project_id
-      : dmp.dmps.find((d) => d.dmp_id === dmpId)?.draft.project_id;
-  return resolvePlanMode(useProjectStore.getState().projects, projectId);
+  const record = dmp.dmps.find((d) => d.dmp_id === dmpId);
+  return planModeOf(
+    record,
+    useProjectStore.getState().projects,
+    dmp.currentDmpId === dmpId ? dmp.draft.project_id : undefined,
+  );
 };
+
+export interface ReopenOffer {
+  offer_id: string;
+  dmp_id: string;
+  /** The version that brought the outputs back. */
+  version: number;
+  created_at: Date;
+  items: {
+    task_id: string;
+    title: string;
+    output_title: string;
+    /** The status it had before it was cancelled. */
+    restore_to: Task["status"];
+    /** The returned output's id; differs from the task's when relinking. */
+    relink_to: string;
+    relinked: boolean;
+  }[];
+}
+
+/**
+ * Tasks a version's returning outputs could reopen: cancelled because their
+ * output was removed, and matched to the returning output by id — or, when it
+ * came back under a new id, by the title it had when removed.
+ */
+export const findReopenCandidates = (
+  tasks: Task[],
+  dmpId: string,
+  previous: { dataset_id?: string; title: string }[],
+  next: { dataset_id?: string; title: string }[],
+): ReopenOffer["items"] => {
+  const before = new Set(previous.map((d) => d.dataset_id));
+  const nextIds = new Set(next.map((d) => d.dataset_id));
+  const returned = next.filter((d) => !before.has(d.dataset_id));
+
+  return tasks.flatMap((task) => {
+    if (
+      task.dmp_id !== dmpId ||
+      task.status !== "cancelled" ||
+      task.cancel_reason !== "output_removed"
+    )
+      return [];
+    const output =
+      returned.find((d) => d.dataset_id === task.dataset_id) ??
+      (!nextIds.has(task.dataset_id)
+        ? returned.find(
+            (d) =>
+              d.title.trim().toLowerCase() ===
+              task.cancelled_dataset_title?.trim().toLowerCase(),
+          )
+        : undefined);
+    if (!output?.dataset_id) return [];
+    return [
+      {
+        task_id: task.task_id as string,
+        title: task.title,
+        output_title: output.title,
+        restore_to: task.cancelled_from ?? "todo",
+        relink_to: output.dataset_id,
+        relinked: output.dataset_id !== task.dataset_id,
+      },
+    ];
+  });
+};
+
+/** Evidence, a ticked step, or a completion: proof of work that must survive. */
+export const hasRecordedWork = (task: Task): boolean =>
+  Boolean(task.evidence?.ref?.trim()) ||
+  (task.checklist ?? []).some((item) => item.done) ||
+  task.status === "done" ||
+  Boolean(task.completed_at);
 
 const mutate = (
   tasks: Task[],
@@ -346,16 +436,29 @@ export const useTaskStore = create<TaskState>()(
 
       cancelTask: (taskId) =>
         set((state) => ({
-          tasks: mutate(state.tasks, taskId, (task) => ({
-            ...task,
-            status: "cancelled",
-          })),
+          // Finished work stays finished: cancelling would overwrite the
+          // record of its completion. Reopen it first if it really changed.
+          tasks: mutate(state.tasks, taskId, (task) =>
+            task.status === "done" || task.status === "cancelled"
+              ? task
+              : {
+                  ...task,
+                  status: "cancelled",
+                  cancelled_from: task.status,
+                  cancel_reason: "manual",
+                  cancelled_at: new Date(),
+                },
+          ),
         })),
 
-      deleteTask: (id) =>
+      deleteTask: (id) => {
+        const task = get().tasks.find((t) => t.task_id === id);
+        if (!task || hasRecordedWork(task)) return false;
         set((state) => ({
-          tasks: state.tasks.filter((task) => task.task_id !== id),
-        })),
+          tasks: state.tasks.filter((t) => t.task_id !== id),
+        }));
+        return true;
+      },
 
       getTaskById: (id) => get().tasks.find((task) => task.task_id === id),
 
@@ -390,7 +493,7 @@ export const useTaskStore = create<TaskState>()(
         };
       },
 
-      cancelTasksForDataset: (dmpId, datasetId) => {
+      cancelTasksForDataset: (dmpId, datasetId, datasetTitle) => {
         const affected = get().tasks.filter(
           (t) =>
             t.dmp_id === dmpId &&
@@ -402,12 +505,66 @@ export const useTaskStore = create<TaskState>()(
         set((state) => ({
           tasks: state.tasks.map((t) =>
             affected.some((a) => a.task_id === t.task_id)
-              ? { ...t, status: "cancelled" as const }
+              ? {
+                  ...t,
+                  status: "cancelled" as const,
+                  cancelled_from: t.status,
+                  cancel_reason: "output_removed" as const,
+                  cancelled_dataset_title: datasetTitle,
+                  cancelled_at: new Date(),
+                }
               : t,
           ),
         }));
         return affected.length;
       },
+
+      reopenOffers: [],
+
+      offerReopen: (offer) =>
+        set((state) => ({
+          reopenOffers: [
+            ...state.reopenOffers,
+            {
+              ...offer,
+              offer_id: Math.random().toString(36).slice(2, 10),
+              created_at: new Date(),
+            },
+          ],
+        })),
+
+      reopenFromOffer: (offerId, taskIds) => {
+        const offer = get().reopenOffers.find((o) => o.offer_id === offerId);
+        if (!offer) return 0;
+        const chosen = offer.items.filter((i) => taskIds.includes(i.task_id));
+        set((state) => ({
+          tasks: state.tasks.map((t) => {
+            const item = chosen.find((i) => i.task_id === t.task_id);
+            // Only still-cancelled tasks: anything reopened since is left be.
+            if (!item || t.status !== "cancelled") return t;
+            return {
+              ...t,
+              status: item.restore_to,
+              dataset_id: item.relink_to,
+              cancelled_from: undefined,
+              cancel_reason: undefined,
+              cancelled_dataset_title: undefined,
+              cancelled_at: undefined,
+            };
+          }),
+          reopenOffers: state.reopenOffers.filter(
+            (o) => o.offer_id !== offerId,
+          ),
+        }));
+        return chosen.length;
+      },
+
+      dismissReopenOffer: (offerId) =>
+        set((state) => ({
+          reopenOffers: state.reopenOffers.filter(
+            (o) => o.offer_id !== offerId,
+          ),
+        })),
     }),
     {
       name: storageKey("tasks"),
@@ -429,7 +586,10 @@ export const useTaskStore = create<TaskState>()(
           return { tasks: [] };
         }
       },
-      partialize: (state) => ({ tasks: state.tasks }),
+      partialize: (state) => ({
+        tasks: state.tasks,
+        reopenOffers: state.reopenOffers,
+      }),
     },
   ),
 );

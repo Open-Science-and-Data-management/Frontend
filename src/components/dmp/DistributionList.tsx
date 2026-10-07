@@ -7,6 +7,8 @@ import { DataAccess } from "@/schemas/shared";
 import type { Distribution } from "@/types/dataset";
 
 interface DistributionListProps {
+  /** Scopes input ids, so the readiness list can focus one directly. */
+  datasetId: string;
   distributions: Distribution[];
   onChange: (distributions: Distribution[]) => void;
 }
@@ -14,11 +16,14 @@ interface DistributionListProps {
 const makeId = () => Math.random().toString(36).substring(2, 10);
 
 export const DistributionList: React.FC<DistributionListProps> = ({
+  datasetId,
   distributions,
   onChange,
 }) => {
   const update = (index: number, patch: Partial<Distribution>) =>
-    onChange(distributions.map((d, i) => (i === index ? { ...d, ...patch } : d)));
+    onChange(
+      distributions.map((d, i) => (i === index ? { ...d, ...patch } : d)),
+    );
 
   const remove = (index: number) =>
     onChange(distributions.filter((_, i) => i !== index));
@@ -37,17 +42,20 @@ export const DistributionList: React.FC<DistributionListProps> = ({
           className="grid grid-cols-1 gap-2 rounded-lg border bg-muted/20 p-3 sm:grid-cols-2"
         >
           <Input
+            id={`distribution-title-${datasetId}-${i}`}
             aria-label="Distribution title"
             placeholder="Title"
             value={dist.title}
             onChange={(e) => update(i, { title: e.target.value })}
           />
           <Select
+            id={`distribution-data_access-${datasetId}-${i}`}
             aria-label="Access"
             value={dist.data_access}
             onChange={(e) =>
               update(i, {
-                data_access: e.target.value as (typeof DataAccess.options)[number],
+                data_access: e.target
+                  .value as (typeof DataAccess.options)[number],
               })
             }
           >
@@ -58,29 +66,42 @@ export const DistributionList: React.FC<DistributionListProps> = ({
             ))}
           </Select>
           <Input
+            id={`distribution-access_url-${datasetId}-${i}`}
             aria-label="Access URL"
             placeholder="Access URL"
             value={dist.access_url ?? ""}
             onChange={(e) => update(i, { access_url: e.target.value })}
           />
           <Input
+            id={`distribution-download_url-${datasetId}-${i}`}
             aria-label="Download URL"
             placeholder="Download URL"
             value={dist.download_url ?? ""}
             onChange={(e) => update(i, { download_url: e.target.value })}
           />
           <Input
+            id={`distribution-format-${datasetId}-${i}`}
             aria-label="Format"
             placeholder="Format (e.g. CSV)"
             value={dist.format ?? ""}
             onChange={(e) => update(i, { format: e.target.value })}
           />
-          <Input
-            aria-label="License"
-            placeholder="License (e.g. CC-BY-4.0)"
-            value={dist.license ?? ""}
-            onChange={(e) => update(i, { license: e.target.value })}
-          />
+          <div>
+            <Input
+              id={`distribution-license-${datasetId}-${i}`}
+              aria-label="License"
+              placeholder="License (e.g. CC-BY-4.0)"
+              value={dist.license ?? ""}
+              invalid={dist.data_access === "open" && !dist.license?.trim()}
+              onChange={(e) => update(i, { license: e.target.value })}
+            />
+            {/* maDMP v3.0 requires a licence on open data. */}
+            {dist.data_access === "open" && !dist.license?.trim() && (
+              <p className="mt-1 text-xs text-destructive" role="alert">
+                Open data needs a licence.
+              </p>
+            )}
+          </div>
           <div className="flex justify-end sm:col-span-2">
             <Button
               type="button"

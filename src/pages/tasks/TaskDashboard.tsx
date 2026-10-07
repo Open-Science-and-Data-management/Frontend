@@ -3,6 +3,8 @@ import { Helmet } from "react-helmet-async";
 import { Sparkles } from "lucide-react";
 import { useTaskStore } from "@/store/taskStore";
 import { buildDmpList, useDmpStore } from "@/store/dmpStore";
+import { useProjectStore } from "@/store/projectStore";
+import { isActive } from "@/config/plan-mode";
 import { TaskFormDialog } from "@/components/task/TaskFormDialog";
 import { RegenerateTasksDialog } from "@/components/task/RegenerateTasksDialog";
 import { TaskBoard } from "@/components/task/TaskBoard";
@@ -17,7 +19,7 @@ import { Button } from "@/components/ui/button";
 const ALL = "all";
 
 export const TaskDashboard: React.FC = () => {
-  const tasks = useTaskStore((s) => s.tasks);
+  const allTasks = useTaskStore((s) => s.tasks);
   const dmps = useDmpStore((s) => s.dmps);
   const draft = useDmpStore((s) => s.draft);
   const dmpStatus = useDmpStore((s) => s.status);
@@ -53,6 +55,16 @@ export const TaskDashboard: React.FC = () => {
     ],
   );
 
+  // An archived plan's tasks are kept, untouched — just off the board.
+  const archivedIds = React.useMemo(
+    () => new Set(dmps.filter((d) => d.archived_at).map((d) => d.dmp_id)),
+    [dmps],
+  );
+  const tasks = React.useMemo(
+    () => allTasks.filter((t) => !archivedIds.has(t.dmp_id)),
+    [allTasks, archivedIds],
+  );
+
   const planTitle = React.useCallback(
     (dmpId?: string) => plans.find((p) => p.dmp_id === dmpId)?.title,
     [plans],
@@ -60,17 +72,53 @@ export const TaskDashboard: React.FC = () => {
 
   // Every plan that owns tasks, plus the one open in the editor even when it
   // owns none — an empty board for that plan is the honest answer.
-  const planOptions = React.useMemo(() => {
-    const counts = new Map<string, number>();
-    tasks.forEach((t) => counts.set(t.dmp_id, (counts.get(t.dmp_id) ?? 0) + 1));
-    if (currentDmpId && !counts.has(currentDmpId)) counts.set(currentDmpId, 0);
+  const projects = useProjectStore((s) => s.projects);
+  const projectOfPlan = React.useCallback(
+    (dmpId: string) => plans.find((p) => p.dmp_id === dmpId)?.project_id,
+    [plans],
+  );
+  const [projectSelected, setProjectSelected] = React.useState<string>(ALL);
 
-    return [...counts.entries()].map(([dmp_id, count]) => ({
-      dmp_id,
-      count,
-      title: planTitle(dmp_id) ?? "Plan no longer in your library",
-    }));
-  }, [tasks, currentDmpId, planTitle]);
+  // Every project, so a new one is findable before it has any tasks.
+  const projectOptions = React.useMemo(
+    () =>
+      projects.map((p) => ({
+        project_id: p.project_id as string,
+        name: p.project_name,
+        count: tasks.filter((t) => projectOfPlan(t.dmp_id) === p.project_id)
+          .length,
+      })),
+    [projects, tasks, projectOfPlan],
+  );
+
+  // Every plan in the library — not only those that already have tasks, which
+  // made a plan's presence depend on whatever happened to be open.
+  const planOptions = React.useMemo(() => {
+    const count = (dmpId: string) =>
+      tasks.filter((t) => t.dmp_id === dmpId).length;
+    const inLibrary = plans
+      .filter(
+        (p) => projectSelected === ALL || p.project_id === projectSelected,
+      )
+      .map((p) => ({
+        dmp_id: p.dmp_id,
+        count: count(p.dmp_id),
+        // With every project showing, the project name tells same-named plans apart.
+        title:
+          projectSelected === ALL
+            ? `${p.title} · ${projects.find((x) => x.project_id === p.project_id)?.project_name ?? "No project"}`
+            : p.title,
+      }));
+    const orphans = [...new Set(tasks.map((t) => t.dmp_id))]
+      .filter((id) => !plans.some((p) => p.dmp_id === id))
+      .filter(() => projectSelected === ALL)
+      .map((id) => ({
+        dmp_id: id,
+        count: count(id),
+        title: "Plan no longer in your library",
+      }));
+    return [...inLibrary, ...orphans];
+  }, [plans, tasks, projects, projectSelected]);
 
   const [selected, setSelected] = React.useState<string>(
     () => currentDmpId ?? tasks[0]?.dmp_id ?? ALL,
@@ -83,13 +131,50 @@ export const TaskDashboard: React.FC = () => {
 
   const inPlan = React.useMemo(
     () =>
-      selected === ALL ? tasks : tasks.filter((t) => t.dmp_id === selected),
-    [tasks, selected],
+      tasks.filter(
+        (t) =>
+          (projectSelected === ALL ||
+            projectOfPlan(t.dmp_id) === projectSelected) &&
+          (selected === ALL || t.dmp_id === selected),
+      ),
+    [tasks, selected, projectSelected, projectOfPlan],
   );
   const filters = useTaskFilters(inPlan);
 
-  const targetDmpId = selected === ALL ? (currentDmpId ?? undefined) : selected;
+  // A new task goes to the chosen plan; with only a project chosen, to the
+  // open plan if it belongs there, else that project's only plan — never to a
+  // plan in some other project.
+  const projectPlans = plans.filter(
+    (p) => projectSelected === ALL || p.project_id === projectSelected,
+  );
+  const targetDmpId =
+    selected !== ALL
+      ? selected
+      : currentDmpId && projectPlans.some((p) => p.dmp_id === currentDmpId)
+        ? currentDmpId
+        : projectPlans.length === 1
+          ? projectPlans[0].dmp_id
+          : undefined;
   const selectedPlan = plans.find((p) => p.dmp_id === targetDmpId);
+
+  // An empty list should say why, in terms of where the plan actually is.
+  const narrowedPlan = plans.find((p) => p.dmp_id === selected);
+  const narrowedProject = projects.find(
+    (p) => p.project_id === projectSelected,
+  );
+  const emptyReason =
+    inPlan.length > 0
+      ? "No tasks match these filters."
+      : narrowedPlan
+        ? isActive(narrowedPlan.status)
+          ? "This plan is approved but hasn't been broken into tasks yet."
+          : "This plan isn't approved yet — its tasks are created once it is."
+        : narrowedProject &&
+            !plans.some((p) => p.project_id === narrowedProject.project_id)
+          ? "This project has no plan yet. Upload its proposal to start one."
+          : narrowedProject
+            ? "None of this project's plans has tasks yet — they're created once a plan is approved."
+            : "No tasks yet. Approve a plan to generate its tasks.";
 
   const editingTask = tasks.find((t) => t.task_id === editingTaskId) ?? null;
   const dialogOpen = isCreating || Boolean(editingTask);
@@ -134,7 +219,7 @@ export const TaskDashboard: React.FC = () => {
               title={
                 targetDmpId
                   ? undefined
-                  : "Open a plan first — every task belongs to one"
+                  : "Pick a plan in the filter first — every task belongs to one"
               }
             >
               Create New Task
@@ -145,13 +230,24 @@ export const TaskDashboard: React.FC = () => {
         <TaskFilters
           {...filters}
           total={inPlan.length}
+          project={
+            projectOptions.length > 0
+              ? {
+                  value: projectSelected,
+                  onChange: setProjectSelected,
+                  options: projectOptions,
+                  totalCount: tasks.length,
+                }
+              : undefined
+          }
           plan={
             planOptions.length > 0
               ? {
                   value: selected,
                   onChange: setSelected,
                   options: planOptions,
-                  totalCount: tasks.length,
+                  // "All plans" means all of the chosen project's plans.
+                  totalCount: planOptions.reduce((n, p) => n + p.count, 0),
                 }
               : undefined
           }
@@ -161,13 +257,7 @@ export const TaskDashboard: React.FC = () => {
 
         {filters.visible.length === 0 ? (
           <div className="py-12 text-center">
-            <p className="text-muted-foreground">
-              {tasks.length === 0
-                ? "No tasks yet. Approve a plan to generate its tasks."
-                : inPlan.length === 0
-                  ? "This plan has no tasks yet."
-                  : "No tasks match these filters."}
-            </p>
+            <p className="text-muted-foreground">{emptyReason}</p>
           </div>
         ) : view === "table" ? (
           <TaskTable

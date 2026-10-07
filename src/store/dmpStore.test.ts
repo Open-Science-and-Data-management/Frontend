@@ -145,14 +145,17 @@ describe("checking a plan in and out", () => {
     expect(useDmpStore.getState().currentDmpId).toBeNull();
   });
 
-  it("discarding removes the plan from the library", () => {
-    useDmpStore.setState({ currentDmpId: "dmp-1", draft: { title: "Doomed" } });
+  it("closing an unsubmitted plan archives it — never deletes it", () => {
+    useDmpStore.setState({
+      currentDmpId: "dmp-1",
+      draft: { title: "Set aside" },
+    });
 
-    useDmpStore.getState().resetDraft();
+    expect(useDmpStore.getState().closeDraft()).toBe("archived");
 
-    expect(useDmpStore.getState().dmps.some((d) => d.dmp_id === "dmp-1")).toBe(
-      false,
-    );
+    const kept = useDmpStore.getState().dmps.find((d) => d.dmp_id === "dmp-1");
+    expect(kept?.archived_at).toBeInstanceOf(Date);
+    expect(kept?.title).toBe("Set aside");
     expect(useDmpStore.getState().currentDmpId).toBeNull();
     expect(useDmpStore.getState().draft).toEqual({});
   });

@@ -195,3 +195,302 @@ describe("a revision in flight does not unseat the version in force", () => {
     expect(state().pendingVersion()?.number).toBe(3);
   });
 });
+
+describe("what an approved plan's edits cost", () => {
+  beforeEach(() => {
+    state().submitForApproval();
+    state().approve({ name: "Prof. Mali Chaiyasit", position: "Chair" });
+  });
+
+  it("treats moving the timeline as major", () => {
+    edit({ end_date: new Date("2027-06-30T00:00:00.000Z") });
+    expect(state().pendingChanges()).toMatchObject([
+      { label: "End date", edit_type: "major" },
+    ]);
+  });
+
+  it("treats changing the ethics answer as major", () => {
+    edit({ ethical_issues_exist: true });
+    expect(state().pendingChanges()[0]).toMatchObject({
+      label: "Ethical issues",
+      edit_type: "major",
+    });
+  });
+
+  it("keeps wording edits minor, so they apply without sign-off", () => {
+    edit({ title: "Rice Genomics Data Management Plan" });
+    state().saveMinorEdits();
+    expect(record().versions).toHaveLength(1);
+    expect(record().versions[0].minor_edits).toHaveLength(1);
+  });
+});
+
+describe("the list shown before editing", () => {
+  it("names every edit that needs sign-off again", async () => {
+    const { majorTriggers } = await import("@/config/plan-diff");
+    expect(majorTriggers()).toEqual(
+      expect.arrayContaining([
+        "Begin date",
+        "End date",
+        "Ethical issues",
+        "Access of a research output",
+        "Protection level of a research output",
+        "Security classification of a research output",
+        "Adding or removing a research output",
+      ]),
+    );
+  });
+});
+
+describe("isMajorTrigger is the only source of major", () => {
+  it("compares every field the policy governs, so no flag can be ignored", async () => {
+    const { COMPARED_KEYS } = await import("@/config/plan-diff");
+    const { dmpFieldPolicy, datasetFieldPolicy } =
+      await import("@/config/field-policy");
+    Object.keys(dmpFieldPolicy)
+      .filter((k) => k !== "schema_version")
+      .forEach((key) => expect(COMPARED_KEYS.dmp).toContain(key));
+    Object.keys(datasetFieldPolicy)
+      .map((k) => k.split(".")[0])
+      .forEach((key) => expect(COMPARED_KEYS.dataset).toContain(key));
+  });
+
+  it("shows exactly the flagged fields as needing sign-off, and nothing else", async () => {
+    const { majorTriggers } = await import("@/config/plan-diff");
+    const { dmpFieldPolicy, datasetFieldPolicy, planListPolicy } =
+      await import("@/config/field-policy");
+    const flagged = (policy: Record<string, { isMajorTrigger?: boolean }>) =>
+      Object.entries(policy).filter(([, p]) => p.isMajorTrigger).length;
+    expect(majorTriggers()).toHaveLength(
+      flagged(dmpFieldPolicy) +
+        flagged(datasetFieldPolicy) +
+        flagged(planListPolicy),
+    );
+  });
+});
+
+describe("the agreed split", () => {
+  beforeEach(() => {
+    state().submitForApproval();
+    state().approve({ name: "Prof. Mali Chaiyasit", position: "Chair" });
+  });
+
+  it.each([
+    [
+      "Indigenous considerations",
+      { indigenous_considerations: "Samples from Moken land." },
+    ],
+  ])("%s is major", (label, patch) => {
+    edit(patch as Partial<DmpDraft>);
+    expect(state().pendingChanges()[0]).toMatchObject({
+      label,
+      edit_type: "major",
+    });
+  });
+
+  it.each([
+    ["Personal data", { personal_data: "yes" }],
+    [
+      "Personal data plan",
+      { personal_data_plan: "Pseudonymised before analysis." },
+    ],
+  ])("a research output's %s is major", (label, patch) => {
+    edit({ dataset: [output(patch as Partial<Dataset>)] });
+    expect(state().pendingChanges()[0]).toMatchObject({
+      label: `Research output 1 — ${label}`,
+      edit_type: "major",
+    });
+  });
+
+  it("notices a change of contact, and keeps it minor", () => {
+    edit({
+      contributor: [
+        {
+          contributor_id: "c1",
+          name: "Aran",
+          role: "PI",
+          email: "aran@example.edu",
+          is_contact: false,
+        },
+        {
+          contributor_id: "c2",
+          name: "Mali",
+          role: "Data steward",
+          email: "mali@example.edu",
+          is_contact: true,
+        },
+      ],
+    });
+    const changes = state().pendingChanges();
+    expect(changes.length).toBeGreaterThan(0);
+    expect(changes.every((c) => c.edit_type === "minor")).toBe(true);
+    expect(changes.map((c) => c.label)).toContain("Contributor added — Mali");
+
+    state().saveMinorEdits();
+    expect(record().versions).toHaveLength(1);
+    expect(record().versions[0].minor_edits).toHaveLength(1);
+  });
+});
+
+describe("a batch with a major in it", () => {
+  beforeEach(() => {
+    state().submitForApproval();
+    state().approve({ name: "Prof. Mali Chaiyasit", position: "Chair" });
+    edit({
+      title: "Rice Genomics DMP, revised",
+      end_date: new Date("2027-06-30T00:00:00.000Z"),
+    });
+  });
+
+  it("is major as a whole, while each change keeps its own label", async () => {
+    const { editTypeOf } = await import("@/config/plan-diff");
+    const changes = state().pendingChanges();
+    expect(changes.map((c) => [c.label, c.edit_type])).toEqual([
+      ["Title", "minor"],
+      ["End date", "major"],
+    ]);
+    expect(editTypeOf(changes)).toBe("major");
+  });
+
+  it("can't have its minor half saved quietly", () => {
+    state().saveMinorEdits();
+    expect(record().versions[0].minor_edits).toHaveLength(0);
+    expect(state().pendingChanges()).toHaveLength(2);
+  });
+
+  it("goes for sign-off together, as one major version", () => {
+    state().submitRevision();
+    const v2 = state().pendingVersion();
+    expect(v2?.edit_type).toBe("major");
+    expect(v2?.changes.map((c) => c.label)).toEqual(["Title", "End date"]);
+  });
+});
+
+it("names a nested field the way the readiness list does", () => {
+  state().submitForApproval();
+  state().approve({ name: "Prof. Mali Chaiyasit", position: "Chair" });
+  edit({
+    dataset: [output(), output({ dataset_id: "ds-2", title: "Manuscript" })],
+  });
+  state().submitRevision();
+  state().approve({ name: "Prof. Mali Chaiyasit", position: "Chair" });
+
+  edit({
+    dataset: [
+      output(),
+      output({
+        dataset_id: "ds-2",
+        title: "Manuscript",
+        protection_level: "Protected B",
+      }),
+    ],
+  });
+  expect(state().pendingChanges()).toMatchObject([
+    {
+      path: "dataset[1].protection_level",
+      label: "Research output 2 — Protection level",
+      from: "Standard",
+      to: "Protected B",
+      edit_type: "major",
+    },
+  ]);
+});
+
+describe("restoring a version", () => {
+  const approver = { name: "Prof. Mali Chaiyasit", position: "Chair" };
+  beforeEach(() => {
+    state().submitForApproval();
+    state().approve(approver);
+  });
+
+  it("discards unsubmitted edits by restoring the version in force", () => {
+    edit({
+      title: "Something else",
+      end_date: new Date("2030-01-01T00:00:00.000Z"),
+    });
+    expect(state().pendingChanges()).toHaveLength(2);
+
+    expect(state().restoreVersion(1)).toBe(true);
+    expect(state().pendingChanges()).toEqual([]);
+    expect(state().restoredFrom).toBeNull();
+    // Nothing in force changed, so nothing new was recorded.
+    expect(record().versions).toHaveLength(1);
+  });
+
+  it("copies the snapshot, so later edits never reach the record", () => {
+    state().restoreVersion(1);
+    edit({ title: "Edited after restore" });
+    expect(record().versions[0].snapshot.title).toBe("Rice Genomics DMP");
+  });
+
+  it("keeps dates as dates", () => {
+    edit({ end_date: new Date("2027-01-01T00:00:00.000Z") });
+    state().restoreVersion(1);
+    expect(state().draft.end_date).toBeUndefined(); // the approved plan had none
+    edit({ begin_date: new Date("2026-02-01T00:00:00.000Z") });
+    state().submitRevision();
+    state().approve(approver);
+    edit({ begin_date: new Date("2026-05-01T00:00:00.000Z") });
+    state().restoreVersion(2);
+    expect(state().draft.begin_date).toBeInstanceOf(Date);
+  });
+
+  it("reopens a sent-back revision so it can be fixed and resubmitted", () => {
+    edit({ dataset: [output({ access: "open" })] });
+    state().submitRevision();
+    state().rejectRevision("Needs a sharing agreement.", approver);
+    // Someone gives up and discards…
+    state().restoreVersion(1);
+    expect(state().pendingChanges()).toEqual([]);
+    // …then thinks better of it and brings the rejected revision back.
+    expect(state().restoreVersion(2)).toBe(true);
+    expect(state().restoredFrom).toBe(2);
+    expect(state().pendingChanges()[0]).toMatchObject({
+      label: "Research output 1 — Access",
+      edit_type: "major",
+    });
+    state().submitRevision();
+    expect(state().pendingVersion()).toMatchObject({
+      number: 3,
+      restored_from: 2,
+    });
+    expect(state().restoredFrom).toBeNull();
+  });
+
+  it("rolls back to an older approved version only through sign-off", () => {
+    edit({ dataset: [output({ access: "open" })] });
+    state().submitRevision();
+    state().approve(approver); // v2 in force: open
+    state().restoreVersion(1); // back to shared — a major change against v2
+    expect(state().pendingChanges()[0]).toMatchObject({
+      from: "open",
+      to: "shared",
+      edit_type: "major",
+    });
+    state().saveMinorEdits(); // the quiet path stays shut
+    expect(record().active_version).toBe(2);
+    state().submitRevision();
+    state().approve(approver);
+    expect(record().active_version).toBe(3);
+    expect(record().versions.find((v) => v.number === 3)?.restored_from).toBe(
+      1,
+    );
+  });
+
+  it("records a minor-only restore against the version it amended", () => {
+    edit({ title: "Rice Genomics DMP, reworded" });
+    state().saveMinorEdits();
+    state().restoreVersion(1); // v1's snapshot now holds the reworded title
+    expect(state().pendingChanges()).toEqual([]);
+  });
+
+  it("won't restore a version still waiting on a decision", () => {
+    edit({
+      title: "Pending title",
+      end_date: new Date("2030-01-01T00:00:00.000Z"),
+    });
+    state().submitRevision();
+    expect(state().restoreVersion(2)).toBe(false);
+    expect(state().restoreVersion(99)).toBe(false);
+  });
+});

@@ -34,7 +34,12 @@ export const DatasetList: React.FC = () => {
               </option>
             ))}
           </Select>
-          <Button type="button" variant="outline" size="sm" onClick={() => addDataset(newType)}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => addDataset(newType)}
+          >
             <Plus className="mr-1.5 h-3.5 w-3.5" />
             Add output
           </Button>

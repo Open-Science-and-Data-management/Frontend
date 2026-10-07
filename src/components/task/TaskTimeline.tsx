@@ -1,4 +1,5 @@
 import React from "react";
+import { fromLocalDay, toLocalDay } from "@/utils/calendarDate";
 import {
   addDays,
   differenceInCalendarDays,
@@ -28,7 +29,7 @@ const span = (task: Task) => {
   const start = task.start_date ?? task.end_date;
   const end = task.end_date ?? task.start_date;
   return start && end
-    ? { start: startOfDay(start), end: startOfDay(end) }
+    ? { start: toLocalDay(start), end: toLocalDay(end) }
     : null;
 };
 
@@ -166,8 +167,9 @@ export const TaskTimeline: React.FC<TaskTimelineProps> = ({
 
     if (mode === "move") {
       updateTask(taskId, {
-        start_date: addDays(start, deltaDays),
-        end_date: addDays(end, deltaDays),
+        // Day arithmetic is local; the stored value is the calendar day.
+        start_date: fromLocalDay(addDays(start, deltaDays)),
+        end_date: fromLocalDay(addDays(end, deltaDays)),
       });
       return;
     }
@@ -175,8 +177,8 @@ export const TaskTimeline: React.FC<TaskTimelineProps> = ({
     // Resizing only moves the far end, and never past the near one.
     const nextEnd = addDays(end, deltaDays);
     updateTask(taskId, {
-      start_date: start,
-      end_date: nextEnd < start ? start : nextEnd,
+      start_date: fromLocalDay(start),
+      end_date: fromLocalDay(nextEnd < start ? start : nextEnd),
     });
   };
 

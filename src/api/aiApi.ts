@@ -1,4 +1,5 @@
 import type { DmpDraft } from "@/types/dmp";
+import { MADMP_SCHEMA_VERSION } from "@/schemas/madmp/vocabularies";
 import {
   getDomainProfile,
   type DomainKey,
@@ -414,8 +415,8 @@ const applyAnalysisDirection = (
   if (/sensitive|personal|consent|human|ส่วนบุคคล/.test(d)) {
     datasets.forEach((set) => {
       set.personal_data = "yes";
-      set.protection_level = "Restricted — access controlled";
-      set.security_classification_level = "Confidential";
+      set.protection_level = "Protected B";
+      set.security_classification_level = "confidential";
     });
     draft.ethical_issues_exist = true;
     draft.ethical_issues_description =
@@ -455,8 +456,8 @@ const applyAnalysisDirection = (
       access: "open",
       personal_data: "no",
       sensitive_data: "no",
-      protection_level: "Public repository",
-      security_classification_level: "Public",
+      protection_level: "not protected",
+      security_classification_level: "unclassified",
       keyword: ["software"],
       domain: "generic" as const,
       domain_metadata: {},
@@ -712,8 +713,8 @@ const CANNED_DRAFT: DmpDraft = {
       access: "shared",
       personal_data: "no",
       sensitive_data: "no",
-      protection_level: "Standard",
-      security_classification_level: "Internal",
+      protection_level: "Protected A",
+      security_classification_level: "restricted",
       keyword: ["pollinators", "genomics", "urban ecology"],
       domain: "life_sciences" as const,
       domain_metadata: {
@@ -726,7 +727,7 @@ const CANNED_DRAFT: DmpDraft = {
       schema_fields: [],
     },
   ],
-  schema_version: "FAIRer maDMP 1.2",
+  schema_version: MADMP_SCHEMA_VERSION,
 };
 
 export const aiApi = {

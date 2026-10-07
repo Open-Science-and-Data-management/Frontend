@@ -14,6 +14,11 @@ import { DistributionList } from "@/components/dmp/DistributionList";
 import { DomainFields } from "@/components/dmp/DomainFields";
 import { datasetFieldPolicy } from "@/config/field-policy";
 import {
+  PROTECTION_LEVELS,
+  PROTECTION_LEVEL_HINTS,
+  SECURITY_CLASSIFICATION_LEVELS,
+} from "@/schemas/madmp/vocabularies";
+import {
   DomainKeyEnum,
   domainProfiles,
   foreignDomainKeys,
@@ -32,20 +37,38 @@ import { useToastStore } from "@/store/toastStore";
 import type { Dataset } from "@/types/dataset";
 import { cn } from "@/utils/cn";
 
-const PROTECTION_LEVELS = [
-  "None",
-  "Standard",
-  "Restricted",
-  "Confidential",
-  "Other",
-];
-const SECURITY_LEVELS = [
-  "Public",
-  "Internal",
-  "Restricted",
-  "Confidential",
-  "Other",
-];
+/** True for a stored value that isn't on the v3.0 list — kept, but flagged. */
+const legacy = (value: string, options: readonly string[]) =>
+  Boolean(value) && !options.includes(value);
+
+/**
+ * maDMP v3.0 lets an institution use its own scale, provided the scale is
+ * named and the level given — "Mahidol data classification", "Level 2".
+ */
+const OtherScheme: React.FC<{
+  id: string;
+  nomenclature?: string;
+  level?: string;
+  onChange: (nomenclature: string, level: string) => void;
+}> = ({ id, nomenclature = "", level = "", onChange }) => (
+  // Stacked: each sits in a half-width column, where side by side truncates.
+  <div className="grid grid-cols-1 gap-2">
+    <Input
+      id={`${id}-scheme`}
+      aria-label="Name of your classification scheme"
+      placeholder="Scheme, e.g. university policy"
+      value={nomenclature}
+      onChange={(e) => onChange(e.target.value, level)}
+    />
+    <Input
+      id={`${id}-level`}
+      aria-label="Level within that scheme"
+      placeholder="Level within it"
+      value={level}
+      onChange={(e) => onChange(nomenclature, e.target.value)}
+    />
+  </div>
+);
 
 interface DatasetCardProps {
   dataset: Dataset;
@@ -65,6 +88,11 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
   const confirm = useConfirm();
 
   const id = dataset.dataset_id as string;
+  const planInForce = useDmpStore(
+    (s) =>
+      s.dmps.find((d) => d.dmp_id === s.currentDmpId)?.active_version !==
+      undefined,
+  );
   const patch = (p: Partial<Dataset>) => updateDataset(id, p);
 
   const profile = getDomainProfile(dataset.domain);
@@ -203,15 +231,19 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                 if (
                   await confirm({
                     title: "Remove this research output?",
-                    description:
-                      "Its distributions and preservation details go with it. Any open tasks for it are cancelled, not deleted, so the trail survives.",
+                    description: planInForce
+                      ? "Removing an output is a major change, so it goes for sign-off. Its tasks keep running until then, and are cancelled — not deleted — once the change is in force."
+                      : "Its distributions and preservation details go with it. Any open tasks for it are cancelled, not deleted, so the trail survives.",
                     confirmLabel: "Remove output",
                   })
                 ) {
-                  // Tasks keep their history: cancelled, never erased.
-                  const cancelled = currentDmpId
-                    ? cancelTasksForDataset(currentDmpId, id)
-                    : 0;
+                  // In a plan in force the removal is only proposed; the tasks
+                  // are cancelled when the version that drops it takes effect
+                  // (store/planEffects). Otherwise it takes effect now.
+                  const cancelled =
+                    currentDmpId && !planInForce
+                      ? cancelTasksForDataset(currentDmpId, id, dataset.title)
+                      : 0;
                   removeDataset(id);
                   if (cancelled > 0) {
                     toast({
@@ -390,6 +422,11 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               label="Protection level"
               policy={datasetFieldPolicy.protection_level}
               required
+              hint={
+                PROTECTION_LEVEL_HINTS[
+                  dataset.protection_level as keyof typeof PROTECTION_LEVEL_HINTS
+                ]
+              }
             >
               <div className="space-y-2">
                 <Select
@@ -405,13 +442,23 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                       {option}
                     </option>
                   ))}
+                  {/* A value from before maDMP v3.0 stays visible until changed. */}
+                  {legacy(dataset.protection_level, PROTECTION_LEVELS) && (
+                    <option value={dataset.protection_level}>
+                      {dataset.protection_level} (earlier scale)
+                    </option>
+                  )}
                 </Select>
-                {dataset.protection_level === "Other" && (
-                  <Input
-                    placeholder="Describe protection level"
-                    value={dataset.protection_level_other ?? ""}
-                    onChange={(e) =>
-                      patch({ protection_level_other: e.target.value })
+                {dataset.protection_level === "other" && (
+                  <OtherScheme
+                    id={`protection-${id}`}
+                    nomenclature={dataset.protection_level_other_nomenclature}
+                    level={dataset.protection_level_other}
+                    onChange={(nomenclature, level) =>
+                      patch({
+                        protection_level_other_nomenclature: nomenclature,
+                        protection_level_other: level,
+                      })
                     }
                   />
                 )}
@@ -435,19 +482,32 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                   <option value="" disabled>
                     Select…
                   </option>
-                  {SECURITY_LEVELS.map((option) => (
+                  {SECURITY_CLASSIFICATION_LEVELS.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
                   ))}
+                  {legacy(
+                    dataset.security_classification_level,
+                    SECURITY_CLASSIFICATION_LEVELS,
+                  ) && (
+                    <option value={dataset.security_classification_level}>
+                      {dataset.security_classification_level} (earlier scale)
+                    </option>
+                  )}
                 </Select>
-                {dataset.security_classification_level === "Other" && (
-                  <Input
-                    placeholder="Describe security classification"
-                    value={dataset.security_classification_level_other ?? ""}
-                    onChange={(e) =>
+                {dataset.security_classification_level === "other" && (
+                  <OtherScheme
+                    id={`security-${id}`}
+                    nomenclature={
+                      dataset.security_classification_level_other_nomenclature
+                    }
+                    level={dataset.security_classification_level_other}
+                    onChange={(nomenclature, level) =>
                       patch({
-                        security_classification_level_other: e.target.value,
+                        security_classification_level_other_nomenclature:
+                          nomenclature,
+                        security_classification_level_other: level,
                       })
                     }
                   />
@@ -608,6 +668,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
           <div>
             <h3 className="mb-2 text-sm font-medium">Distribution</h3>
             <DistributionList
+              datasetId={id}
               distributions={dataset.distribution}
               onChange={(distribution) => patch({ distribution })}
             />

@@ -11,7 +11,7 @@ import { useDmpReadiness } from "@/hooks/useDmpReadiness";
 import { useDmpStore } from "@/store/dmpStore";
 import { useToastStore } from "@/store/toastStore";
 import { activation } from "@/config/plan-mode";
-import { usePlanMode } from "@/hooks/usePlanMode";
+import { useOpenPlanMode } from "@/hooks/usePlanMode";
 
 const STEPPER_STEPS = [
   { label: "Upload" },
@@ -26,13 +26,15 @@ export const ReviewSubmit: React.FC = () => {
   const draft = useDmpStore((s) => s.draft);
   const submitForApproval = useDmpStore((s) => s.submitForApproval);
   const finalize = useDmpStore((s) => s.finalize);
-  const route = activation(usePlanMode(draft.project_id));
+  const route = activation(useOpenPlanMode());
   const toast = useToastStore((s) => s.toast);
   const { checklistItems, canSubmit, unmetItems } = useDmpReadiness();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
-  const goToSection = (section: string) =>
-    navigate(`/dmp/create?section=${section}`);
+  const goToSection = (section: string, field?: string) =>
+    navigate(
+      `/dmp/create?section=${section}${field ? `&field=${encodeURIComponent(field)}` : ""}`,
+    );
 
   if (!draft.title && !draft.description) {
     return (
@@ -123,7 +125,10 @@ export const ReviewSubmit: React.FC = () => {
                   size="sm"
                   variant="outline"
                   onClick={() =>
-                    goToSection(unmetItems[0]?.section ?? "general")
+                    goToSection(
+                      unmetItems[0]?.section ?? "general",
+                      unmetItems[0]?.fieldId,
+                    )
                   }
                 >
                   Go fix these

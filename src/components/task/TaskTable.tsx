@@ -1,4 +1,5 @@
 import React from "react";
+import { dayString, fromDayString, toLocalDay } from "@/utils/calendarDate";
 import { format } from "date-fns";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import {
@@ -24,7 +25,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { LifecycleStage, Priority } from "@/types/task";
 import type { Task } from "@/types/task";
-import { useTaskStore } from "@/store/taskStore";
+import { hasRecordedWork, useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
 import { usePlanModeFor } from "@/hooks/usePlanMode";
 import { useDmpStore } from "@/store/dmpStore";
@@ -146,7 +147,7 @@ const useVisibleColumns = () => {
   return [hidden, toggle] as const;
 };
 
-const toInput = (date?: Date) => (date ? format(date, "yyyy-MM-dd") : "");
+const toInput = (date?: Date) => dayString(date);
 
 /** A cell that opens a list of values — the table's one editing gesture. */
 const SelectCell: React.FC<{
@@ -262,7 +263,7 @@ const TaskRow: React.FC<TaskRowProps> = ({
   };
 
   const setDate = (field: "start_date" | "end_date", value: string) => {
-    const next = value ? new Date(`${value}T00:00:00`) : undefined;
+    const next = fromDayString(value);
     const start = field === "start_date" ? next : task.start_date;
     const end = field === "end_date" ? next : task.end_date;
 
@@ -281,8 +282,8 @@ const TaskRow: React.FC<TaskRowProps> = ({
     const { start_date: start, end_date: end } = task;
     if (!start && !end) return <span className="text-muted-foreground">—</span>;
     if (start && end)
-      return `${format(start, "d MMM")} → ${format(end, "d MMM")}`;
-    return format((start ?? end) as Date, "d MMM yyyy");
+      return `${format(toLocalDay(start), "d MMM")} → ${format(toLocalDay(end), "d MMM")}`;
+    return format(toLocalDay((start ?? end) as Date), "d MMM yyyy");
   };
 
   const cell = (column: Column) => {
@@ -592,7 +593,8 @@ const TaskRow: React.FC<TaskRowProps> = ({
               >
                 Open task
               </button>
-              {!isCancelled && (
+              {/* Finished work is reopened, never cancelled over. */}
+              {!isCancelled && !isDone && (
                 <button
                   type="button"
                   onClick={() => {
@@ -604,24 +606,27 @@ const TaskRow: React.FC<TaskRowProps> = ({
                   Cancel task
                 </button>
               )}
-              <button
-                type="button"
-                onClick={async () => {
-                  setMenuOpen(false);
-                  if (
-                    await confirm({
-                      title: "Delete this task?",
-                      description: "Its checklist and evidence go with it.",
-                      confirmLabel: "Delete task",
-                    })
-                  )
-                    deleteTask(id);
-                }}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-destructive/10"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete task
-              </button>
+              {/* Recorded work is evidence: only an untouched task can go. */}
+              {!hasRecordedWork(task) && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setMenuOpen(false);
+                    if (
+                      await confirm({
+                        title: "Delete this task?",
+                        description: "No work is recorded on it yet.",
+                        confirmLabel: "Delete task",
+                      })
+                    )
+                      deleteTask(id);
+                  }}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-destructive/10"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete task
+                </button>
+              )}
             </PopoverPrimitive.Content>
           </PopoverPrimitive.Portal>
         </PopoverPrimitive.Root>

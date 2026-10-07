@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   FileText,
+  FolderKanban,
   Flag,
   GitBranch,
   ListFilter,
@@ -152,6 +153,14 @@ export interface PlanFilter {
   totalCount: number;
 }
 
+export interface ProjectFilter {
+  value: string;
+  onChange: (value: string) => void;
+  /** Every project, including ones with no tasks yet. */
+  options: { project_id: string; name: string; count: number }[];
+  totalCount: number;
+}
+
 /** One narrowing dimension, so the menu and the chips share a description. */
 interface Dimension {
   id: string;
@@ -201,6 +210,8 @@ export const TaskFilters: React.FC<
     total: number;
     /** Given, narrowing by plan joins the other dimensions in the menu. */
     plan?: PlanFilter;
+    /** Given, narrowing by project comes first — a plan belongs to one. */
+    project?: ProjectFilter;
     /** Given, the view switch sits in the same toolbar. */
     view?: TaskView;
     onViewChange?: (v: TaskView) => void;
@@ -224,6 +235,7 @@ export const TaskFilters: React.FC<
   clear,
   resetSort,
   plan,
+  project,
   view,
   onViewChange,
 }) => {
@@ -233,6 +245,25 @@ export const TaskFilters: React.FC<
   const [drilled, setDrilled] = React.useState<string | null>(null);
 
   const dimensions: Dimension[] = [
+    ...(project
+      ? [
+          {
+            id: "project",
+            label: "Project",
+            icon: FolderKanban,
+            value: project.value,
+            fallback: ALL,
+            onChange: project.onChange,
+            options: [
+              { value: ALL, label: `All projects (${project.totalCount})` },
+              ...project.options.map((o) => ({
+                value: o.project_id,
+                label: `${o.name} (${o.count})`,
+              })),
+            ],
+          },
+        ]
+      : []),
     ...(plan
       ? [
           {

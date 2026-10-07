@@ -69,7 +69,9 @@ export const CostList: React.FC = () => {
                 rows={1}
                 value={cost.description ?? ""}
                 onChange={(e) =>
-                  updateCost(cost.cost_id as string, { description: e.target.value })
+                  updateCost(cost.cost_id as string, {
+                    description: e.target.value,
+                  })
                 }
               />
             </div>

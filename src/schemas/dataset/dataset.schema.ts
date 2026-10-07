@@ -28,10 +28,13 @@ export const datasetBase = z.object({
   sensitive_data: YesNoUnknown,
   personal_data_plan: z.string().optional(),
   protection_level: z.string().min(1, "ต้องระบุ protection level"),
+  /** When "other": the scheme's name, and the level within it (v3.0 asks for both). */
+  protection_level_other_nomenclature: z.string().optional(),
   protection_level_other: z.string().optional(),
   security_classification_level: z
     .string()
     .min(1, "ต้องระบุ security classification"),
+  security_classification_level_other_nomenclature: z.string().optional(),
   security_classification_level_other: z.string().optional(),
   data_quality_assurance: z.string().optional(),
   keyword: z.array(z.string()).default([]),

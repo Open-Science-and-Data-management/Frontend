@@ -26,6 +26,7 @@ export const NotificationType = z.enum([
   "dmp_approved",
   "dmp_finalized",
   "tasks_generated",
+  "tasks_cancelled",
   "proposal_superseded",
 ]);
 

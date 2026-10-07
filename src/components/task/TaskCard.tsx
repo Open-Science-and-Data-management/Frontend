@@ -1,8 +1,9 @@
 import React from "react";
+import { toLocalDay } from "@/utils/calendarDate";
 import { format } from "date-fns";
-import { Link2, Paperclip, ShieldCheck, Trash2 } from "lucide-react";
+import { Ban, Link2, Paperclip, ShieldCheck, Trash2 } from "lucide-react";
 import type { Task } from "@/types/task";
-import { useTaskStore } from "@/store/taskStore";
+import { hasRecordedWork, useTaskStore } from "@/store/taskStore";
 import { useDmpStore } from "@/store/dmpStore";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm-provider";
@@ -36,7 +37,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({
   planName,
   onEdit,
 }) => {
-  const { deleteTask, completeTask, reopenTask } = useTaskStore();
+  const { deleteTask, cancelTask, completeTask, reopenTask } = useTaskStore();
   const toast = useToastStore((s) => s.toast);
   const planModeFor = usePlanModeFor();
   const confirm = useConfirm();
@@ -175,29 +176,57 @@ export const TaskCard: React.FC<TaskCardProps> = ({
               <span className="text-warn">Evidence needed to close</span>
             )}
             {task.end_date && (
-              <span>Due {format(task.end_date, "d MMM yyyy")}</span>
+              <span>Due {format(toLocalDay(task.end_date), "d MMM yyyy")}</span>
             )}
           </div>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:bg-destructive/10"
-            aria-label={`Delete ${task.title}`}
-            onClick={async (e) => {
-              e.stopPropagation();
-              if (
-                await confirm({
-                  title: "Delete this task?",
-                  description: "Its checklist and evidence go with it.",
-                  confirmLabel: "Delete task",
-                })
-              )
-                deleteTask(task.task_id as string);
-            }}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
+          {hasRecordedWork(task) ? (
+            // Recorded work is evidence: it can be cancelled, never deleted.
+            // Finished work isn't cancelled either — it can only be reopened.
+            !isCancelled &&
+            !isDone && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                aria-label={`Cancel ${task.title}`}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (
+                    await confirm({
+                      title: "Cancel this task?",
+                      description:
+                        "Work is recorded on it, so it's kept on the board, marked cancelled, with its evidence.",
+                      confirmLabel: "Cancel task",
+                    })
+                  )
+                    cancelTask(task.task_id as string);
+                }}
+              >
+                <Ban className="h-3.5 w-3.5" />
+              </Button>
+            )
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:bg-destructive/10"
+              aria-label={`Delete ${task.title}`}
+              onClick={async (e) => {
+                e.stopPropagation();
+                if (
+                  await confirm({
+                    title: "Delete this task?",
+                    description: "No work is recorded on it yet.",
+                    confirmLabel: "Delete task",
+                  })
+                )
+                  deleteTask(task.task_id as string);
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       </div>
     </div>

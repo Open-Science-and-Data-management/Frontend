@@ -21,7 +21,7 @@ beforeEach(() => {
         project_id: "p1",
         project_name: "Test project",
         status: "active",
-      plan_mode: "institutional",
+        plan_mode: "institutional",
         created_at: new Date("2026-01-01"),
         updated_at: new Date("2026-01-01"),
       },
@@ -205,5 +205,43 @@ describe("updateUser", () => {
       role: "researcher",
     });
     expect(state().getUser("u2")?.name).toBe("C");
+  });
+});
+
+describe("one membership per person per project", () => {
+  it("adds a member once, and refuses the same pair again", () => {
+    useProjectStore.setState({ members: [] });
+    expect(state().addMember("p1", "u2", "committee")).toBe(true);
+    expect(state().addMember("p1", "u2", "committee")).toBe(false);
+    expect(state().getProjectMembers("p1")).toHaveLength(1);
+  });
+
+  it("doesn't change a role by adding someone again", () => {
+    useProjectStore.setState({ members: [] });
+    state().addMember("p1", "u2", "committee");
+    state().addMember("p1", "u2", "chief");
+    expect(state().getProjectMembers("p1")).toEqual([
+      { project_id: "p1", user_id: "u2", project_role: "committee" },
+    ]);
+  });
+
+  it("lets the same person join different projects", () => {
+    useProjectStore.setState({ members: [] });
+    expect(state().addMember("p1", "u2", "committee")).toBe(true);
+    expect(state().addMember("p2", "u2", "committee")).toBe(true);
+  });
+
+  it("keeps the first row when saved data repeats a pair", async () => {
+    const { uniqueMembers } = await import("@/store/projectStore");
+    expect(
+      uniqueMembers([
+        { project_id: "p1", user_id: "u2", project_role: "committee" },
+        { project_id: "p1", user_id: "u2", project_role: "chief" },
+        { project_id: "p1", user_id: "u3", project_role: "researcher" },
+      ]),
+    ).toEqual([
+      { project_id: "p1", user_id: "u2", project_role: "committee" },
+      { project_id: "p1", user_id: "u3", project_role: "researcher" },
+    ]);
   });
 });

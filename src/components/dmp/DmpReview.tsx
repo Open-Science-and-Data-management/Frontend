@@ -1,4 +1,8 @@
 import React from "react";
+import {
+  MADMP_SCHEMA_NAME,
+  MADMP_SCHEMA_VERSION,
+} from "@/schemas/madmp/vocabularies";
 import { format } from "date-fns";
 import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -226,7 +230,9 @@ export const DmpReview: React.FC<DmpReviewProps> = ({ onEditSection }) => {
 
       <Section title="System info" onEdit={() => onEditSection("system")}>
         <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Schema version">{draft.schema_version}</Field>
+          <Field label="Schema version">
+            {MADMP_SCHEMA_NAME} {MADMP_SCHEMA_VERSION}
+          </Field>
           <Field label="Project">
             {project?.project_name ?? draft.project_id}
           </Field>

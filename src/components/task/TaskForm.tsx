@@ -1,7 +1,7 @@
 import React from "react";
+import { dayString, fromDayString } from "@/utils/calendarDate";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { format } from "date-fns";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { useTaskStore } from "@/store/taskStore";
@@ -62,10 +62,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({
     priority: task?.priority || "medium",
     lifecycle_stage: task?.lifecycle_stage || "collect",
     dataset_id: task?.dataset_id ?? "",
-    start_date: task?.start_date
-      ? format(task.start_date, "yyyy-MM-dd")
-      : undefined,
-    end_date: task?.end_date ? format(task.end_date, "yyyy-MM-dd") : undefined,
+    start_date: task?.start_date ? dayString(task.start_date) : undefined,
+    end_date: task?.end_date ? dayString(task.end_date) : undefined,
   };
 
   const {
@@ -87,8 +85,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({
       const payload = {
         ...data,
         dataset_id: data.dataset_id || undefined,
-        start_date: data.start_date ? new Date(data.start_date) : undefined,
-        end_date: data.end_date ? new Date(data.end_date) : undefined,
+        start_date: fromDayString(data.start_date),
+        end_date: fromDayString(data.end_date),
       };
 
       if (task) {

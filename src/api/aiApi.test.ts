@@ -168,9 +168,11 @@ describe("analysis takes a direction", () => {
     );
     expect(draft.ethical_issues_exist).toBe(true);
     expect(draft.dataset?.[0].personal_data).toBe("yes");
+    // In maDMP v3.0's own terms.
     expect(draft.dataset?.[0].security_classification_level).toBe(
-      "Confidential",
+      "confidential",
     );
+    expect(draft.dataset?.[0].protection_level).toBe("Protected B");
   });
 
   it("adds the code as an output when asked", async () => {

@@ -97,6 +97,23 @@ const seedMembers: ProjectMember[] = [
   },
 ];
 
+const memberKey = (m: Pick<ProjectMember, "project_id" | "user_id">) =>
+  `${m.project_id}::${m.user_id}`;
+
+/**
+ * One row per (project, user). The schema can't express that, so it's held
+ * here: the first row for a pair wins, later duplicates are dropped.
+ */
+export const uniqueMembers = (members: ProjectMember[]): ProjectMember[] => {
+  const seen = new Set<string>();
+  return members.filter((m) => {
+    const key = memberKey(m);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 interface ProjectState {
   projects: Project[];
   files: FileRecord[];
@@ -114,7 +131,21 @@ interface ProjectState {
     plan_mode?: Project["plan_mode"];
   }) => Project;
   updateProject: (id: string, patch: Partial<Project>) => void;
+  /**
+   * Low-level: removes the project with its files and members, unconditionally.
+   * Use `deleteProject` (store/projectActions), which refuses while plans remain.
+   */
   removeProject: (id: string) => void;
+  /**
+   * Adds a member unless that user is already on the project. Returns false
+   * for an existing member — changing their role is a separate decision, not
+   * a side effect of adding them twice.
+   */
+  addMember: (
+    projectId: string,
+    userId: string,
+    role: ProjectMember["project_role"],
+  ) => boolean;
   setCurrentProject: (id: string | null) => void;
 
   getProject: (id: string) => Project | undefined;
@@ -159,18 +190,25 @@ export const useProjectStore = create<ProjectState>()(
           created_at: new Date(),
           updated_at: new Date(),
         };
+        set((state) => ({ projects: [...state.projects, project] }));
+        get().addMember(
+          project.project_id as string,
+          CURRENT_USER_ID,
+          "researcher",
+        );
+        return project;
+      },
+
+      addMember: (projectId, userId, role) => {
+        const key = memberKey({ project_id: projectId, user_id: userId });
+        if (get().members.some((m) => memberKey(m) === key)) return false;
         set((state) => ({
-          projects: [...state.projects, project],
           members: [
             ...state.members,
-            {
-              project_id: project.project_id as string,
-              user_id: CURRENT_USER_ID,
-              project_role: "researcher",
-            },
+            { project_id: projectId, user_id: userId, project_role: role },
           ],
         }));
-        return project;
+        return true;
       },
 
       updateProject: (id, patch) =>
@@ -301,6 +339,15 @@ export const useProjectStore = create<ProjectState>()(
         members: state.members,
         users: state.users,
       }),
+      // Rows saved before the guard existed may repeat a pair; load them once.
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<ProjectState> | undefined;
+        return {
+          ...current,
+          ...saved,
+          members: uniqueMembers(saved?.members ?? current.members),
+        };
+      },
     },
   ),
 );

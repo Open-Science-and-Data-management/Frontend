@@ -1,7 +1,10 @@
 import * as React from "react";
 import { Lock } from "lucide-react";
 import { FieldStateChip } from "@/components/ui/field-state-chip";
-import { ConfidenceNote, type Confidence } from "@/components/ui/confidence-note";
+import {
+  ConfidenceNote,
+  type Confidence,
+} from "@/components/ui/confidence-note";
 import {
   RegeneratePopover,
   type RegenerateDirection,
@@ -57,19 +60,28 @@ export const FormField: React.FC<FormFieldProps> = ({
     permission === "locked" && !effectivelyLocked ? undefined : permission;
   const autoHint =
     permission === "locked" && editableBeforeApproval && !effectivelyLocked
-      ? "Editable now — locks once the plan is approved"
-      : undefined;
+      ? policy.isMajorTrigger
+        ? "You can change this; once approved, a change goes back for sign-off"
+        : "Editable now — locks once the plan is approved"
+      : policy.isMajorTrigger
+        ? "Changing this after approval needs sign-off again"
+        : undefined;
   const effectiveHint = hint ?? autoHint;
 
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between gap-2">
-        <label htmlFor={name} className="flex items-center gap-1.5 text-sm font-medium">
+        <label
+          htmlFor={name}
+          className="flex items-center gap-1.5 text-sm font-medium"
+        >
           {label}
           {required && <span className="text-destructive">*</span>}
         </label>
         <div className="flex items-center gap-1.5">
-          {permission === "ai" && confidence && <ConfidenceNote confidence={confidence} />}
+          {permission === "ai" && confidence && (
+            <ConfidenceNote confidence={confidence} />
+          )}
           {chipState && <FieldStateChip state={chipState} />}
           {permission === "ai" && onRegenerate && (
             <RegeneratePopover

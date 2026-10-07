@@ -14,6 +14,7 @@ const completeDraft = (): DmpDraft => ({
       contributor_id: "c1",
       name: "Aran",
       role: "Principal investigator",
+      email: "aran@example.edu",
       is_contact: true,
     },
   ],
@@ -37,7 +38,7 @@ const completeDraft = (): DmpDraft => ({
       schema_fields: [],
     },
   ],
-  schema_version: "FAIRer maDMP 1.2",
+  schema_version: "v3.0",
 });
 
 const labels = (draft: DmpDraft) =>
@@ -100,8 +101,9 @@ describe("computeReadiness", () => {
       { ...(draft.dataset ?? [])[0], dataset_id: "d2", protection_level: "" },
     ];
 
+    // Names the output, since only one of the two is missing it.
     expect(labels(draft)).toContain(
-      "Set protection & security on every research output",
+      "Set protection & security on research output 2",
     );
   });
 });
@@ -177,5 +179,156 @@ describe("the checklist never claims ready while submit is blocked", () => {
     expect(sections["Answer the ethical issues question"]).toBe("ethical");
     expect(sections["Add a contributor"]).toBe("people");
     expect(sections["Add a research output"]).toBe("dataset");
+  });
+});
+
+describe("what maDMP v3.0 adds to a complete plan", () => {
+  it("needs the contact's email, since the standard requires contact.mbox", () => {
+    const draft = completeDraft();
+    draft.contributor = [{ ...draft.contributor![0], email: "" }];
+
+    const { canSubmit, unmetItems } = computeReadiness(draft);
+    expect(canSubmit).toBe(false);
+    expect(unmetItems.map((i) => i.label)).toContain(
+      "Contributor 1 — Email needs attention",
+    );
+    expect(unmetItems.find((i) => /Email/.test(i.label))?.section).toBe(
+      "people",
+    );
+  });
+
+  it("needs a licence on an openly accessible distribution", () => {
+    const draft = completeDraft();
+    draft.dataset = [
+      {
+        ...draft.dataset![0],
+        distribution: [
+          { title: "Cores (CSV)", data_access: "open", license: "" },
+        ],
+      },
+    ];
+    expect(computeReadiness(draft).unmetItems.map((i) => i.label)).toContain(
+      "Research output 1 — Distribution 1 — Licence needs attention",
+    );
+
+    draft.dataset[0].distribution[0].license =
+      "https://creativecommons.org/licenses/by/4.0/";
+    expect(computeReadiness(draft).canSubmit).toBe(true);
+  });
+
+  it("asks nothing extra of a shared distribution", () => {
+    const draft = completeDraft();
+    draft.dataset = [
+      {
+        ...draft.dataset![0],
+        distribution: [{ title: "Cores (CSV)", data_access: "shared" }],
+      },
+    ];
+    expect(computeReadiness(draft).canSubmit).toBe(true);
+  });
+});
+
+describe("each problem points at its own field", () => {
+  const openDist = {
+    title: "Cores (CSV)",
+    data_access: "open" as const,
+    license: "",
+  };
+
+  it("lists a missing licence even while another output lacks protection", () => {
+    const draft = completeDraft();
+    draft.dataset = [
+      { ...draft.dataset![0], distribution: [openDist] },
+      { ...draft.dataset![0], dataset_id: "d2", protection_level: "" },
+    ];
+    const items = computeReadiness(draft).unmetItems;
+    expect(items.map((i) => i.label)).toEqual(
+      expect.arrayContaining([
+        "Set protection & security on research output 2",
+        "Research output 1 — Distribution 1 — Licence needs attention",
+      ]),
+    );
+  });
+
+  it("focuses the licence input of the right distribution", () => {
+    const draft = completeDraft();
+    draft.dataset = [
+      draft.dataset![0],
+      {
+        ...draft.dataset![0],
+        dataset_id: "d2",
+        distribution: [{ title: "a", data_access: "shared" }, openDist],
+      },
+    ];
+    const item = computeReadiness(draft).unmetItems.find((i) =>
+      /Licence/.test(i.label),
+    );
+    expect(item).toMatchObject({
+      label: "Research output 2 — Distribution 2 — Licence needs attention",
+      section: "dataset",
+      fieldId: "distribution-license-d2-1",
+    });
+  });
+
+  it("focuses the contact's email, whichever contributor the contact is", () => {
+    const draft = completeDraft();
+    draft.contributor = [
+      {
+        contributor_id: "c1",
+        name: "Aran",
+        role: "PI",
+        email: "a@x.org",
+        is_contact: false,
+      },
+      {
+        contributor_id: "c2",
+        name: "Mali",
+        role: "Steward",
+        email: "",
+        is_contact: true,
+      },
+    ];
+    expect(
+      computeReadiness(draft).unmetItems.find((i) => /Email/.test(i.label)),
+    ).toMatchObject({
+      label: "Contributor 2 — Email needs attention",
+      section: "people",
+      fieldId: "contributor-email-c2",
+    });
+  });
+
+  it("focuses the protection field of the output that's missing it", () => {
+    const draft = completeDraft();
+    draft.dataset = [
+      draft.dataset![0],
+      { ...draft.dataset![0], dataset_id: "d2", protection_level: "" },
+    ];
+    expect(
+      computeReadiness(draft).unmetItems.find((i) =>
+        /protection/i.test(i.label),
+      )?.fieldId,
+    ).toBe("protection-d2");
+  });
+
+  it("names the contributor linked to an account someone else holds", () => {
+    const draft = completeDraft();
+    draft.contributor = [
+      { ...draft.contributor![0], user_id: "user-1" },
+      {
+        contributor_id: "c2",
+        name: "Aran again",
+        role: "Analyst",
+        is_contact: false,
+        user_id: "user-1",
+      },
+    ];
+    expect(computeReadiness(draft).unmetItems).toEqual([
+      {
+        label: "Contributor 2 — Linked account needs attention",
+        done: false,
+        section: "people",
+        fieldId: "contributor-user_id-c2",
+      },
+    ]);
   });
 });

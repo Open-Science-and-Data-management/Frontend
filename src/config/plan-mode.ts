@@ -52,3 +52,33 @@ export const resolvePlanMode = (
 ): PlanMode =>
   projects.find((p) => p.project_id === projectId)?.plan_mode ??
   "institutional";
+
+/**
+ * A plan's mode. Once submitted, a plan keeps the mode it was submitted under
+ * (`plan_mode` on its record), so a later change to — or deletion of — its
+ * project can't turn a committee plan into a self-finalized one or back.
+ * Before that, it follows its project.
+ */
+export const planModeOf = (
+  plan: { plan_mode?: PlanMode; project_id?: string } | undefined,
+  projects: Project[],
+  projectId?: string,
+): PlanMode =>
+  plan?.plan_mode ?? resolvePlanMode(projects, plan?.project_id ?? projectId);
+
+/**
+ * Freezes the mode on every plan that's past draft but was submitted before
+ * modes were frozen — using its project's mode as it stands now, the closest
+ * true value there is. Plans already frozen, and drafts, are left alone.
+ */
+export const freezeSubmittedModes = <
+  T extends { status: string; plan_mode?: PlanMode; project_id?: string },
+>(
+  records: T[],
+  projects: Project[],
+): T[] =>
+  records.map((r) =>
+    r.status === "draft" || r.plan_mode
+      ? r
+      : { ...r, plan_mode: resolvePlanMode(projects, r.project_id) },
+  );

@@ -62,6 +62,12 @@ const taskObjectSchema = z.object({
   // Audit: who closed it and when.
   completed_at: z.coerce.date().optional(),
   completed_by: z.string().optional(),
+  // Audit: what a cancellation replaced, so a reopen can restore it exactly.
+  cancelled_from: TaskStatus.optional(),
+  cancel_reason: z.enum(["manual", "output_removed"]).optional(),
+  /** The removed output's title, to find it again if it returns under a new id. */
+  cancelled_dataset_title: z.string().optional(),
+  cancelled_at: z.coerce.date().optional(),
 });
 
 const dateOrderRefinement = (t: { start_date?: Date; end_date?: Date }) =>

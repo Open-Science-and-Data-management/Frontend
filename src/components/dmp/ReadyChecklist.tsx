@@ -10,7 +10,7 @@ import {
 interface ReadyChecklistProps {
   items: ReadinessItem[];
   /** Given, every row becomes a link to the section that owns the field. */
-  onNavigate?: (section: DmpSection) => void;
+  onNavigate?: (section: DmpSection, fieldId?: string) => void;
 }
 
 /**
@@ -67,7 +67,7 @@ export const ReadyChecklist: React.FC<ReadyChecklistProps> = ({
                   {onNavigate ? (
                     <button
                       type="button"
-                      onClick={() => onNavigate(group.id)}
+                      onClick={() => onNavigate(group.id, item.fieldId)}
                       className="flex w-full items-start gap-1.5 rounded-md px-1.5 py-1 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="min-w-0 flex-1">{item.label}</span>

@@ -1,5 +1,5 @@
 import React from "react";
-import { format } from "date-fns";
+import { dayString, fromDayString } from "@/utils/calendarDate";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
@@ -9,7 +9,7 @@ import { IdentifierType, LANGUAGE_CODES } from "@/schemas/shared";
 import { useDmpStore } from "@/store/dmpStore";
 import type { RegenerateDirection } from "@/api/aiApi";
 
-const toDateInputValue = (d: Date | undefined) => (d ? format(d, "yyyy-MM-dd") : "");
+const toDateInputValue = (d: Date | undefined) => dayString(d);
 const languageNames = new Intl.DisplayNames(["en"], { type: "language" });
 const displayName = (code: string) => {
   try {
@@ -25,19 +25,17 @@ const LANGUAGE_CHOICES = LANGUAGE_CODES.flatMap((code) => {
   return label ? [{ code, label }] : [];
 }).sort((a, b) => a.label.localeCompare(b.label));
 
-const confidenceFor = (field: "title" | "description" | "language", aiGenerated: boolean) => {
+const confidenceFor = (
+  field: "title" | "description" | "language",
+  aiGenerated: boolean,
+) => {
   if (!aiGenerated) return undefined;
   return field === "language" ? ("guessed" as const) : ("grounded" as const);
 };
 
 export const GeneralSection: React.FC = () => {
-  const {
-    draft,
-    aiGenerated,
-    regeneratingFields,
-    setField,
-    regenerateField,
-  } = useDmpStore();
+  const { draft, aiGenerated, regeneratingFields, setField, regenerateField } =
+    useDmpStore();
 
   const runRegenerate =
     (key: "title" | "description" | "language", label: string) =>
@@ -157,14 +155,14 @@ export const GeneralSection: React.FC = () => {
           label="Begin date"
           policy={dmpFieldPolicy.begin_date}
           required
-          lockedReason="Locked once the plan is approved."
+          lockedReason="The assistant can't change this; you can, and after approval it needs sign-off again."
         >
           <Input
             id="begin_date"
             type="date"
             value={toDateInputValue(draft.begin_date)}
             onChange={(e) =>
-              setField("begin_date", e.target.value ? new Date(e.target.value) : undefined)
+              setField("begin_date", fromDayString(e.target.value))
             }
           />
         </FormField>
@@ -174,14 +172,14 @@ export const GeneralSection: React.FC = () => {
           label="End date"
           policy={dmpFieldPolicy.end_date}
           required
-          lockedReason="Locked once the plan is approved."
+          lockedReason="The assistant can't change this; you can, and after approval it needs sign-off again."
         >
           <Input
             id="end_date"
             type="date"
             value={toDateInputValue(draft.end_date)}
             onChange={(e) =>
-              setField("end_date", e.target.value ? new Date(e.target.value) : undefined)
+              setField("end_date", fromDayString(e.target.value))
             }
           />
         </FormField>

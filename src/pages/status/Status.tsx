@@ -1,4 +1,5 @@
 import React from "react";
+import { useChangeText } from "@/hooks/useChangeText";
 import { Helmet } from "react-helmet-async";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -10,6 +11,12 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { ApproverPicker } from "@/components/dmp/ApproverPicker";
+import { ExportPanel } from "@/components/dmp/ExportPanel";
+import { EditApprovedPlan } from "@/components/dmp/EditApprovedPlan";
+import { VersionHistory } from "@/components/dmp/VersionHistory";
+import { ReopenTasksPrompt } from "@/components/task/ReopenTasksPrompt";
+import type { Approver } from "@/store/dmpStore";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AiProgress } from "@/components/ui/ai-progress";
 import { estimateCost, generateTasks } from "@/api/aiApi";
@@ -19,7 +26,7 @@ import { useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
 import { cn } from "@/utils/cn";
 import { activation, isActive } from "@/config/plan-mode";
-import { usePlanMode } from "@/hooks/usePlanMode";
+import { useOpenPlanMode } from "@/hooks/usePlanMode";
 
 const TRACKER_STAGES = ["Submitted", "Under review", "Decision"];
 /** Independent plans never queue for anyone, so they have no review step. */
@@ -32,6 +39,7 @@ const GENERATE_STEPS = [
 ];
 
 export const Status: React.FC = () => {
+  const changeText = useChangeText();
   const navigate = useNavigate();
   const {
     draft,
@@ -49,9 +57,14 @@ export const Status: React.FC = () => {
 
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [rejectNote, setRejectNote] = React.useState("");
+  const [approver, setApprover] = React.useState<Approver>();
   const dmps = useDmpStore((s) => s.dmps);
   const rejectRevision = useDmpStore((s) => s.rejectRevision);
   const record = dmps.find((d) => d.dmp_id === currentDmpId);
+  // Who approved the version in force, as recorded when they did.
+  const decider = record?.versions.find(
+    (v) => v.number === record.active_version,
+  )?.approver;
   // A revision, as opposed to the first submission: something is already live.
   const revision =
     record?.active_version !== undefined
@@ -62,7 +75,7 @@ export const Status: React.FC = () => {
 
   const outputs = draft.dataset ?? [];
   const cost = estimateCost.generateTasks(outputs.length);
-  const mode = usePlanMode(draft.project_id);
+  const mode = useOpenPlanMode();
   const route = activation(mode);
   const stages = route.reviewed ? TRACKER_STAGES : SELF_STAGES;
   // Everything below asks whether the plan is active, not who made it so.
@@ -152,7 +165,7 @@ export const Status: React.FC = () => {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isApproved
-              ? `${route.by === "self" ? "You finalized this plan" : "Your committee approved this plan"}. You can now break it into tasks.`
+              ? `${route.by === "self" ? "You finalized this plan" : decider ? `${decider.name} (${decider.position}) approved this plan` : "Your committee approved this plan"}. You can now break it into tasks.`
               : route.reviewed
                 ? "We’ll notify you as soon as your committee makes a decision."
                 : "No committee reviews this plan — finalize it yourself when you're ready, and your evidence carries the weight."}
@@ -175,7 +188,7 @@ export const Status: React.FC = () => {
                   <span className="font-medium">{change.label}</span>
                   <span className="text-muted-foreground">
                     {" "}
-                    · {change.from} → {change.to}
+                    · {changeText(change)}
                   </span>
                 </li>
               ))}
@@ -196,9 +209,13 @@ export const Status: React.FC = () => {
               </Button>
             ) : (
               <div className="mt-4 rounded-lg border border-dashed p-3">
-                <p className="text-xs text-muted-foreground">
-                  Demo only — stands in for the committee decision.
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Demo only — stands in for the committee's own screen.
                 </p>
+                <ApproverPicker
+                  projectId={draft.project_id}
+                  onChange={setApprover}
+                />
                 <Textarea
                   rows={2}
                   value={rejectNote}
@@ -210,10 +227,12 @@ export const Status: React.FC = () => {
                 <div className="mt-2 flex gap-2">
                   <Button
                     size="sm"
+                    disabled={!approver}
                     onClick={() => {
-                      approve();
+                      approve(approver);
                       toast({
                         title: `Version ${revision.number} approved`,
+                        description: `Recorded as decided by ${approver?.name}.`,
                       });
                     }}
                   >
@@ -222,9 +241,9 @@ export const Status: React.FC = () => {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={!rejectNote.trim()}
+                    disabled={!rejectNote.trim() || !approver}
                     onClick={() => {
-                      rejectRevision(rejectNote.trim());
+                      rejectRevision(rejectNote.trim(), approver);
                       setRejectNote("");
                       toast({ title: "Sent back to the researcher" });
                     }}
@@ -370,24 +389,47 @@ export const Status: React.FC = () => {
             </Button>
           </div>
         ) : (
-          // No committee UI exists yet, so approval is simulated here.
-          <div className="rounded-lg border border-dashed p-4 text-center">
-            <p className="text-xs text-muted-foreground">
-              Demo only — stands in for the committee decision.
+          // No committee UI exists yet, so approval is simulated here — but it
+          // records who decided, as the real screen will.
+          <div className="space-y-3 rounded-lg border border-dashed p-4">
+            <p className="text-center text-xs text-muted-foreground">
+              Demo only — stands in for the committee's own screen.
             </p>
-            <Button
-              className="mt-2"
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                approve();
-                toast({ title: "Plan approved by committee" });
-              }}
-            >
-              Simulate approval
-            </Button>
+            <ApproverPicker
+              projectId={draft.project_id}
+              onChange={setApprover}
+            />
+            <div className="text-center">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!approver}
+                onClick={() => {
+                  approve(approver);
+                  toast({
+                    title: "Plan approved by committee",
+                    description: `Recorded as decided by ${approver?.name}.`,
+                  });
+                }}
+              >
+                Simulate approval
+              </Button>
+            </div>
           </div>
         )}
+
+        {isApproved && record?.active_version !== undefined && (
+          <EditApprovedPlan
+            activeVersion={record.active_version}
+            bySelf={route.by === "self"}
+          />
+        )}
+
+        <ReopenTasksPrompt />
+
+        <VersionHistory />
+
+        <ExportPanel />
 
         <div className="text-center">
           <Button variant="outline" asChild>

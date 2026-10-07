@@ -9,8 +9,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { DmpListCard } from "@/components/dmp/DmpListCard";
 import { buildDmpList, useDmpStore, type DmpRecord } from "@/store/dmpStore";
 import { useProjectStore } from "@/store/projectStore";
+import { useConfirm } from "@/components/ui/confirm-provider";
 
-type StatusFilter = "all" | DmpRecord["status"];
+type StatusFilter = "all" | DmpRecord["status"] | "archived";
 type SortKey = "updated" | "created" | "title" | "status";
 
 const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
@@ -18,6 +19,7 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "draft", label: "Draft" },
   { value: "pending", label: "Pending approval" },
   { value: "approved", label: "Approved" },
+  { value: "archived", label: "Archived" },
 ];
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
@@ -44,6 +46,8 @@ export const MyDmps: React.FC = () => {
   const draftUpdatedAt = useDmpStore((s) => s.draftUpdatedAt);
   const tasksGenerated = useDmpStore((s) => s.tasksGenerated);
   const openDmp = useDmpStore((s) => s.openDmp);
+  const unarchiveDmp = useDmpStore((s) => s.unarchiveDmp);
+  const confirm = useConfirm();
   const projects = useProjectStore((s) => s.projects);
 
   const [query, setQuery] = React.useState("");
@@ -60,6 +64,7 @@ export const MyDmps: React.FC = () => {
   const all = React.useMemo(
     () =>
       buildDmpList({
+        includeArchived: true,
         dmps,
         draft,
         status,
@@ -83,7 +88,13 @@ export const MyDmps: React.FC = () => {
     const q = query.trim().toLowerCase();
 
     const filtered = all.filter((dmp) => {
-      if (statusFilter !== "all" && dmp.status !== statusFilter) return false;
+      // Archived plans show only under their own filter.
+      if (statusFilter === "archived") {
+        if (!dmp.archived_at) return false;
+      } else {
+        if (dmp.archived_at) return false;
+        if (statusFilter !== "all" && dmp.status !== statusFilter) return false;
+      }
       if (projectFilter !== "all" && dmp.project_id !== projectFilter)
         return false;
       if (!q) return true;
@@ -118,7 +129,16 @@ export const MyDmps: React.FC = () => {
     setProjectFilter("all");
   };
 
-  const handleOpen = (dmp: DmpRecord) => {
+  const handleOpen = async (dmp: DmpRecord) => {
+    if (dmp.archived_at) {
+      const ok = await confirm({
+        title: "Bring this plan back?",
+        description: "It returns to your plans as it was when archived.",
+        confirmLabel: "Unarchive",
+      });
+      if (!ok) return;
+      unarchiveDmp(dmp.dmp_id);
+    }
     // Editing an approved or pending plan isn't the researcher's call, so those
     // open on the status screen instead of the editor.
     const opened = openDmp(dmp.dmp_id) ?? dmp;
