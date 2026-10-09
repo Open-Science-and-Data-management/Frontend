@@ -1,20 +1,17 @@
 import React from "react";
-import { differenceInCalendarDays, format } from "date-fns";
 import { useDmpLibrary } from "@/hooks/useDmpLibrary";
 import { useTaskStore } from "@/store/taskStore";
 import { useProjectStore } from "@/store/projectStore";
 import { useAuthStore } from "@/store/authStore";
 import { planModeOf } from "@/config/plan-mode";
-import { lifecycleProgress } from "@/config/progress";
+import { projectProgressFor, type ProjectProgress } from "@/config/dashboard";
 import {
   daysUntilDue,
   dueState,
   isOpenTask,
   type DueState,
 } from "@/config/task-due";
-import { toLocalDay } from "@/utils/calendarDate";
 import type { DmpRecord, PlanVersion } from "@/store/dmpStore";
-import type { Project } from "@/types/project";
 import type { Task } from "@/types/task";
 import type { User } from "@/types/user";
 
@@ -42,29 +39,8 @@ export interface PlanApproval {
   committee: User[];
 }
 
-export interface ProjectProgress {
-  project: Project;
-  plan: DmpRecord;
-  overall: number;
-  done: number;
-  total: number;
-  /** "Week 6 of 12", or why there's no week to give. */
-  timeline: string;
-}
-
-const timelineOf = (begin?: Date, end?: Date, today = new Date()) => {
-  if (!begin || !end) return "No timeline set";
-  const start = toLocalDay(begin);
-  const finish = toLocalDay(end);
-  const elapsed = differenceInCalendarDays(today, start);
-  if (elapsed < 0) return `Starts ${format(start, "MMM d, yyyy")}`;
-  if (differenceInCalendarDays(finish, today) < 0) return "Timeline ended";
-  const weeks = Math.max(
-    1,
-    Math.ceil((differenceInCalendarDays(finish, start) + 1) / 7),
-  );
-  return `Week ${Math.floor(elapsed / 7) + 1} of ${weeks}`;
-};
+// Shared with the committee dashboard; re-exported for existing imports.
+export type { ProjectProgress };
 
 /** Where a plan stands with the committee, judged from its versions. */
 const approvalOf = (
@@ -173,41 +149,12 @@ export const useResearcherDashboard = () => {
         .filter((m) => m.user_id === userId && m.project_role === "researcher")
         .map((m) => m.project_id),
     );
-    const progress: ProjectProgress[] = projects
-      .filter((p) => myProjectIds.has(p.project_id as string))
-      .flatMap((project) => {
-        const plans = library.filter(
-          (d) => d.project_id === project.project_id,
-        );
-        // The plan in force is the one work runs against; else the newest.
-        const plan =
-          plans.find((d) => d.active_version !== undefined) ??
-          [...plans].sort(
-            (a, b) => b.updated_at.getTime() - a.updated_at.getTime(),
-          )[0];
-        if (!plan) return [];
-
-        const planTasks = liveTasks.filter((t) => t.dmp_id === plan.dmp_id);
-        const counted = planTasks.filter((t) => t.status !== "cancelled");
-        const inForce = plan.versions.find(
-          (v) => v.number === plan.active_version,
-        )?.snapshot;
-        const dates = inForce ?? plan.draft;
-
-        return [
-          {
-            project,
-            plan,
-            overall: lifecycleProgress(planTasks).overall,
-            done: counted.filter((t) => t.status === "done").length,
-            total: counted.length,
-            timeline: timelineOf(dates.begin_date, dates.end_date, today),
-          },
-        ];
-      })
-      .sort(
-        (a, b) => b.plan.updated_at.getTime() - a.plan.updated_at.getTime(),
-      );
+    const progress = projectProgressFor(
+      projects.filter((p) => myProjectIds.has(p.project_id as string)),
+      library,
+      liveTasks,
+      today,
+    );
 
     return {
       library,

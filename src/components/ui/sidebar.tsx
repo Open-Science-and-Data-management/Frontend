@@ -44,6 +44,7 @@ const REVIEWER_SECTIONS: SidebarSection[] = [
   {
     label: "Review",
     items: [
+      { label: "Dashboard", to: "/", icon: Home },
       {
         label: "Review queue",
         to: "/review",
