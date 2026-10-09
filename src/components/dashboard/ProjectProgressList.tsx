@@ -4,15 +4,23 @@ import { FolderKanban } from "lucide-react";
 import { Chip } from "@/components/ui/chip";
 import { ProgressBar } from "@/components/ui/progress-bar";
 import { DashboardSection } from "@/components/dashboard/DashboardSection";
-import type { ProjectProgress } from "@/hooks/useResearcherDashboard";
+import type { ProjectProgress } from "@/config/dashboard";
 
-/** Each of the researcher's projects: how far its tasks have come, and when. */
-export const ProjectProgressList: React.FC<{ items: ProjectProgress[] }> = ({
+/**
+ * Each project's plan: how far its tasks have come, and when. Shared by the
+ * researcher's dashboard (their projects) and the committee's (those it
+ * oversees), so both read progress the same way.
+ */
+export const ProjectProgressList: React.FC<{
+  items: ProjectProgress[];
+  description?: string;
+}> = ({
   items,
+  description = "Lifecycle progress of each project's plan.",
 }) => (
   <DashboardSection
     title="Project progress"
-    description="Lifecycle progress of each project's plan."
+    description={description}
     viewAll={{ to: "/projects", label: "Projects" }}
   >
     {items.length === 0 ? (
@@ -54,9 +62,15 @@ export const ProjectProgressList: React.FC<{ items: ProjectProgress[] }> = ({
               <p className="mt-1 text-xs text-muted-foreground">
                 {item.total === 0
                   ? item.plan.active_version !== undefined
-                    ? "Plan approved — generate its tasks to start tracking."
+                    ? "Plan approved — no tasks generated yet."
                     : "Tasks are created once the plan is approved."
                   : `${item.done} of ${item.total} tasks done`}
+                {item.overdue > 0 && (
+                  <span className="text-destructive">
+                    {" "}
+                    · {item.overdue} overdue
+                  </span>
+                )}
               </p>
             </Link>
           </li>

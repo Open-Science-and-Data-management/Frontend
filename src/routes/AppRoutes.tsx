@@ -52,6 +52,11 @@ const Settings = page(() => import("@/pages/settings"), "Settings");
 const HelpGuide = page(() => import("@/pages/help"), "HelpGuide");
 const ReviewQueue = page(() => import("@/pages/review"), "ReviewQueue");
 const ReviewDetail = page(() => import("@/pages/review"), "ReviewDetail");
+const CommitteeHome = page(() => import("@/pages/review"), "CommitteeHome");
+
+/** "/" is each side's own dashboard. */
+const DashboardHome: React.FC = () =>
+  isReviewer(useCurrentUser()?.role) ? <CommitteeHome /> : <Home />;
 
 const ComingSoon: React.FC<{ label: string }> = ({ label }) => (
   <div className="flex h-[60vh] flex-col items-center justify-center gap-2 text-center">
@@ -73,7 +78,6 @@ const AppRoutes: React.FC = () => {
     >
       <Routes>
         {/* Researcher DMP flow */}
-        <Route path="/" element={researcher(<Home />)} />
         <Route path="/upload" element={researcher(<Upload />)} />
         <Route path="/dmp/create" element={researcher(<CreateDmp />)} />
         <Route path="/dmp/review" element={researcher(<ReviewSubmit />)} />
@@ -90,6 +94,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/review/:dmpId" element={reviewer(<ReviewDetail />)} />
 
         {/* Both sides */}
+        <Route path="/" element={<DashboardHome />} />
         <Route path="/notifications" element={<Notifications />} />
         {/* The dashboard has always lived at "/". */}
         <Route path="/home" element={<Navigate to="/" replace />} />

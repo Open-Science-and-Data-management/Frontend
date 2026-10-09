@@ -16,7 +16,9 @@ import { cn } from "@/utils/cn";
 const LIMIT = 4;
 
 /** The latest few of the signed-in user's notifications. */
-export const RecentNotifications: React.FC = () => {
+export const RecentNotifications: React.FC<{ description?: string }> = ({
+  description = "Approvals, returns, and task updates.",
+}) => {
   const navigate = useNavigate();
   const userId = useAuthStore((s) => s.userId) ?? undefined;
   const all = useNotificationStore((s) => s.notifications);
@@ -40,7 +42,7 @@ export const RecentNotifications: React.FC = () => {
   return (
     <DashboardSection
       title="Notifications"
-      description="Approvals, returns, and task updates."
+      description={description}
       action={
         <Button
           variant="ghost"

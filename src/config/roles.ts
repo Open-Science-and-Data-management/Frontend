@@ -8,6 +8,8 @@ import type { User } from "@/types/user";
 export const isReviewer = (role: User["role"] | undefined): boolean =>
   role !== undefined && role !== "researcher";
 
-/** Where each side starts after signing in. */
-export const homePathFor = (role: User["role"] | undefined): string =>
-  isReviewer(role) ? "/review" : "/";
+/**
+ * Where each side starts after signing in. Both start at "/", which shows each
+ * side its own dashboard; kept as a function so that can change in one place.
+ */
+export const homePathFor = (_role: User["role"] | undefined): string => "/";
