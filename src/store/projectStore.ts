@@ -7,7 +7,7 @@ import type { User } from "@/types/user";
 import { fileApi } from "@/api/fileApi";
 import { useToastStore } from "@/store/toastStore";
 import { notify } from "@/store/notificationStore";
-import { CURRENT_USER_ID } from "@/config/current-user";
+import { actingUserId, CURRENT_USER_ID } from "@/config/current-user";
 
 export { CURRENT_USER_ID } from "@/config/current-user";
 
@@ -80,6 +80,14 @@ const seedUsers: User[] = [
     role: "researcher",
     ai_token_limit: 4500,
     ai_token_used: 0,
+    username: "aran",
+    account_type: "institutional",
+    affiliation: {
+      organization: "King Mongkut's Institute of Technology Ladkrabang",
+      department: "Faculty of Science",
+      position: "Lecturer",
+      address: "1 Chalong Krung 1 Alley, Lat Krabang, Bangkok 10520",
+    },
   },
   {
     user_id: "user-2",
@@ -90,6 +98,7 @@ const seedUsers: User[] = [
     role: "committee",
     ai_token_limit: 4500,
     ai_token_used: 0,
+    username: "mali",
   },
 ];
 
@@ -140,6 +149,8 @@ interface ProjectState {
 
   getUser: (id: string) => User | undefined;
   updateUser: (id: string, patch: Partial<User>) => void;
+  /** Adds a newly registered user to the directory. */
+  addUser: (user: User) => void;
   /** The researcher who owns a project's plans — who hears about decisions. */
   getResearcherFor: (projectId?: string) => User | undefined;
   /** Everyone who decides on plans, for review-request notifications. */
@@ -193,6 +204,8 @@ export const useProjectStore = create<ProjectState>()(
 
       getUser: (id) => get().users.find((u) => u.user_id === id),
 
+      addUser: (user) => set((state) => ({ users: [...state.users, user] })),
+
       updateUser: (id, patch) =>
         set((state) => ({
           users: state.users.map((u) =>
@@ -220,9 +233,10 @@ export const useProjectStore = create<ProjectState>()(
           updated_at: new Date(),
         };
         set((state) => ({ projects: [...state.projects, project] }));
+        // Whoever creates the project is its researcher.
         get().addMember(
           project.project_id as string,
-          CURRENT_USER_ID,
+          actingUserId(),
           "researcher",
         );
         return project;
@@ -276,7 +290,7 @@ export const useProjectStore = create<ProjectState>()(
           const record = await fileApi.upload({
             file,
             projectId,
-            uploadedBy: CURRENT_USER_ID,
+            uploadedBy: actingUserId(),
             purpose,
           });
 
@@ -324,7 +338,7 @@ export const useProjectStore = create<ProjectState>()(
               description: `${superseded[0].filename} kept as a previous version.`,
             });
             notify({
-              user_id: CURRENT_USER_ID,
+              user_id: actingUserId(),
               type: "proposal_superseded",
               title: "Proposal replaced",
               message: `${superseded[0].filename} was superseded by ${record.filename}. The earlier version is kept for provenance.`,

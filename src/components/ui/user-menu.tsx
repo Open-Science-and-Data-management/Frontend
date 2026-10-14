@@ -1,43 +1,28 @@
 import React from "react";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, LogOut, Repeat } from "lucide-react";
+import { ChevronDown, LogOut, Settings as SettingsIcon } from "lucide-react";
 import { Chip } from "@/components/ui/chip";
 import { userFullName, userInitials } from "@/schemas/user";
-import { useProjectStore } from "@/store/projectStore";
-import { useToastStore } from "@/store/toastStore";
-import { ROLE_LABELS, useAuthStore, useCurrentUser } from "@/store/authStore";
+import {
+  ACCOUNT_TYPE_LABELS,
+  ROLE_LABELS,
+  useAuthStore,
+  useCurrentUser,
+} from "@/store/authStore";
 import { cn } from "@/utils/cn";
 
 /**
- * Who is signed in, and the one-click way to become someone else. Switching
- * lands on the dashboard: the page you were on may not make sense for the
- * other role.
+ * Who is signed in, and the way out. Becoming someone else means signing out
+ * and back in with their password — there is no shortcut around it.
  */
 export const UserMenu: React.FC = () => {
   const navigate = useNavigate();
   const user = useCurrentUser();
-  const users = useProjectStore((s) => s.users);
-  const login = useAuthStore((s) => s.login);
   const logout = useAuthStore((s) => s.logout);
-  const toast = useToastStore((s) => s.toast);
   const [open, setOpen] = React.useState(false);
 
   if (!user) return null;
-
-  const others = users.filter((u) => u.user_id !== user.user_id);
-
-  const switchTo = (userId: string) => {
-    const next = users.find((u) => u.user_id === userId);
-    if (!next) return;
-    login(userId);
-    setOpen(false);
-    navigate("/");
-    toast({
-      title: `Signed in as ${userFullName(next)}`,
-      description: `${ROLE_LABELS[next.role]} view`,
-    });
-  };
 
   const signOut = () => {
     setOpen(false);
@@ -80,40 +65,45 @@ export const UserMenu: React.FC = () => {
             "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
           )}
         >
-          <div className="px-2 py-1.5">
-            <p className="truncate text-sm font-medium">{userFullName(user)}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {user.email}
-            </p>
+          <div className="space-y-1.5 px-2 py-1.5">
+            <div>
+              <p className="truncate text-sm font-medium">
+                {userFullName(user)}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {user.username ? `@${user.username} · ` : ""}
+                {user.email}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              <Chip variant={user.role === "researcher" ? "neutral" : "ai"}>
+                {ROLE_LABELS[user.role]}
+              </Chip>
+              {user.account_type && (
+                <Chip variant="outline">
+                  {ACCOUNT_TYPE_LABELS[user.account_type]}
+                </Chip>
+              )}
+            </div>
+            {user.affiliation && (
+              <p className="truncate text-xs text-muted-foreground">
+                {user.affiliation.organization}
+              </p>
+            )}
           </div>
 
-          {others.length > 0 && (
-            <div className="mt-1 border-t pt-1">
-              <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                Switch account
-              </p>
-              {others.map((other) => (
-                <button
-                  key={other.user_id}
-                  type="button"
-                  onClick={() => switchTo(other.user_id as string)}
-                  className={itemClass}
-                >
-                  <Repeat className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1 truncate">
-                    {userFullName(other)}
-                  </span>
-                  <Chip
-                    variant={other.role === "researcher" ? "neutral" : "ai"}
-                  >
-                    {ROLE_LABELS[other.role]}
-                  </Chip>
-                </button>
-              ))}
-            </div>
-          )}
-
           <div className="mt-1 border-t pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                navigate("/settings");
+              }}
+              className={itemClass}
+            >
+              <SettingsIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              Profile &amp; settings
+            </button>
             <button type="button" onClick={signOut} className={itemClass}>
               <LogOut className="h-4 w-4 shrink-0 text-muted-foreground" />
               Sign out

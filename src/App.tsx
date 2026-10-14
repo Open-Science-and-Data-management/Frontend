@@ -2,7 +2,7 @@ import React from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { MainLayout } from "./layouts/MainLayout";
 import AppRoutes from "./routes/AppRoutes";
-import { Login } from "./pages/login";
+import { Login, Register } from "./pages/login";
 import { Landing } from "./pages/landing";
 import { useCurrentUser } from "./store/authStore";
 
@@ -21,11 +21,31 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
+/** Sign in and Sign up are for people who aren't in yet. */
+const SignedOutOnly: React.FC<{ children: React.ReactElement }> = ({
+  children,
+}) => (useCurrentUser() ? <Navigate to="/" replace /> : children);
+
 const App: React.FC = () => {
   return (
     <Routes>
       {/* Outside the shell: no sidebar or navbar before you've signed in. */}
-      <Route path="/login" element={<Login />} />
+      <Route
+        path="/login"
+        element={
+          <SignedOutOnly>
+            <Login />
+          </SignedOutOnly>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <SignedOutOnly>
+            <Register />
+          </SignedOutOnly>
+        }
+      />
       {/* The landing page, reachable whether signed in or not. */}
       <Route path="/welcome" element={<Landing />} />
       <Route

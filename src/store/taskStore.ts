@@ -6,7 +6,7 @@ import {
   CURRENT_TASKS_VERSION,
   migrateTasks,
 } from "@/store/taskMigrations";
-import { CURRENT_USER_ID } from "@/config/current-user";
+import { actingUserId } from "@/config/current-user";
 import { evidenceSatisfies } from "@/config/task-evidence";
 import { useDmpStore } from "@/store/dmpStore";
 import { useProjectStore } from "@/store/projectStore";
@@ -232,7 +232,7 @@ export const useTaskStore = create<TaskState>()(
             attached_at: new Date("2026-09-18T09:00:00"),
           },
           completed_at: new Date("2026-09-18T09:05:00"),
-          completed_by: CURRENT_USER_ID,
+          completed_by: actingUserId(),
           generated_by: "ai",
         },
         {
@@ -403,7 +403,7 @@ export const useTaskStore = create<TaskState>()(
             progress_percent: 100,
             checklist: (t.checklist ?? []).map((i) => ({ ...i, done: true })),
             completed_at: new Date(),
-            completed_by: CURRENT_USER_ID,
+            completed_by: actingUserId(),
           })),
         }));
 

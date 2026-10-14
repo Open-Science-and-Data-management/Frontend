@@ -3,6 +3,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useProjectStore } from "@/store/projectStore";
+import { useCurrentUser } from "@/store/authStore";
 import type { Project } from "@/types/project";
 
 interface CreateProjectDialogProps {
@@ -17,6 +18,9 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   onCreated,
 }) => {
   const createProject = useProjectStore((s) => s.createProject);
+  // A citizen researcher has no committee, so their projects sign their own
+  // plans off; everyone else's go to the institution's committee.
+  const citizen = useCurrentUser()?.account_type === "citizen";
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
 
@@ -40,6 +44,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
         const project = createProject({
           project_name: name.trim(),
           description: description.trim() || undefined,
+          plan_mode: citizen ? "independent" : "institutional",
         });
         reset();
         onOpenChange(false);
@@ -48,7 +53,10 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
     >
       <div className="space-y-3">
         <div>
-          <label htmlFor="project-name" className="mb-1 block text-sm font-medium">
+          <label
+            htmlFor="project-name"
+            className="mb-1 block text-sm font-medium"
+          >
             Project name
           </label>
           <Input
@@ -73,6 +81,11 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
             placeholder="What is this project about?"
           />
         </div>
+        <p className="rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
+          {citizen
+            ? "As a citizen researcher you finalize this project's plans yourself — no committee review."
+            : "This project's plans go to your institution's committee for approval."}
+        </p>
       </div>
     </ConfirmDialog>
   );

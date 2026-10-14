@@ -38,7 +38,7 @@ export const Landing: React.FC = () => {
   // Already signed in (they came via /welcome): the button goes back in.
   const start = user
     ? { to: homePathFor(user.role), label: "Go to your dashboard" }
-    : { to: "/login", label: "Get started" };
+    : { to: "/register", label: "Create an account" };
 
   return (
     <>
@@ -54,11 +54,20 @@ export const Landing: React.FC = () => {
             </Link>
             <div className="flex items-center gap-2">
               <ThemeToggle />
-              <Button size="sm" variant={user ? "outline" : "default"} asChild>
-                <Link to={user ? start.to : "/login"}>
-                  {user ? "Open app" : "Sign in"}
-                </Link>
-              </Button>
+              {user ? (
+                <Button size="sm" variant="outline" asChild>
+                  <Link to={start.to}>Open app</Link>
+                </Button>
+              ) : (
+                <>
+                  <Button size="sm" variant="ghost" asChild>
+                    <Link to="/login">Sign in</Link>
+                  </Button>
+                  <Button size="sm" asChild>
+                    <Link to="/register">Sign up</Link>
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </header>
