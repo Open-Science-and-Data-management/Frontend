@@ -2,6 +2,15 @@ import { useDmpStore, type DmpRecord } from "@/store/dmpStore";
 import { findReopenCandidates, useTaskStore } from "@/store/taskStore";
 import { notify } from "@/store/notificationStore";
 import { CURRENT_USER_ID } from "@/config/current-user";
+import { useProjectStore } from "@/store/projectStore";
+
+/**
+ * These fire when a version comes into force — often on a committee member's
+ * click — but they're news for the plan's researcher, not whoever clicked.
+ */
+const researcherOf = (record: DmpRecord) =>
+  useProjectStore.getState().getResearcherFor(record.project_id)?.user_id ??
+  CURRENT_USER_ID;
 
 const activeSnapshot = (record?: DmpRecord) =>
   record?.versions.find((v) => v.number === record.active_version)?.snapshot;
@@ -53,7 +62,7 @@ export const installPlanEffects = () =>
 
       if (cancelled > 0)
         notify({
-          user_id: CURRENT_USER_ID,
+          user_id: researcherOf(record),
           type: "tasks_cancelled",
           title: `${cancelled} task${cancelled === 1 ? "" : "s"} cancelled`,
           message: `Version ${record.active_version} removed the research output they belonged to. They stay on the board, marked cancelled.`,
@@ -77,7 +86,7 @@ export const installPlanEffects = () =>
           items,
         });
         notify({
-          user_id: CURRENT_USER_ID,
+          user_id: researcherOf(record),
           type: "tasks_generated",
           title: `${items.length} cancelled task${items.length === 1 ? "" : "s"} can be reopened`,
           message: `Version ${record.active_version} brought back an output whose tasks were cancelled. Choose which to reopen.`,

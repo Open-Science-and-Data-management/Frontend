@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { UserRole } from "../shared/enums";
+import { AccountType, UserRole } from "../shared/enums";
 
 export const userSchema = z.object({
   user_id: z.string().optional(),
@@ -10,6 +10,21 @@ export const userSchema = z.object({
   role: UserRole,
   ai_token_limit: z.number().int().default(4500),
   ai_token_used: z.number().int().default(0),
+  // Set at sign-up. Optional so seeded and older accounts stay valid.
+  username: z.string().optional(),
+  account_type: AccountType.optional(),
+  phone: z.string().optional(),
+  orcid: z.string().optional(),
+  /** Who the researcher works for (สังกัด); absent for citizen researchers. */
+  affiliation: z
+    .object({
+      organization: z.string(),
+      department: z.string().optional(),
+      position: z.string().optional(),
+    })
+    .optional(),
+  /** A citizen researcher's own address, if they gave one. */
+  address: z.string().optional(),
 });
 export type User = z.infer<typeof userSchema>;
 

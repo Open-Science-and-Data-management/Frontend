@@ -64,6 +64,12 @@ const ProfileSection: React.FC = () => {
       return;
     }
     if (!user?.user_id) return;
+    if (
+      useProjectStore.getState().isEmailTaken(result.data.email, user.user_id)
+    ) {
+      setErrors({ email: "Another account already uses this email." });
+      return;
+    }
     updateUser(user.user_id, {
       ...result.data,
       title: result.data.title || undefined,

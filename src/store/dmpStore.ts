@@ -19,7 +19,7 @@ import { useToastStore } from "@/store/toastStore";
 import { recordAiEvent, useAiThread, UNSCOPED } from "@/store/aiThread";
 import { notify } from "@/store/notificationStore";
 import type { CreateNotification } from "@/types/notification";
-import { CURRENT_USER_ID } from "@/config/current-user";
+import { actingUserId } from "@/config/current-user";
 import { dmpFieldPolicy, datasetFieldPolicy } from "@/config/field-policy";
 import { getDomainProfile } from "@/schemas/dataset/domain-profiles";
 import {
@@ -580,7 +580,7 @@ const emptyDraft: DmpDraft = {};
 /** Who hears about a decision on a plan: the researcher on its project. */
 const researcherIdFor = (projectId?: string) =>
   useProjectStore.getState().getResearcherFor(projectId)?.user_id ??
-  CURRENT_USER_ID;
+  actingUserId();
 
 /** Every reviewer gets the same queue, so every reviewer hears of a new item. */
 const notifyReviewers = (input: Omit<CreateNotification, "user_id">) =>
@@ -927,7 +927,7 @@ export const useDmpStore = create<DmpDraftState>()(
                               ...v.minor_edits,
                               {
                                 at: new Date(),
-                                by: CURRENT_USER_ID,
+                                by: actingUserId(),
                                 changes,
                                 restored_from: state.restoredFrom ?? undefined,
                                 during_pending: waiting?.number,
@@ -1171,10 +1171,10 @@ export const useDmpStore = create<DmpDraftState>()(
         finalize: () => {
           // Same destination as approve(), reached by the researcher. Nothing
           // downstream can tell the two apart, which is the point.
-          activate(CURRENT_USER_ID);
+          activate(actingUserId());
           const { draft, currentDmpId } = get();
           notify({
-            user_id: CURRENT_USER_ID,
+            user_id: researcherIdFor(draft.project_id),
             type: "dmp_finalized",
             title: "Plan finalized",
             message: `${draft.title?.trim() || "Your plan"} is active — you can break it into tasks now.`,
@@ -1188,7 +1188,7 @@ export const useDmpStore = create<DmpDraftState>()(
           set({ tasksGenerated: true });
           const { draft, currentDmpId } = get();
           notify({
-            user_id: CURRENT_USER_ID,
+            user_id: researcherIdFor(draft.project_id),
             type: "tasks_generated",
             title: "Tasks are ready",
             message: `${draft.title?.trim() || "Your plan"} has been broken into tasks you can track.`,
