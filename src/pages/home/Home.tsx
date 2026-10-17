@@ -20,7 +20,6 @@ import { StatCard } from "@/components/dashboard/StatCard";
 import { UpcomingTasks } from "@/components/dashboard/UpcomingTasks";
 import { PlanApprovals } from "@/components/dashboard/PlanApprovals";
 import { ProjectProgressList } from "@/components/dashboard/ProjectProgressList";
-import { RecentNotifications } from "@/components/dashboard/RecentNotifications";
 import { useResearcherDashboard } from "@/hooks/useResearcherDashboard";
 import { draftHasContent, useDmpStore } from "@/store/dmpStore";
 import { useCurrentUser } from "@/store/authStore";
@@ -214,7 +213,6 @@ const Dashboard: React.FC<{
         </div>
         <div className="min-w-0 space-y-6">
           <ProjectProgressList items={data.progress} />
-          <RecentNotifications />
         </div>
       </div>
     </div>
