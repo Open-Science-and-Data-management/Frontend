@@ -86,7 +86,6 @@ const seedUsers: User[] = [
       organization: "King Mongkut's Institute of Technology Ladkrabang",
       department: "Faculty of Science",
       position: "Lecturer",
-      address: "1 Chalong Krung 1 Alley, Lat Krabang, Bangkok 10520",
     },
   },
   {
@@ -122,6 +121,9 @@ const seedMembers: ProjectMember[] = [
   { project_id: "proj-3", user_id: "user-2", project_role: "committee" },
 ];
 
+/** The form an email is compared in — the same rule contributors match by. */
+export const normaliseEmail = (email: string) => email.trim().toLowerCase();
+
 const memberKey = (m: Pick<ProjectMember, "project_id" | "user_id">) =>
   `${m.project_id}::${m.user_id}`;
 
@@ -155,6 +157,12 @@ interface ProjectState {
   getResearcherFor: (projectId?: string) => User | undefined;
   /** Everyone who decides on plans, for review-request notifications. */
   getReviewers: () => User[];
+  /**
+   * Whether another account already uses this email. Emails are unique per
+   * account, ignoring case and spaces — contributors are matched to accounts
+   * by email, so two accounts sharing one would make that match ambiguous.
+   */
+  isEmailTaken: (email: string, exceptUserId?: string) => boolean;
 
   createProject: (input: {
     project_name: string;
@@ -221,6 +229,14 @@ export const useProjectStore = create<ProjectState>()(
 
       getReviewers: () =>
         get().users.filter((u) => u.role === "committee" || u.role === "chief"),
+
+      isEmailTaken: (email, exceptUserId) => {
+        const wanted = normaliseEmail(email);
+        return get().users.some(
+          (u) =>
+            u.user_id !== exceptUserId && normaliseEmail(u.email) === wanted,
+        );
+      },
 
       createProject: ({ project_name, description, plan_mode }) => {
         const project: Project = {

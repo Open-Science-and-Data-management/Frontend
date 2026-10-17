@@ -21,7 +21,6 @@ export const userSchema = z.object({
       organization: z.string(),
       department: z.string().optional(),
       position: z.string().optional(),
-      address: z.string().optional(),
     })
     .optional(),
   /** A citizen researcher's own address, if they gave one. */

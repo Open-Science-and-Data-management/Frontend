@@ -104,6 +104,20 @@ describe("signing up", () => {
     ).toMatchObject({ ok: false, field: "email" });
   });
 
+  it("stores an affiliation as the form collects it — no address", async () => {
+    await auth().register(
+      form({ department: "Science", position: "Lecturer" }),
+    );
+    const user = useProjectStore
+      .getState()
+      .users.find((u) => u.username === "somchai.p");
+    expect(user?.affiliation).toEqual({
+      organization: "KMITL",
+      department: "Science",
+      position: "Lecturer",
+    });
+  });
+
   it("files a new account's projects under that account", async () => {
     await auth().register(form());
     const project = useProjectStore
@@ -162,5 +176,23 @@ describe("the sign-up form's rules", () => {
   it("checks ORCID and phone only when given", () => {
     expect(issues({ orcid: "1234" })).toContain("orcid");
     expect(issues({ orcid: "0000-0002-1825-0097", phone: "" })).toEqual([]);
+  });
+});
+
+describe("one account per email", () => {
+  const projects = () => useProjectStore.getState();
+
+  it("matches emails the way contributors are matched: case and spaces aside", () => {
+    expect(projects().isEmailTaken("  Aran@Example.edu ")).toBe(true);
+    expect(projects().isEmailTaken("someone@example.edu")).toBe(false);
+  });
+
+  it("doesn't count an account's own email against it", () => {
+    expect(projects().isEmailTaken("aran@example.edu", CURRENT_USER_ID)).toBe(
+      false,
+    );
+    expect(projects().isEmailTaken("mali@example.edu", CURRENT_USER_ID)).toBe(
+      true,
+    );
   });
 });

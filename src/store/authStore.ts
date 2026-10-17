@@ -92,12 +92,7 @@ export const useAuthStore = create<AuthState>()(
             field: "username",
             error: "That username is already taken.",
           };
-        const email = form.email.toLowerCase();
-        if (
-          useProjectStore
-            .getState()
-            .users.some((u) => u.email.toLowerCase() === email)
-        )
+        if (useProjectStore.getState().isEmailTaken(form.email))
           return {
             ok: false,
             field: "email",

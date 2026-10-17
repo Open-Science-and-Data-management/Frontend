@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-const ORCID = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/;
+/** An ORCID iD as written: four groups of four, the last may end in X. */
+export const ORCID = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/;
 
 /**
  * A person named in the plan. Contributors need not have an account here, so

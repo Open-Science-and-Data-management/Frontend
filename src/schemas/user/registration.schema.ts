@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { AccountType } from "../shared/enums";
+// The same ORCID format a plan contributor is held to.
+import { ORCID } from "../contributor/contributor.schema";
 
-const ORCID = /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/;
 const USERNAME = /^[a-z0-9._-]+$/;
 const PHONE = /^\+?[\d\s-]{9,15}$/;
 

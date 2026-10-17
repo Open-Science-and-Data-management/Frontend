@@ -4,10 +4,11 @@ This diagram reflects the current Zod schemas and client-side stores. It is a
 logical view of the frontend model, not a claim that these are database tables
 or that the indicated references are enforced by a database.
 
-Last checked against the code: 7 October 2026.
+Last checked against the code: 18 October 2026.
 
 ```mermaid
 erDiagram
+    USER ||--o| CREDENTIAL : signs_in_with
     USER ||--o{ PROJECT_MEMBER : participates_in
     PROJECT ||--o{ PROJECT_MEMBER : has_members
     PROJECT o|--o{ DMP : groups
@@ -36,10 +37,23 @@ erDiagram
         string title
         string name
         string surname
-        string email
+        string email "unique per account, ignoring case and spaces"
         UserRole role "admin | chief | committee | researcher"
         int ai_token_limit
         int ai_token_used
+        string username "optional; set at sign-up, mirrors CREDENTIAL"
+        AccountType account_type "optional; institutional | citizen, researchers only"
+        string phone "optional"
+        string orcid "optional; same format as CONTRIBUTOR.orcid"
+        json affiliation "optional; organization, department, position. Institutional only"
+        string address "optional; citizen researchers only"
+    }
+
+    CREDENTIAL {
+        string username PK "lowercase; unique"
+        string user_id FK
+        string salt "random per account"
+        string hash "SHA-256 of salt and password; never the password"
     }
 
     PROJECT {
@@ -85,7 +99,7 @@ erDiagram
         json snapshot "the plan as submitted"
         date created_at
         date decided_at "optional"
-        string decided_by "optional; committee or the researcher's user_id"
+        string decided_by "optional; reviewer's user_id, committee, or the researcher's user_id when self-finalized"
         json approver "optional; user_id, name, position, mbox at decision time"
         string note "optional; reason when sent back"
         json minor_edits "at, by, changes, restored_from; folded in without review"
@@ -197,7 +211,7 @@ erDiagram
         string user_id FK
         string dmp_id FK "optional"
         string project_id FK "optional"
-        NotificationType type "includes tasks_cancelled"
+        NotificationType type "includes tasks_cancelled, review_requested, dmp_returned"
         string title
         string message
         string link
@@ -236,6 +250,35 @@ focuses its input when clicked, when:
 - the contact has no email (maDMP v3.0 requires `contact.mbox`);
 - an open distribution has no licence (maDMP v3.0 requires it);
 - a dataset's `domain_metadata` doesn't satisfy its domain profile.
+
+## Accounts and sign-up
+
+Accounts are held in the browser (`src/store/authStore.ts`); there is no
+server yet. Signing up (`/register`, `registrationSchema`) creates one `USER`
+and one `CREDENTIAL`:
+
+- **Only researchers sign up.** `role` is always `researcher`; committee and
+  chief accounts are granted by the institution, not chosen.
+- **Account type** decides who approves a researcher's plans.
+  `institutional` (มีสังกัด) researchers must name their organisation, and
+  their new projects default to `plan_mode: institutional`. `citizen`
+  (ไม่มีสังกัด) researchers have no affiliation, may give an address, and
+  their new projects default to `independent`. The default is applied when a
+  project is created; a plan then pins its own mode at first submission, as
+  below.
+- **The password lives only in `CREDENTIAL`**, as a salted SHA-256 hash. It
+  is never on `USER`, so nothing that reads users (exports, approver records,
+  contributor links) can carry it. This keeps plain text out of storage but is
+  not production security; a deployment moves sign-in behind an API.
+- **Usernames are unique** (lowercased) and **emails are unique** ignoring
+  case and spaces, checked at sign-up and when a profile's email is changed.
+  Email uniqueness is what lets the contributor form suggest *the* account
+  matching a contributor's email.
+- **Who acts.** Records written while someone is signed in are attributed to
+  them (`actingUserId()` in `src/config/current-user.ts`): project
+  membership on creation, uploads, minor edits, self-finalizing, completed
+  tasks. Notifications about a plan go to its project's researcher, whoever
+  triggered them. Seed data stays attributed to the seeded researcher.
 
 ## Versions and edit classification
 
@@ -409,7 +452,10 @@ they're built.
   `source_version_id` is declared but never written, so tasks don't record
   which plan version produced them.
 - **Notifications:** the type values are `dmp_submitted`, `dmp_approved`,
-  `dmp_finalized`, `tasks_generated`, and `proposal_superseded`. A
+  `dmp_finalized`, `tasks_generated`, `tasks_cancelled`,
+  `proposal_superseded`, `review_requested` (to every reviewer when a plan or
+  revision is submitted), and `dmp_returned` (to the researcher when a
+  version is sent back). A
   notification has title/message/link, optional DMP and project IDs, and
   optional `read_at`; it has no generic `related_entity` or `is_read` field.
 - **AI generation:** there is no `AI_GENERATION` record with inputs, outputs,
