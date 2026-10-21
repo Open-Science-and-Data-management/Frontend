@@ -46,7 +46,6 @@ beforeEach(() => {
     currentDmpId: null,
     status: "draft",
     tasksGenerated: false,
-    tokenUsed: 0,
   });
 });
 
@@ -158,23 +157,5 @@ describe("checking a plan in and out", () => {
     expect(kept?.title).toBe("Set aside");
     expect(useDmpStore.getState().currentDmpId).toBeNull();
     expect(useDmpStore.getState().draft).toEqual({});
-  });
-});
-
-describe("token budget", () => {
-  it("bills against the limit and refuses what it can't cover", () => {
-    const { tokenLimit } = useDmpStore.getState();
-    useDmpStore.setState({ tokenUsed: tokenLimit - 100 });
-
-    expect(useDmpStore.getState().tokensLeft()).toBe(100);
-    expect(useDmpStore.getState().hasTokensFor(100)).toBe(true);
-    expect(useDmpStore.getState().hasTokensFor(101)).toBe(false);
-  });
-
-  it("never reports a negative balance", () => {
-    useDmpStore.setState({
-      tokenUsed: useDmpStore.getState().tokenLimit + 500,
-    });
-    expect(useDmpStore.getState().tokensLeft()).toBe(0);
   });
 });

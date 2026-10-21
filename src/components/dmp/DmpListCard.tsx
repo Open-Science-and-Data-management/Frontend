@@ -14,7 +14,7 @@ interface DmpListCardProps {
 const STATUS_HINT: Record<DmpRecord["status"], string> = {
   draft: "Still editable",
   pending: "Waiting on the committee",
-  approved: "In force — minor edits apply, major ones need sign-off",
+  approved: "In force. Minor edits apply now; major ones need sign-off.",
 };
 
 export const DmpListCard: React.FC<DmpListCardProps> = ({
@@ -49,7 +49,7 @@ export const DmpListCard: React.FC<DmpListCardProps> = ({
         <StatusBadge status={dmp.status} />
         <span className="text-xs text-muted-foreground">
           {dmp.archived_at
-            ? "Archived — open to bring it back"
+            ? "Archived. Open it to bring it back."
             : STATUS_HINT[dmp.status]}
         </span>
       </div>

@@ -1,4 +1,6 @@
 import React from "react";
+import { useQuotaStore } from "@/store/quotaStore";
+import { reportAiError, syncQuota } from "@/store/aiErrors";
 import {
   FileText,
   Link2,
@@ -62,7 +64,7 @@ export const TaskEvidence: React.FC<TaskEvidenceProps> = ({ task }) => {
   const draftProjectId = useDmpStore((s) => s.draft.project_id);
   const dmps = useDmpStore((s) => s.dmps);
   const currentDmpId = useDmpStore((s) => s.currentDmpId);
-  const hasTokensFor = useDmpStore((s) => s.hasTokensFor);
+  const hasTokensFor = useQuotaStore((s) => s.hasTokensFor);
   const toast = useToastStore((s) => s.toast);
 
   const [newStep, setNewStep] = React.useState("");
@@ -139,7 +141,7 @@ export const TaskEvidence: React.FC<TaskEvidenceProps> = ({ task }) => {
   const redraft = async () => {
     setRedrafting(true);
     try {
-      const { steps, token_count } = await generateTaskChecklist({
+      const { steps, token_count, usage } = await generateTaskChecklist({
         taskTitle: task.title,
         lifecycleStage: task.lifecycle_stage,
         outputs: (plan?.draft.dataset ?? []).map((d) => ({
@@ -151,7 +153,6 @@ export const TaskEvidence: React.FC<TaskEvidenceProps> = ({ task }) => {
       });
 
       replaceChecklist(taskId, steps);
-      useDmpStore.setState((s) => ({ tokenUsed: s.tokenUsed + token_count }));
       recordAiEvent(task.dmp_id, {
         action: "redraft_steps",
         summary: `Redrafted the steps for "${task.title}"`,
@@ -160,16 +161,18 @@ export const TaskEvidence: React.FC<TaskEvidenceProps> = ({ task }) => {
           `${steps.length} steps`,
         ].join(" · "),
         token_count,
+        usage,
       });
       toast({
         title: `${steps.length} steps drafted`,
         description: `Steps already ticked were kept · ${token_count.toLocaleString()} tokens.`,
       });
       setDirection("");
-    } catch {
-      toast({ title: "Couldn't draft the steps", variant: "destructive" });
+    } catch (err) {
+      reportAiError(err, { what: "draft the steps", retry: redraft });
     } finally {
       setRedrafting(false);
+      syncQuota();
     }
   };
 
@@ -360,7 +363,7 @@ export const TaskEvidence: React.FC<TaskEvidenceProps> = ({ task }) => {
           <p className="text-xs text-warn">
             {looksLikeDoi(task.evidence?.ref ?? "")
               ? "A DOI on its own doesn't say what it identifies, so this counts as a link for now. It becomes verified when the repository confirms the deposit."
-              : "Accepted for now — it becomes verified once the repository confirms the deposit."}
+              : "Accepted for now. It becomes verified once the repository confirms the deposit."}
           </p>
         )}
       </div>

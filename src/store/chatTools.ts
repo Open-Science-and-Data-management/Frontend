@@ -7,6 +7,7 @@ import {
 import { ENABLED_TOOLS, toolCallSchema, type ToolCall } from "@/api/aiTools";
 import type { DmpDraft } from "@/types/dmp";
 import type { Task } from "@/types/task";
+import { sameValue } from "@/utils/sameValue";
 
 export interface ChatProposal {
   id: string;
@@ -62,9 +63,9 @@ export interface ToolContext {
 const makeId = () => Math.random().toString(36).substring(2, 10);
 
 const show = (value: unknown): string => {
-  if (value === undefined || value === null || value === "") return "—";
+  if (value === undefined || value === null || value === "") return "Not set";
   if (value instanceof Date) return value.toLocaleDateString();
-  if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
+  if (Array.isArray(value)) return value.length ? value.join(", ") : "Not set";
   if (typeof value === "boolean") return value ? "Yes" : "No";
   return String(value);
 };
@@ -80,7 +81,7 @@ const summarise = (ctx: ToolContext): string => {
   const people = draft.contributor ?? [];
 
   return [
-    `${draft.title?.trim() || "This plan"} — ${outputs.length} research output${outputs.length === 1 ? "" : "s"}, ${people.length} contributor${people.length === 1 ? "" : "s"}.`,
+    `${draft.title?.trim() || "This plan"}: ${outputs.length} research output${outputs.length === 1 ? "" : "s"}, ${people.length} contributor${people.length === 1 ? "" : "s"}.`,
     people.length
       ? `Contact: ${contributorFullName(people.find((p) => p.is_contact) ?? people[0]) || "not set"}.`
       : "No contributors yet.",
@@ -118,8 +119,7 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
       rejections: [
         {
           label: tool.tool,
-          reason:
-            "That isn't switched on yet — it's a change that belongs in the form.",
+          reason: "I can't do that yet. Please make that change in the form.",
         },
       ],
     };
@@ -183,7 +183,7 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
         answers: [
           `${found.label}: ${fieldHelp(found)}${
             found.policy.permission === "locked"
-              ? " This field is locked — it can't be changed here."
+              ? " This field is locked, so it can't be changed here."
               : found.policy.permission === "human"
                 ? " This one is yours to decide; I can suggest, never set it."
                 : ""
@@ -208,7 +208,7 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
             {
               label: target.label,
               reason: target.policy.editableBeforeApproval
-                ? "This field is locked to me by policy. You can edit it yourself in the form — after approval, a change to it goes back for sign-off."
+                ? "This field is locked, so I can't change it. You can edit it yourself in the form; after approval, a change to it goes back for sign-off."
                 : "This field is locked by policy, so I can't propose a change to it.",
             },
           ],
@@ -262,7 +262,7 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
             {
               label: tool.title,
               reason:
-                "Tasks are generated once the committee approves the plan — I can't add one before that.",
+                "Tasks are created once the committee approves the plan, so I can't add one before that.",
             },
           ],
         };
@@ -275,7 +275,7 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
             id: makeId(),
             kind: "task",
             label: "New task",
-            before: "—",
+            before: "None",
             after: tool.title,
             task: {
               title: tool.title,
@@ -305,21 +305,6 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
     default:
       return empty;
   }
-};
-
-/** Dates and arrays don't compare with ===, and a stale check has to be exact. */
-const sameValue = (a: unknown, b: unknown): boolean => {
-  if (a instanceof Date || b instanceof Date) {
-    return (
-      a instanceof Date && b instanceof Date && a.getTime() === b.getTime()
-    );
-  }
-  if (a === b) return true;
-  if (a == null || b == null) return a == null && b == null;
-  if (typeof a === "object" || typeof b === "object") {
-    return JSON.stringify(a) === JSON.stringify(b);
-  }
-  return false;
 };
 
 export interface GuardResult {
@@ -363,7 +348,7 @@ export const guardBeforeApply = (
   if (!sameValue(current, proposal.beforeValue)) {
     return {
       ok: false,
-      reason: `This changed since I suggested it — it now reads "${show(current)}". Ask again if you still want the change.`,
+      reason: `This changed after I suggested it and now reads "${show(current)}". Ask again if you still want the change.`,
     };
   }
 
@@ -372,3 +357,29 @@ export const guardBeforeApply = (
     ? { ok: true }
     : { ok: false, reason: "That value no longer fits this field." };
 };
+
+/**
+ * Suggestions are drafted against the plan as it was when the request went
+ * out. Any field that moved while the model was working is flagged before the
+ * person sees it — shown as stale, like a refused accept, never quietly
+ * offered as if it still applied.
+ */
+export const flagDrift = (
+  proposals: ChatProposal[],
+  draft: DmpDraft | undefined,
+): ChatProposal[] =>
+  draft
+    ? proposals.map((proposal) => {
+        if (proposal.status !== "pending" || !proposal.path) return proposal;
+        const target = resolveFieldPath(draft, proposal.path);
+        if ("error" in target) return proposal;
+        const current = target.read(draft);
+        return sameValue(current, proposal.beforeValue)
+          ? proposal
+          : {
+              ...proposal,
+              status: "stale" as const,
+              staleReason: `This changed while I was writing and now reads "${show(current)}". Ask again if you still want the change.`,
+            };
+      })
+    : proposals;

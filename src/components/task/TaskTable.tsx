@@ -280,7 +280,8 @@ const TaskRow: React.FC<TaskRowProps> = ({
 
   const dateLabel = () => {
     const { start_date: start, end_date: end } = task;
-    if (!start && !end) return <span className="text-muted-foreground">—</span>;
+    if (!start && !end)
+      return <span className="text-muted-foreground">No dates</span>;
     if (start && end)
       return `${format(toLocalDay(start), "d MMM")} → ${format(toLocalDay(end), "d MMM")}`;
     return format(toLocalDay((start ?? end) as Date), "d MMM yyyy");
@@ -470,7 +471,7 @@ const TaskRow: React.FC<TaskRowProps> = ({
         ) : (
           <div
             className="flex h-8 flex-col justify-center gap-1 px-1.5"
-            title="Derived from the checklist — tick steps inside the task"
+            title="Calculated from the checklist. Tick steps inside the task."
           >
             <span className="text-xs tabular-nums text-muted-foreground">
               {doneSteps}/{checklist.length} steps
@@ -519,7 +520,9 @@ const TaskRow: React.FC<TaskRowProps> = ({
       case "plan":
         return (
           <span className="flex h-8 items-center gap-1 px-1.5 text-xs text-muted-foreground">
-            <span className="truncate">{planLabel?.(task.dmp_id) ?? "—"}</span>
+            <span className="truncate">
+              {planLabel?.(task.dmp_id) ?? "No plan"}
+            </span>
             {orphaned && (
               <span
                 title="The research output this task belonged to was removed"

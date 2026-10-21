@@ -17,7 +17,7 @@ export const validateProposalFile = (file: File): string | null => {
     return "Only .docx files are supported.";
   }
   if (file.size > MAX_SIZE_BYTES) {
-    return "File is too large — please keep it under 20MB.";
+    return "This file is too large. The limit is 20 MB.";
   }
   return null;
 };

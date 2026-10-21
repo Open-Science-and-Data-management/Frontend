@@ -178,12 +178,12 @@ export const TaskDashboard: React.FC = () => {
       : narrowedPlan
         ? isActive(narrowedPlan.status)
           ? "This plan is approved but hasn't been broken into tasks yet."
-          : "This plan isn't approved yet — its tasks are created once it is."
+          : "This plan isn't approved yet. Its tasks are created once it is."
         : narrowedProject &&
             !plans.some((p) => p.project_id === narrowedProject.project_id)
           ? "This project has no plan yet. Upload its proposal to start one."
           : narrowedProject
-            ? "None of this project's plans has tasks yet — they're created once a plan is approved."
+            ? "None of this project's plans has tasks yet. They're created once a plan is approved."
             : "No tasks yet. Approve a plan to generate its tasks.";
 
   const editingTask = tasks.find((t) => t.task_id === editingTaskId) ?? null;
@@ -206,7 +206,7 @@ export const TaskDashboard: React.FC = () => {
             <h1 className="text-3xl font-bold tracking-tight">My Tasks</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Everything you're doing this week, across your plans. Tasks are
-              yours to manage — only the DMP needs approval.
+              yours to manage. Only the DMP needs approval.
             </p>
           </div>
           <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:gap-3">
@@ -229,7 +229,7 @@ export const TaskDashboard: React.FC = () => {
               title={
                 targetDmpId
                   ? undefined
-                  : "Pick a plan in the filter first — every task belongs to one"
+                  : "Pick a plan in the filter first. Every task belongs to one."
               }
             >
               Create New Task

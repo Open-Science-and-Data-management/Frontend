@@ -85,12 +85,15 @@ const LABELS: Record<string, string> = {
 const humanise = (key: string) =>
   LABELS[key] ?? key.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
+/** How a missing value reads in a change list. */
+export const NOT_SET = "Not set";
+
 /** Stable enough to compare: dates by instant, objects by shape. */
 const show = (value: unknown): string => {
-  if (value === undefined || value === null || value === "") return "—";
+  if (value === undefined || value === null || value === "") return NOT_SET;
   if (value instanceof Date) return dayString(value);
   if (Array.isArray(value))
-    return value.length === 0 ? "—" : value.map(show).join(", ");
+    return value.length === 0 ? NOT_SET : value.map(show).join(", ");
   if (typeof value === "object")
     return JSON.stringify(value, (_k, v) =>
       v instanceof Date ? v.toISOString() : v,
@@ -177,7 +180,7 @@ const DATASET_KEYS = [
 /** Exposed for the test that holds the diff to the policy. */
 export const COMPARED_KEYS = { dmp: DMP_KEYS, dataset: DATASET_KEYS };
 
-const outputLabel = (index: number) => `Research output ${index + 1} — `;
+const outputLabel = (index: number) => `Research output ${index + 1}: `;
 
 /**
  * Contributors and costs: added, removed, or any field changed. Each entry is
@@ -204,8 +207,8 @@ const compareList = <T extends Record<string, unknown>>(
       changes.push({
         path: `${path}[${index}]`,
         target: { list: path as PlanList, id: id(entry, index), op: "add" },
-        label: `${noun} added — ${nameOf(entry)}`,
-        from: "—",
+        label: `${noun} added: ${nameOf(entry)}`,
+        from: NOT_SET,
         to: nameOf(entry),
         edit_type,
       });
@@ -223,7 +226,7 @@ const compareList = <T extends Record<string, unknown>>(
           field: key,
           op: "set",
         },
-        label: `${noun} ${index + 1} — ${humanise(key)}`,
+        label: `${noun} ${index + 1}: ${humanise(key)}`,
         from: show(previous[key]),
         to: show(entry[key]),
         edit_type,
@@ -236,9 +239,9 @@ const compareList = <T extends Record<string, unknown>>(
     changes.push({
       path: `${path}[${id(entry, index)}]`,
       target: { list: path as PlanList, id: id(entry, index), op: "remove" },
-      label: `${noun} removed — ${nameOf(entry)}`,
+      label: `${noun} removed: ${nameOf(entry)}`,
       from: nameOf(entry),
-      to: "—",
+      to: NOT_SET,
       edit_type,
     });
   });
@@ -286,8 +289,8 @@ export const diffPlans = (
           id: dataset.dataset_id as string,
           op: "add",
         },
-        label: `Research output added — ${dataset.title || "Untitled"}`,
-        from: "—",
+        label: `Research output added: ${dataset.title || "Untitled"}`,
+        from: NOT_SET,
         to: dataset.title || "Untitled",
         edit_type: listEdit(planListPolicy.dataset),
       });
@@ -316,9 +319,9 @@ export const diffPlans = (
         id: dataset.dataset_id as string,
         op: "remove",
       },
-      label: `Research output removed — ${dataset.title || "Untitled"}`,
+      label: `Research output removed: ${dataset.title || "Untitled"}`,
       from: dataset.title || "Untitled",
-      to: "—",
+      to: NOT_SET,
       edit_type: listEdit(planListPolicy.dataset),
     });
   });

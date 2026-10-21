@@ -1,5 +1,13 @@
 import React from "react";
-import { X, Send, Sparkles, Loader2, Eraser } from "lucide-react";
+import {
+  X,
+  Send,
+  Sparkles,
+  Loader2,
+  Eraser,
+  Square,
+  RotateCcw,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ChatProposalCard } from "@/components/dmp/ChatProposalCard";
 import { Input } from "@/components/ui/input";
@@ -14,6 +22,7 @@ import {
 } from "@/store/aiThread";
 import { AiEventRow } from "@/components/dmp/AiEventRow";
 import { useDmpStore } from "@/store/dmpStore";
+import { formatTokensLeft, useQuotaStore } from "@/store/quotaStore";
 import { cn } from "@/utils/cn";
 
 // Kept in step with what the assistant can actually answer, so a suggestion
@@ -31,9 +40,17 @@ interface AiChatPanelProps {
 }
 
 export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
-  const { isThinking, send, clear, acceptProposal, rejectProposal, acceptAll } =
-    useChatStore();
-  const tokensLeft = useDmpStore((s) => s.tokensLeft());
+  const {
+    isThinking,
+    pendingTicket,
+    send,
+    stop,
+    clear,
+    acceptProposal,
+    rejectProposal,
+    acceptAll,
+  } = useChatStore();
+  const tokensLeft = useQuotaStore((s) => s.tokensLeft());
   const hasDraft = useDmpStore((s) =>
     Boolean(s.draft.title || s.draft.description),
   );
@@ -50,6 +67,11 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
     ? (new URLSearchParams(search).get("section") ?? "general")
     : undefined;
   const [value, setValue] = React.useState("");
+  // A reply on its way for another plan is that plan's business; here it
+  // only blocks a second request, which the store can't run alongside.
+  const thinkingHere = useAiThread((s) =>
+    pendingTicket ? s.resolve(pendingTicket) === scopeKey(currentDmpId) : false,
+  );
   const endRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -83,12 +105,10 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
           <Sparkles className="h-4 w-4 text-ai" />
           <div className="min-w-0">
             <h2 className="font-semibold leading-none">Ask AI</h2>
-            {hasDraft && (
-              <p className="mt-1 truncate text-xs text-muted-foreground">
-                {planTitle || "Untitled plan"}
-                {section ? ` · ${section}` : ""}
-              </p>
-            )}
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              {planTitle || "Untitled plan"}
+              {section ? ` · ${section}` : ""}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -116,19 +136,15 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4" aria-live="polite">
-        {entries.length === 0 && !hasDraft && (
-          <p className="text-sm text-muted-foreground">
-            I answer questions about the plan you&rsquo;re working on, but there
-            isn&rsquo;t one yet. Start a DMP and I&rsquo;ll be able to help with
-            it.
-          </p>
-        )}
-
-        {entries.length === 0 && hasDraft && (
+        {/* The panel only exists in the editor, so there's always a plan —
+            even one that's still blank and unsaved. */}
+        {entries.length === 0 && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              I can answer questions about the plan you&rsquo;re editing. I
-              suggest — I never change or approve anything on my own.
+              {hasDraft
+                ? "I can answer questions about the plan you’re editing."
+                : "This plan is still blank. I can explain any field while you fill it in."}{" "}
+              I make suggestions. I never change or approve anything on my own.
             </p>
             <div className="flex flex-col gap-1.5">
               {SUGGESTIONS.map((s) => (
@@ -167,10 +183,26 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
                     "max-w-[85%] whitespace-pre-line rounded-lg px-3 py-2 text-sm",
                     m.kind === "user"
                       ? "bg-primary text-primary-foreground"
-                      : "bg-muted",
+                      : m.failed
+                        ? "border border-destructive/40 bg-destructive/10 text-destructive"
+                        : m.stopped
+                          ? "bg-muted italic text-muted-foreground"
+                          : "bg-muted",
                   )}
                 >
                   {m.text}
+                  {m.failed?.retryable && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2 h-7"
+                      disabled={isThinking}
+                      onClick={() => send(m.failed!.request, { section })}
+                    >
+                      <RotateCcw className="mr-1.5 h-3 w-3" />
+                      Try again
+                    </Button>
+                  )}
                   {m.kind === "assistant" && m.token_count !== undefined && (
                     <span className="mt-1 block text-[11px] text-muted-foreground">
                       {m.token_count.toLocaleString()} tokens
@@ -215,7 +247,9 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
         {isThinking && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Thinking…
+            {thinkingHere
+              ? "Thinking…"
+              : "Finishing a reply for another plan. It'll be saved there."}
           </div>
         )}
         <div ref={endRef} />
@@ -233,26 +267,39 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
             value={value}
             onChange={(e) => setValue(e.target.value)}
             placeholder={
-              hasDraft ? "Ask about this plan…" : "No plan to ask about yet"
+              hasDraft ? "Ask about this plan…" : "Ask about any field…"
             }
             aria-label="Message the AI assistant"
-            disabled={isThinking || !hasDraft}
+            disabled={isThinking}
           />
-          <Button
-            type="submit"
-            variant="ai"
-            size="icon"
-            aria-label="Send message"
-            disabled={isThinking || !hasDraft || !value.trim()}
-          >
-            <Send className="h-4 w-4" />
-          </Button>
+          {isThinking ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              aria-label="Stop. Tokens already used still count."
+              title="Stop. Tokens already used still count."
+              onClick={stop}
+            >
+              <Square className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              variant="ai"
+              size="icon"
+              aria-label="Send message"
+              disabled={!value.trim()}
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
         </div>
         <p className="text-[11px] text-muted-foreground">
           {value.trim()
             ? `This turn costs about ${estimateTurn(value).toLocaleString()} tokens · `
             : ""}
-          {tokensLeft.toLocaleString()} tokens left
+          {formatTokensLeft(tokensLeft)} tokens left
         </p>
       </form>
     </aside>

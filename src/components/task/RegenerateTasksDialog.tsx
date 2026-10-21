@@ -1,10 +1,12 @@
 import React from "react";
+import { formatTokensLeft, useQuotaStore } from "@/store/quotaStore";
+import { reportAiError, syncQuota } from "@/store/aiErrors";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useTaskStore } from "@/store/taskStore";
-import { useDmpStore, type DmpRecord } from "@/store/dmpStore";
+import type { DmpRecord } from "@/store/dmpStore";
 import { recordAiEvent } from "@/store/aiThread";
 import { useToastStore } from "@/store/toastStore";
 import { estimateCost, generateTasks, TASK_DIRECTIONS } from "@/api/aiApi";
@@ -24,8 +26,8 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
   const tasks = useTaskStore((s) => s.tasks);
   const replaceGeneratedTasks = useTaskStore((s) => s.replaceGeneratedTasks);
   const addGeneratedTasks = useTaskStore((s) => s.addGeneratedTasks);
-  const hasTokensFor = useDmpStore((s) => s.hasTokensFor);
-  const tokensLeft = useDmpStore((s) => s.tokensLeft);
+  const hasTokensFor = useQuotaStore((s) => s.hasTokensFor);
+  const tokensLeft = useQuotaStore((s) => s.tokensLeft);
   const toast = useToastStore((s) => s.toast);
 
   const [direction, setDirection] = React.useState("");
@@ -59,7 +61,11 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
   const run = async () => {
     setRunning(true);
     try {
-      const { tasks: proposed, token_count } = await generateTasks({
+      const {
+        tasks: proposed,
+        token_count,
+        usage,
+      } = await generateTasks({
         outputs: outputs.map((d) => ({
           dataset_id: d.dataset_id,
           title: d.title || "Untitled output",
@@ -87,7 +93,6 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
         : replaceGeneratedTasks(plan.dmp_id, rows);
       if (newOnly) addGeneratedTasks(rows);
 
-      useDmpStore.setState((s) => ({ tokenUsed: s.tokenUsed + token_count }));
       recordAiEvent(plan.dmp_id, {
         action: "generate_tasks",
         summary: `Regenerated tasks for ${plan.title}`,
@@ -96,6 +101,7 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
           `${result.added} added, ${result.removed} replaced`,
         ].join(" · "),
         token_count,
+        usage,
       });
       toast({
         title: `${result.added} tasks generated`,
@@ -103,10 +109,11 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
       });
       onOpenChange(false);
       setDirection("");
-    } catch {
-      toast({ title: "Couldn't regenerate tasks", variant: "destructive" });
+    } catch (err) {
+      reportAiError(err, { what: "regenerate tasks", retry: run });
     } finally {
       setRunning(false);
+      syncQuota();
     }
   };
 
@@ -180,8 +187,8 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
                   <span className="font-medium text-foreground">
                     Only outputs without tasks yet
                   </span>{" "}
-                  ({untouchedOutputs.length} of {allOutputs.length}) — adds
-                  tasks for them and leaves the rest of the board alone.
+                  ({untouchedOutputs.length} of {allOutputs.length}). Adds tasks
+                  for them and leaves the rest of the board alone.
                 </span>
               </label>
             )}
@@ -199,12 +206,12 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
                 <span className="font-medium text-foreground">
                   {protectedCount}
                 </span>{" "}
-                kept — anything you wrote yourself or already evidenced is never
-                discarded.
+                kept. Anything you wrote yourself or already backed with
+                evidence is never discarded.
               </p>
               <p className="mt-2">
                 Costs about {cost.toLocaleString()} tokens ·{" "}
-                {tokensLeft().toLocaleString()} left.
+                {formatTokensLeft(tokensLeft())} left.
               </p>
             </div>
 
@@ -233,7 +240,7 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
 
           {!affordable && (
             <p className="mt-2 text-right text-xs text-warn">
-              Not enough tokens left this month.
+              Not enough tokens left.
             </p>
           )}
         </DialogPrimitive.Content>

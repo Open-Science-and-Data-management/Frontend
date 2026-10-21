@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ChatProposalCard } from "@/components/dmp/ChatProposalCard";
 import { useChatStore } from "@/store/chatStore";
+import { formatTokensLeft, useQuotaStore } from "@/store/quotaStore";
 import { useDmpStore } from "@/store/dmpStore";
 import { useProjectStore } from "@/store/projectStore";
 import { NO_ENTRIES, scopeKey, useAiThread } from "@/store/aiThread";
@@ -41,7 +42,8 @@ export const AiAssistDialog: React.FC<{
 
   const currentDmpId = useDmpStore((s) => s.currentDmpId);
   const projectId = useDmpStore((s) => s.draft.project_id);
-  const tokensLeft = useDmpStore((s) => s.tokensLeft());
+  const tokensLeft = useQuotaStore((s) => s.tokensLeft());
+  const stop = useChatStore((s) => s.stop);
   const eligibleBatchTargets = useDmpStore((s) => s.eligibleBatchTargets);
   const { projects, getProposalFile } = useProjectStore();
   const entries = useAiThread(
@@ -209,7 +211,8 @@ export const AiAssistDialog: React.FC<{
 
                 {targets.length === 0 ? (
                   <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                    Nothing to rewrite yet — AI-editable fields are empty.
+                    Nothing to rewrite yet. The fields AI can edit are still
+                    empty.
                   </p>
                 ) : (
                   <div className="space-y-2">
@@ -284,7 +287,7 @@ export const AiAssistDialog: React.FC<{
 
             <p className="text-xs text-muted-foreground">
               Costs about {Math.round(cost).toLocaleString()} tokens ·{" "}
-              {tokensLeft.toLocaleString()} left.
+              {formatTokensLeft(tokensLeft)} left.
             </p>
 
             {result && (
@@ -324,6 +327,16 @@ export const AiAssistDialog: React.FC<{
             <DialogPrimitive.Close asChild>
               <Button variant="outline">Close</Button>
             </DialogPrimitive.Close>
+            {isThinking && (
+              // Tokens the AI already used aren't given back.
+              <Button
+                variant="outline"
+                onClick={stop}
+                title="Stop waiting. Tokens already used still count."
+              >
+                Stop
+              </Button>
+            )}
             <Button
               variant="ai"
               isLoading={isThinking}

@@ -31,7 +31,8 @@ import {
   DataAccess,
   YesNoUnknown,
 } from "@/schemas/shared";
-import { useDmpStore } from "@/store/dmpStore";
+import { regenerateFlag, useDmpStore } from "@/store/dmpStore";
+import type { RegenerateDirection } from "@/api/aiApi";
 import { useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
 import type { Dataset } from "@/types/dataset";
@@ -81,6 +82,8 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
     changeDatasetType,
     changeDatasetDomain,
     removeDataset,
+    regenerateField,
+    regeneratingFields,
   } = useDmpStore();
   const currentDmpId = useDmpStore((s) => s.currentDmpId);
   const cancelTasksForDataset = useTaskStore((s) => s.cancelTasksForDataset);
@@ -94,6 +97,14 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
       undefined,
   );
   const patch = (p: Partial<Dataset>) => updateDataset(id, p);
+  // The output's own free text; FormField shows the control only where the
+  // policy allows a rewrite.
+  const rewrite = (field: "title" | "description", label: string) => ({
+    onRegenerate: (direction: RegenerateDirection) =>
+      regenerateField({ datasetId: id, field }, label, direction),
+    isRegenerating:
+      regeneratingFields[regenerateFlag({ datasetId: id, field })],
+  });
 
   const profile = getDomainProfile(dataset.domain);
 
@@ -232,7 +243,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                   await confirm({
                     title: "Remove this research output?",
                     description: planInForce
-                      ? "Removing an output is a major change, so it goes for sign-off. Its tasks keep running until then, and are cancelled — not deleted — once the change is in force."
+                      ? "Removing an output is a major change, so it goes for sign-off. Its tasks keep running until then. Once the change is in force they're cancelled, not deleted."
                       : "Its distributions and preservation details go with it. Any open tasks for it are cancelled, not deleted, so the trail survives.",
                     confirmLabel: "Remove output",
                   })
@@ -265,6 +276,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
             label="Title"
             policy={datasetFieldPolicy.title}
             required
+            {...rewrite("title", "Output title")}
           >
             <Input
               id={`title-${id}`}
@@ -277,6 +289,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
             name={`description-${id}`}
             label="Description"
             policy={datasetFieldPolicy.description}
+            {...rewrite("description", "Output description")}
           >
             <Textarea
               id={`description-${id}`}

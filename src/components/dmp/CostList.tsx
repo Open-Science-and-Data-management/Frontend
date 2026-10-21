@@ -21,7 +21,8 @@ export const CostList: React.FC = () => {
         <div>
           <h2 className="text-lg font-semibold">Cost</h2>
           <p className="text-xs text-muted-foreground">
-            AI can suggest line items — amounts are always entered by a person.
+            AI can suggest line items, but amounts are always entered by a
+            person.
           </p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={addCost}>

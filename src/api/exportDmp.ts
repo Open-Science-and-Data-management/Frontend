@@ -77,7 +77,7 @@ export const buildExport = (
     return {
       ok: false,
       reason:
-        "Finish the items on the readiness list first — both standards require them.",
+        "Finish the items on the readiness list first. Both standards require them.",
     };
 
   const form = parsed.data;

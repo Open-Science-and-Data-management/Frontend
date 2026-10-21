@@ -73,8 +73,8 @@ export const ChatProposalCard: React.FC<ChatProposalCardProps> = ({
 
       {proposal.needsHumanConfirm && !settled && (
         <p className="mt-2 text-muted-foreground">
-          This field is yours to decide — accepting here is your confirmation,
-          and you can check it in the form.
+          This field is your call. Accepting here counts as your confirmation,
+          and you can check it in the form afterwards.
         </p>
       )}
 

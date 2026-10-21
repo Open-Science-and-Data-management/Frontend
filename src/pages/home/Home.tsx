@@ -23,6 +23,7 @@ import { ProjectProgressList } from "@/components/dashboard/ProjectProgressList"
 import { RecentNotifications } from "@/components/dashboard/RecentNotifications";
 import { useResearcherDashboard } from "@/hooks/useResearcherDashboard";
 import { draftHasContent, useDmpStore } from "@/store/dmpStore";
+import { formatTokensLeft, useQuotaStore } from "@/store/quotaStore";
 import { useCurrentUser } from "@/store/authStore";
 import { useToastStore } from "@/store/toastStore";
 import { toLocalDay } from "@/utils/calendarDate";
@@ -46,7 +47,6 @@ const joinCounts = (parts: [number, string][]) =>
  */
 const Welcome: React.FC = () => {
   const navigate = useNavigate();
-  const { tokenUsed, tokenLimit } = useDmpStore();
   const toast = useToastStore((s) => s.toast);
 
   return (
@@ -56,9 +56,9 @@ const Welcome: React.FC = () => {
           Turn your research proposal into a Data Management Plan
         </h1>
         <p className="mx-auto max-w-xl text-muted-foreground">
-          AI drafts a FAIRer maDMP-compliant plan from your proposal. You
-          review, edit, and confirm every field — AI never approves anything;
-          your committee does.
+          AI drafts a FAIRer maDMP-compliant plan from your proposal. You check
+          and confirm every field, and your committee makes the decision. AI
+          never approves anything.
         </p>
       </div>
 
@@ -82,9 +82,7 @@ const Welcome: React.FC = () => {
 
       <HowItWorksSteps />
 
-      <WhatToPrepare
-        aside={<QuotaIndicator used={tokenUsed} limit={tokenLimit} />}
-      />
+      <WhatToPrepare aside={<QuotaIndicator />} />
     </div>
   );
 };
@@ -97,8 +95,8 @@ const Dashboard: React.FC<{
   const user = useCurrentUser();
   const draft = useDmpStore((s) => s.draft);
   const status = useDmpStore((s) => s.status);
-  const tokensLeft = useDmpStore((s) => s.tokensLeft());
-  const tokenLimit = useDmpStore((s) => s.tokenLimit);
+  const quota = useQuotaStore((s) => s.quota);
+  const tokensLeft = quota ? Math.max(0, quota.limit - quota.used) : null;
 
   const now = new Date();
   // A draft still in the editor is the most likely thing to pick back up.
@@ -115,7 +113,7 @@ const Dashboard: React.FC<{
 
   const summaryText =
     summary.length === 0
-      ? "Nothing urgent — you're all caught up."
+      ? "Nothing urgent. You're all caught up."
       : `You have ${
           summary.length === 1
             ? summary[0]
@@ -199,11 +197,13 @@ const Dashboard: React.FC<{
         />
         <StatCard
           label="AI tokens"
-          value={tokensLeft.toLocaleString()}
+          value={formatTokensLeft(tokensLeft)}
           icon={Sparkles}
           iconClassName="border-ai/30 bg-ai-subtle text-ai"
           to="/upload"
-          footer={`left of ${tokenLimit.toLocaleString()} this month`}
+          footer={
+            quota ? `left of ${quota.limit.toLocaleString()}` : "Loading…"
+          }
         />
       </div>
 

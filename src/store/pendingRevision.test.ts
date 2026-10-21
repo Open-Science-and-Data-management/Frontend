@@ -231,7 +231,7 @@ describe("C — a minor fix while a revision waits", () => {
     }));
     s().approve(approver);
     expect(v(2).dropped_minor_edits?.map((c) => c.label)).toEqual([
-      "Research output 2 — Title",
+      "Research output 2: Title",
     ]);
   });
 });

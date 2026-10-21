@@ -65,9 +65,9 @@ export const ExportPanel: React.FC = () => {
       </h2>
       <p className="mt-0.5 text-xs text-muted-foreground">
         {!canExport
-          ? "Finish the readiness list first — both standards require those fields."
+          ? "Finish the readiness list first. Both standards require those fields."
           : version !== undefined
-            ? `Exports version ${version}, the version in force — JSON that validates against each standard's published schema.`
+            ? `Exports version ${version}, the version in force, as JSON that validates against each standard's published schema.`
             : "JSON files that validate against each standard's published schema."}
       </p>
       {unexported && (

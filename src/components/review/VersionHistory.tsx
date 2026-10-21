@@ -38,7 +38,7 @@ export const VersionHistory: React.FC<{ record: DmpRecord }> = ({ record }) => {
   if (versions.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        Not submitted yet — no versions on record.
+        Not submitted yet, so there are no versions on record.
       </p>
     );
   }

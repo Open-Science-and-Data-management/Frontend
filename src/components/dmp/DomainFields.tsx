@@ -9,7 +9,9 @@ import {
   getDomainProfile,
   validateDomainMetadata,
   type DomainField,
+  type DomainFieldType,
 } from "@/schemas/dataset/domain-profiles";
+import type { FieldKind } from "@/config/field-policy";
 
 interface DomainFieldsProps {
   /** Scopes the generated input ids to one dataset. */
@@ -38,6 +40,21 @@ const asDateInput = (value: unknown) => {
  * the registry shows up in this form without touching this file. The only
  * thing that varies is `field.type`.
  */
+
+/**
+ * A domain field's kind, from its input type. A one-line "text" field holds
+ * a name or code (an organism, a station id), not prose to rephrase; only a
+ * "textarea" is free text.
+ */
+const DOMAIN_FIELD_KIND: Record<DomainFieldType, FieldKind> = {
+  text: "identifier",
+  textarea: "prose",
+  select: "choice",
+  number: "number",
+  date: "date",
+  toggle: "boolean",
+};
+
 export const DomainFields: React.FC<DomainFieldsProps> = ({
   datasetId,
   domain,
@@ -163,7 +180,10 @@ export const DomainFields: React.FC<DomainFieldsProps> = ({
           label={field.label}
           // A profile declares its own policy, so a policy-bearing domain
           // field is human-owned without field-policy knowing it exists.
-          policy={{ permission: field.permission ?? "ai" }}
+          policy={{
+            permission: field.permission ?? "ai",
+            kind: DOMAIN_FIELD_KIND[field.type],
+          }}
           required={field.required}
           hint={field.help}
           error={errors[field.key]}

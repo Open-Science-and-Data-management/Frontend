@@ -83,7 +83,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
         </div>
         <p className="rounded-md bg-muted/60 p-2 text-xs text-muted-foreground">
           {citizen
-            ? "As a citizen researcher you finalize this project's plans yourself — no committee review."
+            ? "As a citizen researcher you finalize this project's plans yourself. There's no committee review."
             : "This project's plans go to your institution's committee for approval."}
         </p>
       </div>

@@ -1,4 +1,12 @@
 import type { DmpDraft } from "@/types/dmp";
+import {
+  AiError,
+  totalTokens,
+  type AiCallOptions,
+  type AiUsage,
+  type ProvenanceMap,
+} from "@/api/aiContract";
+import { serve } from "@/api/mock/aiServer";
 import { MADMP_SCHEMA_VERSION } from "@/schemas/madmp/vocabularies";
 import {
   getDomainProfile,
@@ -25,18 +33,33 @@ export const describeDirection = (direction: RegenerateDirection): string => {
 
 export type Coverage = "low" | "ok";
 
-export interface AnalyzeResult {
+/**
+ * Every AI result carries the provider's usage; `token_count` is its total,
+ * for display only. What the quota was charged is the server's business.
+ */
+interface Metered {
+  usage: AiUsage;
+  token_count: number;
+}
+
+const metered = (usage: AiUsage): Metered => ({
+  usage,
+  token_count: totalTokens(usage),
+});
+
+export interface AnalyzeResult extends Metered {
   draft: DmpDraft;
   coverage: Coverage;
-  token_count: number;
+  /**
+   * Where each drafted value came from. Absent when the analysis can't say —
+   * and then the UI makes no claim either way.
+   */
+  provenance?: ProvenanceMap;
 }
 
-export interface RegenerateResult {
+export interface RegenerateResult extends Metered {
   text: string;
-  token_count: number;
 }
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ~4 characters per token is the usual rough rule for English prose.
 export const tokensIn = (text: string) => Math.ceil(text.length / 4);
@@ -75,9 +98,8 @@ export interface ChatContext {
   tokensLeft: number;
 }
 
-export interface ChatResult {
+export interface ChatResult extends Metered {
   reply: string;
-  token_count: number;
 }
 
 const list = (items: string[]) => items.map((i) => `• ${i}`).join("\n");
@@ -90,7 +112,7 @@ const composeReply = (message: string, ctx: ChatContext): string => {
 
   if (/missing|ready|submit|left to do|incomplete/.test(q)) {
     return ctx.unmet.length === 0
-      ? `${plan} looks complete — every required field is filled and confirmed. You can review and submit it whenever you're ready.`
+      ? `${plan} looks complete. Every required field is filled in and confirmed, so you can review and submit it whenever you're ready.`
       : `${ctx.unmet.length} thing${ctx.unmet.length === 1 ? "" : "s"} still needed before you can submit:\n${list(ctx.unmet)}`;
   }
 
@@ -104,14 +126,14 @@ const composeReply = (message: string, ctx: ChatContext): string => {
 
   if (/output|dataset|software|publication/.test(q)) {
     return ctx.outputs.length === 0
-      ? "There are no research outputs on this plan yet — you'll need at least one to submit."
+      ? "This plan has no research outputs yet. You'll need at least one to submit."
       : `Research outputs:\n${list(ctx.outputs.map((o) => `${o.title} (${o.type}, ${o.access} access)`))}`;
   }
 
   if (/contributor|who|team|contact|author/.test(q)) {
     return ctx.contributors.length === 0
       ? "No contributors have been added yet. Exactly one of them will need to be the primary contact."
-      : `Contributors:\n${list(ctx.contributors.map((c) => `${c.name} — ${c.role}${c.isContact ? " (primary contact)" : ""}`))}`;
+      : `Contributors:\n${list(ctx.contributors.map((c) => `${c.name}, ${c.role}${c.isContact ? " (primary contact)" : ""}`))}`;
   }
 
   if (/cost|budget|money|spend|currency/.test(q)) {
@@ -124,14 +146,14 @@ const composeReply = (message: string, ctx: ChatContext): string => {
   if (/ethic|consent|personal data|sensitive/.test(q)) {
     return ctx.ethicalIssues
       ? "This plan declares that ethical issues apply, so the description must be filled in and confirmed by a person before submitting."
-      : "This plan declares no ethical issues. If that changes, update the Ethical section — it needs a human confirmation either way.";
+      : "This plan declares no ethical issues. If that changes, update the Ethical section. Either way, a person has to confirm it.";
   }
 
   if (/token|quota|cost of ai|budget left/.test(q)) {
-    return `You have ${ctx.tokensLeft.toLocaleString()} AI tokens left this month. Analyzing a proposal is the expensive one; regenerating a single field is cheap.`;
+    return `You have ${ctx.tokensLeft.toLocaleString()} AI tokens left. Analyzing a proposal is the expensive one; regenerating a single field is cheap.`;
   }
 
-  return `I can only answer from what's in this plan. Try asking about: what's missing before submitting, a summary, the research outputs, contributors, cost, ethical issues, or your remaining tokens.\n\nI can suggest wording, but I can't change or approve anything — you confirm every edit, and your committee approves the plan.`;
+  return `I can only answer from what's in this plan. Try asking about: what's missing before submitting, a summary, the research outputs, contributors, cost, ethical issues, or your remaining tokens.\n\nI can suggest wording, but I can't change or approve anything. You confirm every edit, and your committee approves the plan.`;
 };
 
 /** One AI-proposed task, before it is written into the task store. */
@@ -176,9 +198,8 @@ export const TASK_DIRECTIONS = [
   },
 ] as const;
 
-export interface GenerateTasksResult {
+export interface GenerateTasksResult extends Metered {
   tasks: GeneratedTask[];
-  token_count: number;
 }
 
 // Each output gets a task per lifecycle stage it plausibly needs. Derived
@@ -529,12 +550,8 @@ export interface RedraftInput {
  */
 export const redraftFromProposal = async (
   input: RedraftInput,
-): Promise<{
-  fields: { path: string; value: unknown }[];
-  token_count: number;
-}> => {
-  await delay(1200);
-
+  opts: AiCallOptions = {},
+): Promise<Metered & { fields: { path: string; value: unknown }[] }> => {
   const steered = applyAnalysisDirection(CANNED_DRAFT, input.direction);
   const fields: { path: string; value: unknown }[] = [];
 
@@ -565,19 +582,19 @@ export const redraftFromProposal = async (
       });
   });
 
-  const token_count =
-    PROMPT_OVERHEAD.analyze_proposal / 2 +
-    tokensIn(input.direction) +
-    tokensIn(JSON.stringify(fields));
-
-  return { fields, token_count };
+  const usage = await serve({
+    input: PROMPT_OVERHEAD.analyze_proposal / 2 + tokensIn(input.direction),
+    output: tokensIn(JSON.stringify(fields)),
+    ms: 1200,
+    signal: opts.signal,
+  });
+  return { fields, ...metered(usage) };
 };
 
 export const generateTasks = async (
   input: GenerateTasksInput,
+  opts: AiCallOptions = {},
 ): Promise<GenerateTasksResult> => {
-  await delay(1300);
-
   const direction = input.direction?.trim() ?? "";
   const { plan, granular } = planForDirection(direction);
   const steer = direction ? ` Direction: ${direction}.` : "";
@@ -593,7 +610,7 @@ export const generateTasks = async (
             : [s.verb];
 
         return verbs.map((verb) => ({
-          title: `${verb} — ${o.title}`,
+          title: `${verb}: ${o.title}`,
           details: `${verb.toLowerCase()} the ${o.type} output “${o.title}” in line with the approved plan.${steer}`,
           lifecycle_stage: s.stage,
           priority: s.priority,
@@ -602,11 +619,13 @@ export const generateTasks = async (
       }),
   );
 
-  const token_count =
-    PROMPT_OVERHEAD.generate_tasks +
-    tokensIn(direction) +
-    tokensIn(JSON.stringify(tasks));
-  return { tasks, token_count };
+  const usage = await serve({
+    input: PROMPT_OVERHEAD.generate_tasks + tokensIn(direction),
+    output: tokensIn(JSON.stringify(tasks)),
+    ms: 1300,
+    signal: opts.signal,
+  });
+  return { tasks, ...metered(usage) };
 };
 
 export interface GenerateChecklistInput {
@@ -634,14 +653,13 @@ const CHECKLIST_TEMPLATE = [
  */
 export const generateTaskChecklist = async (
   input: GenerateChecklistInput,
-): Promise<{ steps: string[]; token_count: number }> => {
-  await delay(900);
-
+  opts: AiCallOptions = {},
+): Promise<Metered & { steps: string[] }> => {
   const d = (input.direction ?? "").trim().toLowerCase();
   const output = input.outputs[0]?.title;
 
   let steps = CHECKLIST_TEMPLATE.map((s) =>
-    output ? `${s} — ${output}` : `${s} (${input.lifecycleStage})`,
+    output ? `${s} (${output})` : `${s} (${input.lifecycleStage})`,
   );
 
   if (/brief|fewer|short|minimal|simpl/.test(d))
@@ -657,24 +675,28 @@ export const generateTaskChecklist = async (
   if (/quality|check|valid|qa/.test(d))
     steps = [...steps, "Run the quality checks and keep the report"];
 
-  const token_count =
-    PROMPT_OVERHEAD.generate_tasks / 2 +
-    tokensIn(d) +
-    tokensIn(JSON.stringify(steps));
-
-  return { steps, token_count };
+  const usage = await serve({
+    input: PROMPT_OVERHEAD.generate_tasks / 2 + tokensIn(d),
+    output: tokensIn(JSON.stringify(steps)),
+    ms: 900,
+    signal: opts.signal,
+  });
+  return { steps, ...metered(usage) };
 };
 
 export const aiChat = async (
   message: string,
   context: ChatContext,
+  opts: AiCallOptions = {},
 ): Promise<ChatResult> => {
-  await delay(700);
   const reply = composeReply(message, context);
-  return {
-    reply,
-    token_count: PROMPT_OVERHEAD.chat + tokensIn(message) + tokensIn(reply),
-  };
+  const usage = await serve({
+    input: PROMPT_OVERHEAD.chat + tokensIn(message),
+    output: tokensIn(reply),
+    ms: 700,
+    signal: opts.signal,
+  });
+  return { reply, ...metered(usage) };
 };
 
 // Canned draft returned for any uploaded proposal — stands in for a real
@@ -734,18 +756,24 @@ export const aiApi = {
   analyzeProposal: async (
     file: File,
     direction?: string,
+    opts: AiCallOptions = {},
   ): Promise<AnalyzeResult> => {
-    await delay(1400);
-
+    // Refused before the model runs, so nothing is charged.
     if (!file.name.toLowerCase().endsWith(".docx")) {
-      throw new Error(
-        "Couldn't read this file — please upload a .docx proposal.",
-      );
+      throw new AiError({
+        code: "invalid_input",
+        retryable: false,
+        userMessage:
+          "We couldn't read this file. Please upload your proposal as a .docx.",
+      });
     }
     if (file.size === 0) {
-      throw new Error(
-        "This file looks empty or unreadable — try re-exporting it, or upload a different file.",
-      );
+      throw new AiError({
+        code: "invalid_input",
+        retryable: false,
+        userMessage:
+          "This file looks empty or unreadable. Try exporting it again, or upload a different file.",
+      });
     }
 
     // Deterministic stand-in for a real coverage/confidence score. A
@@ -771,22 +799,27 @@ export const aiApi = {
     const draft = applyAnalysisDirection(extracted, steer);
 
     // Input document + the direction + the whole drafted plan coming back.
-    const token_count =
-      PROMPT_OVERHEAD.analyze_proposal +
-      Math.ceil(file.size / 12) +
-      tokensIn(steer) +
-      tokensIn(JSON.stringify(draft));
+    const usage = await serve({
+      input:
+        PROMPT_OVERHEAD.analyze_proposal +
+        Math.ceil(file.size / 12) +
+        tokensIn(steer),
+      output: tokensIn(JSON.stringify(draft)),
+      ms: 1400,
+      signal: opts.signal,
+    });
 
-    return { draft, coverage, token_count };
+    // This stand-in reads nothing from the file, so it can't say where any
+    // value came from — and returns no provenance rather than a made-up one.
+    return { draft, coverage, ...metered(usage) };
   },
 
   regenerateField: async (
     fieldLabel: string,
     currentValue: string,
     direction: RegenerateDirection,
+    opts: AiCallOptions = {},
   ): Promise<RegenerateResult> => {
-    await delay(900);
-
     const base = currentValue || `${fieldLabel} (AI draft)`;
     let text: string;
     switch (direction.kind) {
@@ -816,8 +849,12 @@ export const aiApi = {
         text = base;
     }
 
-    const token_count =
-      PROMPT_OVERHEAD.regenerate_field + tokensIn(base) + tokensIn(text);
-    return { text, token_count };
+    const usage = await serve({
+      input: PROMPT_OVERHEAD.regenerate_field + tokensIn(base),
+      output: tokensIn(text),
+      ms: 900,
+      signal: opts.signal,
+    });
+    return { text, ...metered(usage) };
   },
 };

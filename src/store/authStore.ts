@@ -5,6 +5,7 @@ import { useProjectStore } from "@/store/projectStore";
 import { CURRENT_USER_ID, setSessionUserId } from "@/config/current-user";
 import { hashPassword, makeSalt, sameHash } from "@/config/password";
 import type { Registration } from "@/schemas/user";
+import { MOCK_ACCOUNT_TOKEN_LIMIT } from "@/api/mock/accounts";
 import type { User } from "@/types/user";
 
 /**
@@ -109,7 +110,7 @@ export const useAuthStore = create<AuthState>()(
           // Sign-up only ever makes researchers; committee accounts are
           // granted by the institution, not chosen.
           role: "researcher",
-          ai_token_limit: 4500,
+          ai_token_limit: MOCK_ACCOUNT_TOKEN_LIMIT,
           ai_token_used: 0,
           username,
           account_type: form.account_type,

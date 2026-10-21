@@ -1,16 +1,14 @@
 import * as React from "react";
 import { Lock } from "lucide-react";
 import { FieldStateChip } from "@/components/ui/field-state-chip";
-import {
-  ConfidenceNote,
-  type Confidence,
-} from "@/components/ui/confidence-note";
+import { ConfidenceNote } from "@/components/ui/confidence-note";
+import type { Provenance } from "@/api/aiContract";
 import {
   RegeneratePopover,
   type RegenerateDirection,
 } from "@/components/ui/regenerate-popover";
 import { Tooltip } from "@/components/ui/tooltip";
-import type { FieldPolicy } from "@/config/field-policy";
+import { canRegenerate, type FieldPolicy } from "@/config/field-policy";
 
 export interface FormFieldProps {
   name: string;
@@ -19,8 +17,11 @@ export interface FormFieldProps {
   required?: boolean;
   hint?: string;
   error?: string;
-  /** ai fields */
-  confidence?: Confidence;
+  /**
+   * ai fields: where the value came from, as the analysis reported it. No
+   * provenance, no note — the form never guesses a source.
+   */
+  provenance?: Provenance;
   onRegenerate?: (direction: RegenerateDirection) => void;
   isRegenerating?: boolean;
   /** locked fields */
@@ -44,7 +45,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   required,
   hint,
   error,
-  confidence,
+  provenance,
   onRegenerate,
   isRegenerating,
   isApproved,
@@ -62,7 +63,7 @@ export const FormField: React.FC<FormFieldProps> = ({
     permission === "locked" && editableBeforeApproval && !effectivelyLocked
       ? policy.isMajorTrigger
         ? "You can change this; once approved, a change goes back for sign-off"
-        : "Editable now — locks once the plan is approved"
+        : "Editable until the plan is approved"
       : policy.isMajorTrigger
         ? "Changing this after approval needs sign-off again"
         : undefined;
@@ -79,11 +80,13 @@ export const FormField: React.FC<FormFieldProps> = ({
           {required && <span className="text-destructive">*</span>}
         </label>
         <div className="flex items-center gap-1.5">
-          {permission === "ai" && confidence && (
-            <ConfidenceNote confidence={confidence} />
+          {permission === "ai" && provenance && (
+            <ConfidenceNote provenance={provenance} />
           )}
           {chipState && <FieldStateChip state={chipState} />}
-          {permission === "ai" && onRegenerate && (
+          {/* Free text the AI may write, and nothing else — even if a caller
+              passes a handler for a choice or a date. */}
+          {canRegenerate(policy) && onRegenerate && (
             <RegeneratePopover
               fieldLabel={label}
               onRegenerate={onRegenerate}
@@ -98,9 +101,23 @@ export const FormField: React.FC<FormFieldProps> = ({
         </div>
       </div>
 
-      {children}
+      {/* Locked while AI rewrites it, so typing can't race the reply. (If a
+          value still moves — a chat suggestion accepted meanwhile — the
+          rewrite comes back as an out-of-date suggestion, not an overwrite.) */}
+      <fieldset
+        disabled={isRegenerating}
+        aria-busy={isRegenerating || undefined}
+        className="contents"
+      >
+        {children}
+      </fieldset>
+      {isRegenerating && (
+        <p className="text-xs text-ai" role="status">
+          AI is rewriting this…
+        </p>
+      )}
 
-      {effectiveHint && !error && (
+      {effectiveHint && !error && !isRegenerating && (
         <p className="text-xs text-muted-foreground">{effectiveHint}</p>
       )}
       {error && (

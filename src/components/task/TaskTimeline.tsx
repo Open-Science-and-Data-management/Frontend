@@ -348,7 +348,7 @@ export const TaskTimeline: React.FC<TaskTimelineProps> = ({
       {unscheduled.length > 0 && (
         <div className="rounded-lg border border-dashed p-3">
           <p className="text-xs font-medium text-muted-foreground">
-            Not scheduled ({unscheduled.length}) — open a task to give it dates.
+            Not scheduled ({unscheduled.length}). Open a task to give it dates.
           </p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {unscheduled.map((task) => (

@@ -32,10 +32,10 @@ export const CommitteeHome: React.FC = () => {
 
   const summary =
     data.waitingCount === 0
-      ? "Nothing is waiting for your decision — you're all caught up."
+      ? "Nothing is waiting for your decision. You're all caught up."
       : `${data.waitingCount === 1 ? "1 plan is" : `${data.waitingCount} plans are`} waiting for your decision${
           data.oldest && data.waitingCount > 1
-            ? ` — the oldest has been waiting ${days(data.oldest.daysWaiting)}`
+            ? `. The oldest has been waiting ${days(data.oldest.daysWaiting)}`
             : data.oldest && data.oldest.daysWaiting > 0
               ? `, submitted ${days(data.oldest.daysWaiting)} ago`
               : ""
@@ -103,7 +103,7 @@ export const CommitteeHome: React.FC = () => {
           />
           <StatCard
             label="Longest waiting"
-            value={data.oldest ? days(data.oldest.daysWaiting) : "—"}
+            value={data.oldest ? days(data.oldest.daysWaiting) : "None"}
             icon={Hourglass}
             to={data.oldest ? `/review/${data.oldest.plan.dmp_id}` : "/review"}
             footer={

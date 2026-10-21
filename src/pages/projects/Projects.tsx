@@ -34,7 +34,7 @@ export const Projects: React.FC = () => {
             <h1 className="text-2xl font-bold tracking-tight">Projects</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {reviewer
-                ? "Projects whose plans your committee approves — their plans, files, and progress."
+                ? "Projects whose plans your committee approves, with their plans, files and progress."
                 : "Each project holds one proposal, its DMP, files, and team."}
             </p>
           </div>

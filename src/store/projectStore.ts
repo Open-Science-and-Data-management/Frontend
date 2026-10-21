@@ -4,6 +4,7 @@ import { jsonStorage, storageKey } from "@/store/persist";
 import type { Project, ProjectMember } from "@/types/project";
 import type { FileRecord } from "@/types/file";
 import type { User } from "@/types/user";
+import { MOCK_ACCOUNT_TOKEN_LIMIT } from "@/api/mock/accounts";
 import { fileApi } from "@/api/fileApi";
 import { useToastStore } from "@/store/toastStore";
 import { notify } from "@/store/notificationStore";
@@ -78,7 +79,7 @@ const seedUsers: User[] = [
     surname: "Suwannachot",
     email: "aran@example.edu",
     role: "researcher",
-    ai_token_limit: 4500,
+    ai_token_limit: MOCK_ACCOUNT_TOKEN_LIMIT,
     ai_token_used: 0,
     username: "aran",
     account_type: "institutional",
@@ -95,7 +96,7 @@ const seedUsers: User[] = [
     surname: "Chaiyasit",
     email: "mali@example.edu",
     role: "committee",
-    ai_token_limit: 4500,
+    ai_token_limit: MOCK_ACCOUNT_TOKEN_LIMIT,
     ai_token_used: 0,
     username: "mali",
   },
@@ -391,7 +392,19 @@ export const useProjectStore = create<ProjectState>()(
     {
       name: storageKey("projects"),
       storage: jsonStorage,
-      version: 1,
+      version: 2,
+      // v2: accounts seeded with 4,500 tokens — a figure nothing ever
+      // enforced — take the budget the AI service actually grants.
+      migrate: (persisted, version) => {
+        const state = persisted as Partial<ProjectState> | undefined;
+        if (version < 2 && state?.users)
+          state.users = state.users.map((u) =>
+            u.ai_token_limit === 4500
+              ? { ...u, ai_token_limit: MOCK_ACCOUNT_TOKEN_LIMIT }
+              : u,
+          );
+        return state as never;
+      },
       partialize: (state) => ({
         projects: state.projects,
         files: state.files,

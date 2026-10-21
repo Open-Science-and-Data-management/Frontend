@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { jsonStorage, storageKey } from "@/store/persist";
 import type { ChatProposal, ChatRejection } from "@/store/chatTools";
+import type { AiUsage } from "@/api/aiContract";
 
 export type AiAction =
   | "analyze_proposal"
@@ -17,6 +18,8 @@ export interface ThreadEvent {
   summary: string;
   detail?: string;
   token_count: number;
+  /** The provider's split, when the call got far enough to report one. */
+  usage?: AiUsage;
   at: Date;
 }
 
@@ -28,6 +31,21 @@ export interface ThreadTurn {
   at: Date;
   proposals?: ChatProposal[];
   rejections?: ChatRejection[];
+  /** The reply never came: why, and whether asking again could help. */
+  failed?: { retryable: boolean; request: string };
+  /** The person stopped waiting for this reply. */
+  stopped?: boolean;
+}
+
+/**
+ * Where an AI request's reply belongs, taken when the request is made. A
+ * request made before any plan existed follows that conversation into the
+ * plan it was adopted by, so a late reply doesn't land in an emptied scope.
+ */
+export interface ThreadTicket {
+  scope: string;
+  /** How many adoptions out of the unscoped thread had happened. */
+  epoch: number;
 }
 
 export type ThreadEntry = ThreadEvent | ThreadTurn;
@@ -51,6 +69,11 @@ interface AiThreadState {
     update: (entry: ThreadEntry) => ThreadEntry,
   ) => void;
   adopt: (from: string, to: string) => void;
+  /** Plans the unscoped thread was adopted into, oldest first. Not persisted. */
+  adoptions: string[];
+  ticket: (dmpId: string | null | undefined) => ThreadTicket;
+  /** The scope a reply to this ticket belongs in now. */
+  resolve: (ticket: ThreadTicket) => string;
   clear: (dmpId: string | null | undefined) => void;
   entriesFor: (dmpId: string | null | undefined) => ThreadEntry[];
 }
@@ -86,17 +109,33 @@ export const useAiThread = create<AiThreadState>()(
 
       adopt: (from, to) =>
         set((state) => {
+          if (from === to) return state;
+          // Recorded even when nothing is carried yet: a request still in
+          // flight from the unscoped thread belongs to `to` from now on.
+          const adoptions =
+            from === UNSCOPED ? [...state.adoptions, to] : state.adoptions;
           const carried = state.threads[from] ?? [];
-          if (carried.length === 0 || from === to) return state;
+          if (carried.length === 0) return { adoptions };
 
           const { [from]: _dropped, ...rest } = state.threads;
           return {
+            adoptions,
             threads: {
               ...rest,
               [to]: capped([...carried, ...(state.threads[to] ?? [])]),
             },
           };
         }),
+
+      adoptions: [],
+
+      ticket: (dmpId) => ({
+        scope: scopeKey(dmpId),
+        epoch: get().adoptions.length,
+      }),
+
+      resolve: ({ scope, epoch }) =>
+        scope === UNSCOPED ? (get().adoptions[epoch] ?? UNSCOPED) : scope,
 
       clear: (dmpId) =>
         set((state) => ({
@@ -121,6 +160,7 @@ export const recordAiEvent = (
     summary: string;
     detail?: string;
     token_count: number;
+    usage?: AiUsage;
   },
 ) =>
   useAiThread.getState().append(dmpId, {

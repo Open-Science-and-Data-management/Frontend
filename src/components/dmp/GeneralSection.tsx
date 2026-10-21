@@ -25,20 +25,15 @@ const LANGUAGE_CHOICES = LANGUAGE_CODES.flatMap((code) => {
   return label ? [{ code, label }] : [];
 }).sort((a, b) => a.label.localeCompare(b.label));
 
-const confidenceFor = (
-  field: "title" | "description" | "language",
-  aiGenerated: boolean,
-) => {
-  if (!aiGenerated) return undefined;
-  return field === "language" ? ("guessed" as const) : ("grounded" as const);
-};
-
 export const GeneralSection: React.FC = () => {
-  const { draft, aiGenerated, regeneratingFields, setField, regenerateField } =
+  const { draft, regeneratingFields, setField, regenerateField } =
     useDmpStore();
+  // Only what the analysis reported. Absent, the fields make no claim about
+  // where their values came from.
+  const provenance = useDmpStore((s) => s.provenance);
 
   const runRegenerate =
-    (key: "title" | "description" | "language", label: string) =>
+    (key: "title" | "description", label: string) =>
     (direction: RegenerateDirection) =>
       regenerateField(key, label, direction);
 
@@ -49,7 +44,7 @@ export const GeneralSection: React.FC = () => {
         label="Title"
         policy={dmpFieldPolicy.title}
         required
-        confidence={confidenceFor("title", aiGenerated)}
+        provenance={provenance?.title}
         onRegenerate={runRegenerate("title", "Title")}
         isRegenerating={regeneratingFields.title}
       >
@@ -66,7 +61,7 @@ export const GeneralSection: React.FC = () => {
         label="Description"
         policy={dmpFieldPolicy.description}
         required
-        confidence={confidenceFor("description", aiGenerated)}
+        provenance={provenance?.description}
         onRegenerate={runRegenerate("description", "Description")}
         isRegenerating={regeneratingFields.description}
       >
@@ -84,9 +79,7 @@ export const GeneralSection: React.FC = () => {
         label="Language"
         policy={dmpFieldPolicy.language}
         required
-        confidence={confidenceFor("language", aiGenerated)}
-        onRegenerate={runRegenerate("language", "Language")}
-        isRegenerating={regeneratingFields.language}
+        provenance={provenance?.language}
         hint="The language the plan itself is written in"
       >
         <Select

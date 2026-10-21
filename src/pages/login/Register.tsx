@@ -231,7 +231,7 @@ export const Register: React.FC = () => {
               <AuthField id="reg-title" label="Title" optional>
                 {(field) => (
                   <Select {...field} {...bind("title")}>
-                    <option value="">—</option>
+                    <option value="">None</option>
                     {TITLES.map((t) => (
                       <option key={t} value={t}>
                         {t}

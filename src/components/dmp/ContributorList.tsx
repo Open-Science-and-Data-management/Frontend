@@ -263,7 +263,7 @@ export const ContributorList: React.FC = () => {
 
       {contactCount === 1 && !contributors.find((c) => c.is_contact)?.email && (
         <p className="text-xs text-warn" role="alert">
-          The primary contact needs an email — it's how your committee reaches
+          The primary contact needs an email. It's how your committee reaches
           you, and it's exported as the plan's contact address.
         </p>
       )}
@@ -324,7 +324,7 @@ const LinkedAccount: React.FC<{
           className="inline-flex items-center gap-1 rounded text-primary underline-offset-2 hover:underline"
         >
           <Link2 className="h-3.5 w-3.5" />
-          Link to {userFullName(suggestion)} — same email
+          Link to {userFullName(suggestion)} (same email)
         </button>
       ) : userId ? (
         "This contributor is the person with that account."

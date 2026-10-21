@@ -109,7 +109,7 @@ describe("linking an account", () => {
   it("is a minor edit, labelled for people", () => {
     const changes = diffPlans(plan(), plan("u-aran"));
     expect(changes.map((c) => [c.label, c.to])).toEqual([
-      ["Contributor 1 — Linked account", "u-aran"],
+      ["Contributor 1: Linked account", "u-aran"],
     ]);
     expect(editTypeOf(changes)).toBe("minor");
   });

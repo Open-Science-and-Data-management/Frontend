@@ -258,7 +258,7 @@ export const CreateDmp: React.FC = () => {
             ? "The plan in force, its tasks and evidence stay as they are. Only edits you haven't saved or submitted are dropped."
             : awaitingDecision
               ? "The plan stays with your committee exactly as you submitted it. Only edits made since then are dropped."
-              : "It's archived, not deleted — you can bring it back from My DMPs."
+              : "It's archived, not deleted. You can bring it back from My DMPs."
         }
         confirmLabel={
           planIsActive || awaitingDecision ? "Discard changes" : "Archive draft"

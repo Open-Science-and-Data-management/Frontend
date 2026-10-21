@@ -28,7 +28,7 @@ export const PROTECTION_LEVEL_HINTS: Record<ProtectionLevel, string> = {
   "Protected A": "Release could cause injury to a person or organisation.",
   "Protected B": "Release could cause serious injury.",
   "Protected C": "Release could cause extremely grave injury.",
-  other: "Your institution uses its own scheme — name it and give the level.",
+  other: "Your institution uses its own scheme. Name it and give the level.",
 };
 
 export const SECURITY_CLASSIFICATION_LEVELS = [

@@ -1,14 +1,36 @@
 import * as React from "react";
 import { Sparkles } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
-import { useDmpStore } from "@/store/dmpStore";
+import { useQuotaStore } from "@/store/quotaStore";
 import { cn } from "@/utils/cn";
 
 interface QuotaIndicatorProps {
-  used: number;
-  limit: number;
   className?: string;
 }
+
+/** The budget as the server last reported it, or null while it hasn't. */
+const useQuota = () => {
+  const quota = useQuotaStore((s) => s.quota);
+  const status = useQuotaStore((s) => s.status);
+  return { quota, status };
+};
+
+/** Shown in place of a number the server hasn't given yet. */
+const Pending: React.FC<{ status: string; className?: string }> = ({
+  status,
+  className,
+}) => (
+  <div
+    className={cn(
+      "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium text-muted-foreground",
+      className,
+    )}
+    data-testid="quota-left"
+  >
+    <Sparkles className="h-3.5 w-3.5" />
+    {status === "error" ? "AI budget unavailable" : "Loading AI budget…"}
+  </div>
+);
 
 const quotaState = (used: number, limit: number) => {
   const left = Math.max(0, limit - used);
@@ -20,18 +42,21 @@ const quotaState = (used: number, limit: number) => {
   };
 };
 
-const tooltipText = (used: number, limit: number) =>
-  `${used.toLocaleString()} of ${limit.toLocaleString()} tokens used · resets on the 1st of each month`;
+// A reset date only when the server has one: the policy isn't settled, and
+// promising "the 1st" would be making it up.
+const tooltipText = (used: number, limit: number, resetsAt: Date | null) =>
+  `${used.toLocaleString()} of ${limit.toLocaleString()} tokens used${resetsAt ? ` · resets ${resetsAt.toLocaleDateString()}` : ""}`;
 
 export const QuotaIndicator: React.FC<QuotaIndicatorProps> = ({
-  used,
-  limit,
   className,
 }) => {
+  const { quota, status } = useQuota();
+  if (!quota) return <Pending status={status} className={className} />;
+  const { used, limit, resets_at } = quota;
   const { left, isEmpty, isLow } = quotaState(used, limit);
 
   return (
-    <Tooltip content={tooltipText(used, limit)}>
+    <Tooltip content={tooltipText(used, limit, resets_at)}>
       <div
         className={cn(
           "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium",
@@ -54,22 +79,27 @@ export const QuotaIndicator: React.FC<QuotaIndicatorProps> = ({
  * an AI run just cost — the moment the spend actually matters to the user.
  */
 export const QuotaBar: React.FC<{ className?: string }> = ({ className }) => {
-  const used = useDmpStore((s) => s.tokenUsed);
-  const limit = useDmpStore((s) => s.tokenLimit);
+  const { quota, status } = useQuota();
+  const used = quota?.used ?? 0;
+  const limit = quota?.limit ?? 0;
   const { left, pct, isEmpty, isLow } = quotaState(used, limit);
 
   const [spent, setSpent] = React.useState<number | null>(null);
-  const previous = React.useRef(used);
+  const previous = React.useRef<number | null>(null);
 
   React.useEffect(() => {
-    const delta = used - previous.current;
+    if (!quota) return;
+    // The first answer from the server is a reading, not a spend.
+    const delta = previous.current === null ? 0 : used - previous.current;
     previous.current = used;
     if (delta <= 0) return;
 
     setSpent(delta);
     const timer = setTimeout(() => setSpent(null), 2600);
     return () => clearTimeout(timer);
-  }, [used]);
+  }, [quota, used]);
+
+  if (!quota) return <Pending status={status} className={className} />;
 
   const tone = isEmpty
     ? "text-destructive"
@@ -78,7 +108,7 @@ export const QuotaBar: React.FC<{ className?: string }> = ({ className }) => {
       : "text-muted-foreground";
 
   return (
-    <Tooltip content={tooltipText(used, limit)}>
+    <Tooltip content={tooltipText(used, limit, quota.resets_at)}>
       <div
         className={cn(
           "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 transition-colors",

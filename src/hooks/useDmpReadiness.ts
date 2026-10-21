@@ -159,7 +159,13 @@ const labelForPath = (path: (string | number)[]): string => {
     );
   });
 
-  return parts.length > 0 ? parts.join(" — ") : "Plan details";
+  if (parts.length === 0) return "Plan details";
+  if (parts.length === 1) return parts[0];
+  // "Research output 1, distribution 1: Licence": where, then what.
+  const [field] = parts.slice(-1);
+  const [first, ...rest] = parts.slice(0, -1);
+  const where = [first, ...rest.map((p) => p.toLowerCase())].join(", ");
+  return `${where}: ${field}`;
 };
 
 const sectionForPath = (path: (string | number)[]): DmpSection =>

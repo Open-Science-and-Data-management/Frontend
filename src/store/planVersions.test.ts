@@ -124,7 +124,7 @@ describe("editing a plan that is already in force", () => {
     const changes = state().pendingChanges();
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({
-      label: "Research output 1 — Access",
+      label: "Research output 1: Access",
       from: "shared",
       to: "open",
       edit_type: "major",
@@ -298,7 +298,7 @@ describe("the agreed split", () => {
   ])("a research output's %s is major", (label, patch) => {
     edit({ dataset: [output(patch as Partial<Dataset>)] });
     expect(state().pendingChanges()[0]).toMatchObject({
-      label: `Research output 1 — ${label}`,
+      label: `Research output 1: ${label}`,
       edit_type: "major",
     });
   });
@@ -325,7 +325,7 @@ describe("the agreed split", () => {
     const changes = state().pendingChanges();
     expect(changes.length).toBeGreaterThan(0);
     expect(changes.every((c) => c.edit_type === "minor")).toBe(true);
-    expect(changes.map((c) => c.label)).toContain("Contributor added — Mali");
+    expect(changes.map((c) => c.label)).toContain("Contributor added: Mali");
 
     state().saveMinorEdits();
     expect(record().versions).toHaveLength(1);
@@ -389,7 +389,7 @@ it("names a nested field the way the readiness list does", () => {
   expect(state().pendingChanges()).toMatchObject([
     {
       path: "dataset[1].protection_level",
-      label: "Research output 2 — Protection level",
+      label: "Research output 2: Protection level",
       from: "Standard",
       to: "Protected B",
       edit_type: "major",
@@ -447,7 +447,7 @@ describe("restoring a version", () => {
     expect(state().restoreVersion(2)).toBe(true);
     expect(state().restoredFrom).toBe(2);
     expect(state().pendingChanges()[0]).toMatchObject({
-      label: "Research output 1 — Access",
+      label: "Research output 1: Access",
       edit_type: "major",
     });
     state().submitRevision();
