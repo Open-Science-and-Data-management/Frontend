@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/utils/cn";
 import type { RegenerateDirection } from "@/api/aiApi";
+import type { RegenerateMode } from "@/config/field-policy";
 
 export type { RegenerateDirection };
 
@@ -12,13 +13,17 @@ interface RegeneratePopoverProps {
   onRegenerate: (direction: RegenerateDirection) => void;
   disabled?: boolean;
   fieldLabel: string;
+  /** `suggest`: the researcher's own text, so wording changes only. */
+  mode?: RegenerateMode;
 }
 
 export const RegeneratePopover: React.FC<RegeneratePopoverProps> = ({
   onRegenerate,
   disabled,
   fieldLabel,
+  mode = "apply",
 }) => {
+  const polishOnly = mode === "suggest";
   const [open, setOpen] = React.useState(false);
   const [customText, setCustomText] = React.useState("");
 
@@ -36,7 +41,11 @@ export const RegeneratePopover: React.FC<RegeneratePopoverProps> = ({
           variant="ghost"
           size="icon"
           disabled={disabled}
-          aria-label={`Regenerate ${fieldLabel} with AI`}
+          aria-label={
+            polishOnly
+              ? `Polish the wording of ${fieldLabel} with AI`
+              : `Regenerate ${fieldLabel} with AI`
+          }
           className="h-7 w-7 text-ai hover:bg-ai-subtle hover:text-ai"
         >
           <RefreshCw className="h-3.5 w-3.5" />
@@ -51,7 +60,7 @@ export const RegeneratePopover: React.FC<RegeneratePopoverProps> = ({
           )}
         >
           <p className="mb-2 text-xs font-medium text-muted-foreground">
-            Regenerate &ldquo;{fieldLabel}&rdquo;
+            {polishOnly ? "Polish" : "Regenerate"} &ldquo;{fieldLabel}&rdquo;
           </p>
           <div className="flex flex-col gap-1">
             <Button
@@ -73,26 +82,38 @@ export const RegeneratePopover: React.FC<RegeneratePopoverProps> = ({
               More formal
             </Button>
           </div>
-          <form
-            className="mt-2 flex gap-1 border-t pt-2"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (customText.trim()) {
-                run({ kind: "custom", detail: customText.trim() });
-              }
-            }}
-          >
-            <Input
-              value={customText}
-              onChange={(e) => setCustomText(e.target.value)}
-              placeholder="Emphasize X, or type your own…"
-              className="h-8 text-xs"
-              aria-label="Custom regenerate instruction"
-            />
-            <Button type="submit" variant="ai" size="sm" disabled={!customText.trim()}>
-              Go
-            </Button>
-          </form>
+          {polishOnly ? (
+            <p className="mt-2 border-t pt-2 text-xs text-muted-foreground">
+              Rewords what you wrote without adding to it. Nothing changes until
+              you accept it.
+            </p>
+          ) : (
+            <form
+              className="mt-2 flex gap-1 border-t pt-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (customText.trim()) {
+                  run({ kind: "custom", detail: customText.trim() });
+                }
+              }}
+            >
+              <Input
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                placeholder="Emphasize X, or type your own…"
+                className="h-8 text-xs"
+                aria-label="Custom regenerate instruction"
+              />
+              <Button
+                type="submit"
+                variant="ai"
+                size="sm"
+                disabled={!customText.trim()}
+              >
+                Go
+              </Button>
+            </form>
+          )}
         </PopoverPrimitive.Content>
       </PopoverPrimitive.Portal>
     </PopoverPrimitive.Root>

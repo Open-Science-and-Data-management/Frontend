@@ -184,9 +184,11 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
           `${found.label}: ${fieldHelp(found)}${
             found.policy.permission === "locked"
               ? " This field is locked, so it can't be changed here."
-              : found.policy.permission === "human"
-                ? " This one is yours to decide; I can suggest, never set it."
-                : ""
+              : found.policy.noAiAssist
+                ? " Only you write this one. I don't draft or reword it."
+                : found.policy.permission === "human"
+                  ? " This one is yours to decide; I can suggest, never set it."
+                  : ""
           }`,
         ],
       };
@@ -210,6 +212,21 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
               reason: target.policy.editableBeforeApproval
                 ? "This field is locked, so I can't change it. You can edit it yourself in the form; after approval, a change to it goes back for sign-off."
                 : "This field is locked by policy, so I can't propose a change to it.",
+            },
+          ],
+        };
+      }
+
+      // Some text has to come from people, not from a model, even as a
+      // suggestion.
+      if (target.policy.noAiAssist) {
+        return {
+          ...empty,
+          rejections: [
+            {
+              label: target.label,
+              reason:
+                "Only you write this field, so I won't suggest text for it.",
             },
           ],
         };

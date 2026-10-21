@@ -97,14 +97,26 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
       undefined,
   );
   const patch = (p: Partial<Dataset>) => updateDataset(id, p);
-  // The output's own free text; FormField shows the control only where the
-  // policy allows a rewrite.
-  const rewrite = (field: "title" | "description", label: string) => ({
-    onRegenerate: (direction: RegenerateDirection) =>
-      regenerateField({ datasetId: id, field }, label, direction),
-    isRegenerating:
-      regeneratingFields[regenerateFlag({ datasetId: id, field })],
-  });
+  // The output's free text; FormField shows the control only where the
+  // policy allows a rewrite, and for the researcher's own text, only once
+  // there's something to polish.
+  const rewrite = (
+    field:
+      "title" | "description" | "personal_data_plan" | "preservation.statement",
+    label: string,
+  ) => {
+    const value =
+      field === "preservation.statement"
+        ? dataset.preservation?.statement
+        : dataset[field];
+    return {
+      onRegenerate: (direction: RegenerateDirection) =>
+        regenerateField({ datasetId: id, field }, label, direction),
+      isRegenerating:
+        regeneratingFields[regenerateFlag({ datasetId: id, field })],
+      hasText: Boolean(value?.trim()),
+    };
+  };
 
   const profile = getDomainProfile(dataset.domain);
 
@@ -419,6 +431,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
             name={`personal-plan-${id}`}
             label="Personal data handling plan"
             policy={datasetFieldPolicy.personal_data_plan}
+            {...rewrite("personal_data_plan", "Personal data handling plan")}
           >
             <Textarea
               id={`personal-plan-${id}`}
@@ -651,6 +664,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               name={`statement-${id}`}
               label="Preservation statement"
               policy={datasetFieldPolicy["preservation.statement"]}
+              {...rewrite("preservation.statement", "Preservation statement")}
             >
               <div className="space-y-2">
                 <Textarea

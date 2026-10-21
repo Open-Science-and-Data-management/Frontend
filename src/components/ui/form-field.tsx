@@ -8,7 +8,7 @@ import {
   type RegenerateDirection,
 } from "@/components/ui/regenerate-popover";
 import { Tooltip } from "@/components/ui/tooltip";
-import { canRegenerate, type FieldPolicy } from "@/config/field-policy";
+import { regenerateMode, type FieldPolicy } from "@/config/field-policy";
 
 export interface FormFieldProps {
   name: string;
@@ -24,6 +24,11 @@ export interface FormFieldProps {
   provenance?: Provenance;
   onRegenerate?: (direction: RegenerateDirection) => void;
   isRegenerating?: boolean;
+  /**
+   * human prose: whether the researcher has written anything yet. The AI
+   * only polishes their words, so a blank field gets no control.
+   */
+  hasText?: boolean;
   /** locked fields */
   isApproved?: boolean;
   lockedReason?: string;
@@ -48,6 +53,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   provenance,
   onRegenerate,
   isRegenerating,
+  hasText,
   isApproved,
   lockedReason,
   children,
@@ -68,6 +74,9 @@ export const FormField: React.FC<FormFieldProps> = ({
         ? "Changing this after approval needs sign-off again"
         : undefined;
   const effectiveHint = hint ?? autoHint;
+  const mode = regenerateMode(policy);
+  const offerRegenerate =
+    mode !== null && onRegenerate && (mode === "apply" || hasText);
 
   return (
     <div className="space-y-1.5">
@@ -84,11 +93,12 @@ export const FormField: React.FC<FormFieldProps> = ({
             <ConfidenceNote provenance={provenance} />
           )}
           {chipState && <FieldStateChip state={chipState} />}
-          {/* Free text the AI may write, and nothing else — even if a caller
-              passes a handler for a choice or a date. */}
-          {canRegenerate(policy) && onRegenerate && (
+          {/* Free text only, even if a caller passes a handler for a choice
+              or a date. */}
+          {offerRegenerate && (
             <RegeneratePopover
               fieldLabel={label}
+              mode={mode}
               onRegenerate={onRegenerate}
               disabled={isRegenerating}
             />
@@ -113,12 +123,19 @@ export const FormField: React.FC<FormFieldProps> = ({
       </fieldset>
       {isRegenerating && (
         <p className="text-xs text-ai" role="status">
-          AI is rewriting this…
+          {mode === "suggest"
+            ? "AI is polishing your wording…"
+            : "AI is rewriting this…"}
         </p>
       )}
 
       {effectiveHint && !error && !isRegenerating && (
         <p className="text-xs text-muted-foreground">{effectiveHint}</p>
+      )}
+      {policy.noAiAssist && (
+        <p className="text-xs text-muted-foreground">
+          Only you write this. The assistant won't draft or reword it.
+        </p>
       )}
       {error && (
         <p className="text-xs text-destructive" role="alert">

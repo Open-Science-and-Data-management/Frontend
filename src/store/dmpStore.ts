@@ -12,6 +12,7 @@ import {
   aiApi,
   describeDirection,
   estimateCost,
+  isWordingOnly,
   type Coverage,
   type RegenerateDirection,
 } from "@/api/aiApi";
@@ -25,13 +26,14 @@ import {
   UNSCOPED,
 } from "@/store/aiThread";
 import { useQuotaStore, formatTokensLeft } from "@/store/quotaStore";
+import { useAssistantStore } from "@/store/assistantStore";
 import { reportAiError, syncQuota } from "@/store/aiErrors";
 import { flagDrift, runToolCall } from "@/store/chatTools";
 import { notify } from "@/store/notificationStore";
 import type { CreateNotification } from "@/types/notification";
 import { actingUserId } from "@/config/current-user";
 import {
-  canRegenerate,
+  regenerateMode,
   dmpFieldPolicy,
   datasetFieldPolicy,
   type FieldPolicy,
@@ -57,7 +59,7 @@ export interface BatchTarget {
   id: string;
   scope: "dmp" | "dataset";
   datasetId?: string;
-  /** A free-text field the AI may write (see `canRegenerate`). */
+  /** A free-text field the AI writes outright (`regenerateMode` "apply"). */
   key: string;
   label: string;
   group: string;
@@ -589,7 +591,10 @@ interface DmpDraftState {
     opened: boolean;
   }>;
   startManual: (projectId?: string) => void;
-  /** Rewrites one free-text field; anything else is refused. */
+  /**
+   * Rewrites one free-text field; anything else is refused. The AI's own
+   * text is written in; the researcher's comes back as a suggestion.
+   */
   regenerateField: (
     target: RegenerateTarget,
     label: string,
@@ -626,7 +631,8 @@ const batchLabel = (key: string) =>
 
 /** A plan field, or a field of one research output (by id, not position). */
 export type RegenerateTarget =
-  keyof DmpDraft | { datasetId: string; field: keyof Dataset };
+  | keyof DmpDraft
+  | { datasetId: string; field: keyof Dataset | "preservation.statement" };
 
 /** The key `regeneratingFields` uses, so a field can show it's busy. */
 export const regenerateFlag = (target: RegenerateTarget) =>
@@ -646,19 +652,32 @@ const fieldAccess = (target: RegenerateTarget) => {
         store.setField(target, value as never),
     };
   const { datasetId, field } = target;
+  const find = (draft: DmpDraft) =>
+    (draft.dataset ?? []).find((d) => d.dataset_id === datasetId);
   const indexIn = (draft: DmpDraft) =>
     (draft.dataset ?? []).findIndex((d) => d.dataset_id === datasetId);
+  const isStatement = field === "preservation.statement";
   return {
     flag: regenerateFlag(target),
-    policy: datasetFieldPolicy[String(field)],
+    policy: datasetFieldPolicy[field],
     read: (draft: DmpDraft) =>
-      (draft.dataset ?? []).find((d) => d.dataset_id === datasetId)?.[field],
+      isStatement ? find(draft)?.preservation?.statement : find(draft)?.[field],
     path: (draft: DmpDraft): string | null => {
       const i = indexIn(draft);
-      return i < 0 ? null : `dataset[${i}].${String(field)}`;
+      return i < 0 ? null : `dataset[${i}].${field}`;
     },
     write: (store: DmpDraftState, value: unknown) =>
-      store.updateDataset(datasetId, { [field]: value } as Partial<Dataset>),
+      store.updateDataset(
+        datasetId,
+        (isStatement
+          ? {
+              preservation: {
+                ...find(store.draft)?.preservation,
+                statement: value,
+              },
+            }
+          : { [field]: value }) as Partial<Dataset>,
+      ),
   };
 };
 
@@ -1652,9 +1671,10 @@ export const useDmpStore = create<DmpDraftState>()(
 
         regenerateField: async (target, label, direction) => {
           const field = fieldAccess(target);
-          // Free text the AI may write, and nothing else. The form only
-          // offers the control on such fields; this holds for every caller.
-          if (!canRegenerate(field.policy)) return;
+          // Free text, and nothing else. The form only offers the control on
+          // such fields; this holds for every caller.
+          const mode = regenerateMode(field.policy);
+          if (!mode) return;
           const fieldName = field.flag;
           // The plan, and the plan as it was, that this rewrite was asked
           // for. A reply can take seconds; by then the person may be on
@@ -1666,6 +1686,14 @@ export const useDmpStore = create<DmpDraftState>()(
           const previousValue = field.read(snapshot);
           const currentText =
             typeof previousValue === "string" ? previousValue : "";
+          // The researcher's own words get polished, never written for them:
+          // nothing to start from, or a direction that adds content, and
+          // there's no call at all.
+          if (
+            mode === "suggest" &&
+            (!currentText.trim() || !isWordingOnly(direction))
+          )
+            return;
           const estimated = estimateCost.regenerateField(currentText);
 
           const quota = useQuotaStore.getState();
@@ -1690,15 +1718,37 @@ export const useDmpStore = create<DmpDraftState>()(
               label,
               currentText,
               direction,
+              mode,
             );
 
             const scope = useAiThread.getState().resolve(ticket);
             const stillOpen = scope === scopeKey(get().currentDmpId);
             const unchanged =
               stillOpen && sameValue(field.read(get().draft), previousValue);
-            const summary = `Rewrote ${label} (${describeDirection(direction)})`;
+            const summary =
+              mode === "suggest"
+                ? `Suggested a polish of ${label} (${describeDirection(direction)})`
+                : `Rewrote ${label} (${describeDirection(direction)})`;
 
-            if (!unchanged) {
+            if (
+              mode === "suggest" &&
+              unchanged &&
+              sameValue(text, previousValue)
+            ) {
+              recordAiEvent(scope, {
+                action: "regenerate_field",
+                summary: `${summary}: nothing to change`,
+                token_count,
+                usage,
+              });
+              useToastStore.getState().toast({
+                title: "Nothing to polish",
+                description: `${label} already reads that way, so it's unchanged.`,
+              });
+              return;
+            }
+
+            if (mode === "suggest" || !unchanged) {
               // Built against the plan as it was asked about, then checked
               // against the plan as it is: stale if the field moved, pending
               // if the person simply went elsewhere.
@@ -1713,7 +1763,10 @@ export const useDmpStore = create<DmpDraftState>()(
               useAiThread.getState().append(scope, {
                 id: makeId(),
                 kind: "assistant",
-                text: `${summary}. It wasn't applied. Review it here.`,
+                text:
+                  mode === "suggest" && unchanged
+                    ? `${summary}. Your text stays as it is unless you accept this.`
+                    : `${summary}. It wasn't applied. Review it here.`,
                 token_count,
                 at: new Date(),
                 proposals: kept.length ? kept : undefined,
@@ -1725,6 +1778,14 @@ export const useDmpStore = create<DmpDraftState>()(
                 token_count,
                 usage,
               });
+              if (mode === "suggest" && unchanged) {
+                useAssistantStore.getState().setOpen(true);
+                useToastStore.getState().toast({
+                  title: "Suggestion ready",
+                  description: `Your ${label.toLowerCase()} is unchanged. The polished version is in the assistant panel to accept or reject.`,
+                });
+                return;
+              }
               useToastStore.getState().toast({
                 title: `${label} wasn't changed`,
                 description: stillOpen
@@ -1800,10 +1861,12 @@ export const useDmpStore = create<DmpDraftState>()(
         eligibleBatchTargets: () => {
           const { draft } = get();
           const targets: BatchTarget[] = [];
-          // The same rule as the per-field control: free text the AI may write.
+          // The per-field rule, "apply" side only: the researcher's own text
+          // is polished one field at a time, where they can see it.
           const prose = (policies: Record<string, FieldPolicy>) =>
             Object.keys(policies).filter(
-              (key) => !key.includes(".") && canRegenerate(policies[key]),
+              (key) =>
+                !key.includes(".") && regenerateMode(policies[key]) === "apply",
             );
           const text = (value: unknown) =>
             typeof value === "string" ? value : "";

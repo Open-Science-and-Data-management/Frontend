@@ -4,6 +4,7 @@ import {
   datasetFieldPolicy,
   dmpFieldPolicy,
   planListPolicy,
+  regenerateMode,
 } from "@/config/field-policy";
 
 // Regenerate is for free text the AI writes. A choice, a date, a number or
@@ -37,15 +38,28 @@ describe("which fields get “Regenerate with AI”", () => {
     expect(canRegenerate(policy)).toBe(false);
   });
 
-  // Free text, but the researcher's own words: AI never rewrites them.
+  // The researcher's own words: the AI may polish them, never write them in.
   it.each([
     ["ethical issues description", dmpFieldPolicy.ethical_issues_description],
-    ["indigenous considerations", dmpFieldPolicy.indigenous_considerations],
     ["preservation statement", datasetFieldPolicy["preservation.statement"]],
     ["personal data plan", datasetFieldPolicy.personal_data_plan],
-  ])("%s — prose, but human-owned, so no", (_name, policy) => {
+  ])("%s, human-owned prose: a suggestion to accept", (_name, policy) => {
+    expect(policy.permission).toBe("human");
+    expect(regenerateMode(policy)).toBe("suggest");
+  });
+
+  it("indigenous considerations: no AI at all, not even a polish", () => {
+    const policy = dmpFieldPolicy.indigenous_considerations;
     expect(policy.kind).toBe("prose");
+    expect(regenerateMode(policy)).toBeNull();
     expect(canRegenerate(policy)).toBe(false);
+  });
+
+  it.each([
+    ["plan title", dmpFieldPolicy.title],
+    ["output description", datasetFieldPolicy.description],
+  ])("%s, AI-owned prose: written in directly", (_name, policy) => {
+    expect(regenerateMode(policy)).toBe("apply");
   });
 
   it("a field with no policy (data type, cost amount) is never offered", () => {

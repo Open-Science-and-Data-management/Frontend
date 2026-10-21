@@ -335,6 +335,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               target.label,
               target.value,
               steer,
+              "apply",
               { signal },
             );
             const index = datasets.findIndex(

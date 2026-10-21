@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CURRENT_USER_ID } from "@/config/current-user";
 import { useAiThread, UNSCOPED, type ThreadTurn } from "@/store/aiThread";
+import { useAssistantStore } from "@/store/assistantStore";
+import type { RegenerateDirection } from "@/api/aiApi";
 import { useChatStore } from "@/store/chatStore";
 import { useDmpStore, type DmpRecord } from "@/store/dmpStore";
 import { useProjectStore } from "@/store/projectStore";
@@ -402,6 +404,131 @@ describe("regenerate is for free text only", () => {
       "dataset:d1:title",
       "dataset:d1:description",
     ]);
+  });
+});
+
+describe("polishing the researcher's own text", () => {
+  const withEthics = (ethical_issues_description: string) =>
+    useDmpStore.setState({
+      draft: {
+        title: "Plan A",
+        description: "About Plan A",
+        ethical_issues_exist: true,
+        ethical_issues_description,
+      },
+    });
+  const polish = (direction: RegenerateDirection = { kind: "formal" }) =>
+    state().regenerateField(
+      "ethical_issues_description",
+      "Ethical issues description",
+      direction,
+    );
+
+  beforeEach(() => useAssistantStore.setState({ open: false }));
+
+  it("comes back as a suggestion they decide on, never written in", async () => {
+    withEthics("we don't record names");
+    const run = polish();
+    await settle();
+    await run;
+
+    expect(state().draft.ethical_issues_description).toBe(
+      "we don't record names",
+    );
+    const [turn] = turns("dmp-a");
+    expect(turn.proposals?.[0]).toMatchObject({
+      path: "ethical_issues_description",
+      value: "We do not record names.",
+      needsHumanConfirm: true,
+      status: "pending",
+    });
+    expect(useAssistantStore.getState().open).toBe(true);
+    expect(toasts().at(-1)?.title).toBe("Suggestion ready");
+  });
+
+  it("rewords without adding anything of the AI's own", async () => {
+    withEthics("interviews are anonymised");
+    const run = polish();
+    await settle();
+    await run;
+
+    expect(turns("dmp-a")[0].proposals?.[0].value).not.toMatch(
+      /institutional|governance/,
+    );
+  });
+
+  it("isn't offered on a blank field: no call, no tokens", async () => {
+    withEthics("  ");
+    await polish();
+    expect(account().ai_token_used).toBe(0);
+    expect(entries("dmp-a")).toEqual([]);
+  });
+
+  it.each<RegenerateDirection>([
+    { kind: "custom", detail: "add a consent section" },
+    { kind: "emphasize", detail: "community benefit" },
+  ])("refuses a direction that adds content ($kind)", async (direction) => {
+    withEthics("We don't record names.");
+    await polish(direction);
+    expect(account().ai_token_used).toBe(0);
+    expect(entries("dmp-a")).toEqual([]);
+  });
+
+  it("says so when there's nothing to polish", async () => {
+    withEthics("We do not record names.");
+    const run = polish();
+    await settle();
+    await run;
+
+    expect(toasts().at(-1)?.title).toBe("Nothing to polish");
+    expect(turns("dmp-a")).toEqual([]);
+  });
+
+  it("never touches indigenous considerations", async () => {
+    useDmpStore.setState({
+      draft: {
+        title: "Plan A",
+        indigenous_considerations: "Consulted with the Moken council.",
+      },
+    });
+    await state().regenerateField(
+      "indigenous_considerations",
+      "Indigenous data considerations",
+      { kind: "formal" },
+    );
+    expect(account().ai_token_used).toBe(0);
+    expect(entries("dmp-a")).toEqual([]);
+  });
+
+  it("reaches a nested field: an output's preservation statement", async () => {
+    useDmpStore.setState({
+      draft: {
+        title: "Plan A",
+        dataset: [
+          {
+            dataset_id: "d1",
+            title: "Reads",
+            preservation: { repository: "Zenodo", statement: "kept 10 years" },
+          } as never,
+        ],
+      },
+    });
+    const run = state().regenerateField(
+      { datasetId: "d1", field: "preservation.statement" },
+      "Preservation statement",
+      { kind: "formal" },
+    );
+    await settle();
+    await run;
+
+    expect(state().draft.dataset![0].preservation?.statement).toBe(
+      "kept 10 years",
+    );
+    expect(turns("dmp-a")[0].proposals?.[0]).toMatchObject({
+      path: "dataset[0].preservation.statement",
+      value: "Kept 10 years.",
+      needsHumanConfirm: true,
+    });
   });
 });
 

@@ -165,6 +165,20 @@ describe("field policy is enforced by the system, not the model", () => {
     expect(run.proposals[0].needsHumanConfirm).toBe(true);
   });
 
+  it("won't suggest text for indigenous considerations at all", () => {
+    const run = runToolCall(
+      {
+        tool: "proposeFieldChange",
+        path: "indigenous_considerations",
+        value: "Community consent was obtained.",
+      },
+      ctx(),
+    );
+
+    expect(run.proposals).toEqual([]);
+    expect(run.rejections[0].reason).toMatch(/only you write this/i);
+  });
+
   it("treats an unclassified field conservatively", () => {
     // Nobody marked preservation.duration as AI-editable.
     const run = runToolCall(

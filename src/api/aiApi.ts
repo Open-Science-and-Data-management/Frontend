@@ -8,6 +8,7 @@ import {
 } from "@/api/aiContract";
 import { serve } from "@/api/mock/aiServer";
 import { MADMP_SCHEMA_VERSION } from "@/schemas/madmp/vocabularies";
+import type { RegenerateMode } from "@/config/field-policy";
 import {
   getDomainProfile,
   type DomainKey,
@@ -16,6 +17,14 @@ import {
 export type RegenerateDirection =
   | { kind: "shorter" | "formal" }
   | { kind: "emphasize" | "custom"; detail: string };
+
+/**
+ * The directions that change wording only. A rewrite of the researcher's own
+ * text is limited to these: "emphasise X" or a free instruction can put
+ * something in their mouth they never said.
+ */
+export const isWordingOnly = (direction: RegenerateDirection) =>
+  direction.kind === "shorter" || direction.kind === "formal";
 
 /** A direction in words, for toasts and the AI thread. */
 export const describeDirection = (direction: RegenerateDirection): string => {
@@ -752,6 +761,24 @@ const CANNED_DRAFT: DmpDraft = {
   schema_version: MADMP_SCHEMA_VERSION,
 };
 
+// The stand-in for a rewording that adds nothing: contractions spelled out,
+// the first letter capitalised, one closing full stop.
+const CONTRACTIONS: [RegExp, string][] = [
+  [/\bcan't\b/gi, "cannot"],
+  [/\bwon't\b/gi, "will not"],
+  [/\b(\w+)n't\b/gi, "$1 not"],
+  [/\b(\w+)'re\b/gi, "$1 are"],
+  [/\b(\w+)'ll\b/gi, "$1 will"],
+  [/\bit's\b/gi, "it is"],
+];
+const polish = (text: string) => {
+  const spelled = CONTRACTIONS.reduce(
+    (t, [pattern, full]) => t.replace(pattern, full),
+    text.trim(),
+  );
+  return `${spelled.charAt(0).toUpperCase()}${spelled.slice(1).replace(/\.*$/, "")}.`;
+};
+
 export const aiApi = {
   analyzeProposal: async (
     file: File,
@@ -814,40 +841,47 @@ export const aiApi = {
     return { draft, coverage, ...metered(usage) };
   },
 
+  /**
+   * `suggest` asks for the same meaning in better words, nothing added: the
+   * text is the researcher's. The real prompt has to carry that too.
+   */
   regenerateField: async (
     fieldLabel: string,
     currentValue: string,
     direction: RegenerateDirection,
+    mode: RegenerateMode = "apply",
     opts: AiCallOptions = {},
   ): Promise<RegenerateResult> => {
     const base = currentValue || `${fieldLabel} (AI draft)`;
     let text: string;
-    switch (direction.kind) {
-      case "shorter": {
-        const firstSentence = base.split(". ")[0]?.trim() ?? "";
-        if (firstSentence && firstSentence.length < base.trim().length - 1) {
-          text = firstSentence.replace(/\.?$/, ".");
-        } else {
-          // Already a single sentence — trim it back instead of returning
-          // the input unchanged, which reads as a no-op to the user.
-          const words = base.replace(/\.\s*$/, "").split(/\s+/);
-          const kept = Math.max(6, Math.ceil(words.length * 0.6));
-          text = `${words.slice(0, kept).join(" ")}.`;
+    if (mode === "suggest" && direction.kind === "formal") text = polish(base);
+    else
+      switch (direction.kind) {
+        case "shorter": {
+          const firstSentence = base.split(". ")[0]?.trim() ?? "";
+          if (firstSentence && firstSentence.length < base.trim().length - 1) {
+            text = firstSentence.replace(/\.?$/, ".");
+          } else {
+            // Already a single sentence — trim it back instead of returning
+            // the input unchanged, which reads as a no-op to the user.
+            const words = base.replace(/\.\s*$/, "").split(/\s+/);
+            const kept = Math.max(6, Math.ceil(words.length * 0.6));
+            text = `${words.slice(0, kept).join(" ")}.`;
+          }
+          break;
         }
-        break;
+        case "formal":
+          text = `${base.replace(/\.$/, "")}, in accordance with institutional data governance standards.`;
+          break;
+        case "emphasize":
+          text = `${base.replace(/\.$/, "")}, with particular emphasis on ${direction.detail}.`;
+          break;
+        case "custom":
+          text = `${base.replace(/\.$/, "")} (${direction.detail}).`;
+          break;
+        default:
+          text = base;
       }
-      case "formal":
-        text = `${base.replace(/\.$/, "")}, in accordance with institutional data governance standards.`;
-        break;
-      case "emphasize":
-        text = `${base.replace(/\.$/, "")}, with particular emphasis on ${direction.detail}.`;
-        break;
-      case "custom":
-        text = `${base.replace(/\.$/, "")} (${direction.detail}).`;
-        break;
-      default:
-        text = base;
-    }
 
     const usage = await serve({
       input: PROMPT_OVERHEAD.regenerate_field + tokensIn(base),

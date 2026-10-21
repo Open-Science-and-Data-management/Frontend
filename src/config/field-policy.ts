@@ -8,10 +8,31 @@ export interface FieldPolicy {
   kind: FieldKind;
   isMajorTrigger?: boolean;
   editableBeforeApproval?: boolean;
+  /**
+   * The assistant stays out of this field entirely: no rewrite, no polish,
+   * no chat suggestion. For text whose substance has to come from people
+   * and process, not from a model.
+   */
+  noAiAssist?: boolean;
 }
 
+/**
+ * How an AI rewrite lands. `apply`: the AI owns the wording, so the rewrite
+ * is written in (with undo). `suggest`: the words are the researcher's, so
+ * the rewrite only rewords what they wrote and waits for them to accept it.
+ */
+export type RegenerateMode = "apply" | "suggest";
+
+/** The one rule for "Regenerate with AI": free text, and never a locked field. */
+export const regenerateMode = (policy?: FieldPolicy): RegenerateMode | null => {
+  if (!policy || policy.kind !== "prose" || policy.noAiAssist) return null;
+  if (policy.permission === "ai") return "apply";
+  if (policy.permission === "human") return "suggest";
+  return null;
+};
+
 export const canRegenerate = (policy?: FieldPolicy): boolean =>
-  policy?.permission === "ai" && policy.kind === "prose";
+  regenerateMode(policy) !== null;
 
 export const dmpFieldPolicy: Record<string, FieldPolicy> = {
   title: { permission: "ai", kind: "prose" },
@@ -40,10 +61,13 @@ export const dmpFieldPolicy: Record<string, FieldPolicy> = {
   ethical_issues_description: { permission: "human", kind: "prose" },
   // A link to the ethics report (maDMP: a URI), not text to phrase.
   ethical_issues_report: { permission: "human", kind: "identifier" },
+  // Indigenous data sovereignty: what goes here comes out of consultation
+  // with the community. Wording from a model would read as if it had.
   indigenous_considerations: {
     permission: "human",
     kind: "prose",
     isMajorTrigger: true,
+    noAiAssist: true,
   },
   schema_version: { permission: "locked", kind: "identifier" },
 };
