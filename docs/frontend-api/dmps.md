@@ -19,8 +19,6 @@ approver.
 
 ## The Plan object
 
-<!-- ADDED: JSON example, copied from the Retrieve a plan response (with include=versions,readiness). Its review_snapshot is abbreviated; the full shape is under Attributes. -->
-
 ```json
 {
   "object": "dmp",
@@ -52,8 +50,10 @@ approver.
       "changes": [],
       "created_at": "2026-10-20T03:12:00Z",
       "decided_at": null,
+      "decided_by": null,
       "approver": null,
-      "note": null
+      "note": null,
+      "minor_edits": []
     }
   ],
   "readiness": {
@@ -65,44 +65,46 @@ approver.
 
 ### Attributes
 
-- `object` (string, value is `"dmp"`) <!-- ADDED -->
-  The object's type. <!-- ADDED -->
+- `object` (string, value is `"dmp"`)
+  The object's type.
 - `dmp_id` (string, required)
-  Unique id. <!-- ADDED -->
+  Unique id.
 - `project_id` (string, nullable)
-  The project the plan belongs to. <!-- ADDED -->
+  The project the plan belongs to.
 - `title` (string, required)
-  The plan's title. <!-- ADDED -->
+  The plan's title.
 - `description` (string, required)
-  What the plan covers. <!-- ADDED -->
+  What the plan covers.
 - `language` (string, required)
-  The plan's language code, e.g. `eng`. <!-- ADDED -->
+  The plan's language code, e.g. `eng`.
 - `status` (enum, required)
   Possible enum values:
   - `draft`
   - `pending`
   - `approved`
-- `plan_mode` (enum, required)
-  Frozen at first submission.
+- `plan_mode` (enum, nullable)
+  Frozen at first submission. `null` for a plan that has never been
+  submitted; it follows its project until then.
   Possible enum values:
   - `institutional`
   - `independent`
 - `active_version` (integer, nullable)
   The version in force.
 - `created_at` (date-time, required)
-  When the plan was created. <!-- ADDED -->
+  When the plan was created.
 - `updated_at` (date-time, required)
-  When the plan last changed. <!-- ADDED -->
-- `researcher` (object, required) <!-- ADDED: attribute is in the Retrieve a plan response but was missing from the object list -->
-  The plan's researcher. <!-- ADDED -->
-  - `user_id` (string, required) <!-- ADDED -->
-    The researcher's user id. <!-- ADDED -->
-  - `name` (string, required) <!-- ADDED -->
-    Display name. <!-- ADDED -->
+  When the plan last changed.
+- `researcher` (object, required)
+  The plan's researcher.
+  - `user_id` (string, required)
+    The researcher's user id.
+  - `name` (string, required)
+    Display name.
 - `review_snapshot` (object, required)
   The plan content under review. Same shape as the DMP form: dates, ethics,
   contributors, costs, research outputs.
-  <!-- ADDED: child attributes below, from dmpSchema (src/schemas/dmp/dmp.schema.ts) and the contributor, cost, dataset, distribution and identifier schemas it uses. "required" follows dmpSchema; a draft snapshot (no version submitted) may be partial. TODO: confirm -->
+  `required` below holds once a version has been submitted. A plan that has
+  never been submitted shows its draft, which may be missing any attribute.
   - `dmp_id` (string, nullable)
     The plan's id.
   - `project_id` (string, nullable)
@@ -293,26 +295,30 @@ approver.
       Only when `type` is `software`: the version.
   - `schema_version` (string, required)
     The maDMP schema version. Defaults to `v3.0`.
-- `versions` (array of objects, nullable)
+- `versions` (array of objects, includable)
   Every [Version](#the-version-object), newest first. Returned only with
-  `include=versions`. <!-- TODO: confirm absent vs null when not included -->
-- `readiness` (object, nullable)
+  `include=versions`.
+- `readiness` (object, includable)
   Whether the reviewed content passes the plan rules. Returned only with
   `include=readiness`.
   - `complete` (boolean, required)
-    `true` when every rule passes. <!-- ADDED -->
+    `true` when every rule passes.
   - `unmet_items` (array of objects, required)
     The items that don't pass.
     - `label` (string, required)
-      The rule in words. <!-- ADDED --> <!-- TODO: confirm -->
-    - `section` (string, required)
-      The form section it belongs to. <!-- ADDED --> <!-- TODO: confirm -->
+      What to fix, as the editor words it, e.g. "Add a title".
+    - `section` (enum, required)
+      The editor section that holds the field.
+      Possible enum values:
+      - `general`
+      - `dataset`
+      - `ethical`
+      - `people`
+      - `system`
 
 ## The Version object
 
 A numbered revision of a plan (`DMP_VERSION` in the ERD).
-
-<!-- ADDED: JSON example, copied from the Approve a version response with `changes` added (from the Retrieve a plan version entry). -->
 
 ```json
 {
@@ -332,6 +338,7 @@ A numbered revision of a plan (`DMP_VERSION` in the ERD).
     "mbox": "mali@example.edu"
   },
   "note": "Clear plan. Please confirm the repository before data collection starts.",
+  "minor_edits": [],
   "carried_minor_edits": null,
   "dropped_minor_edits": null
 }
@@ -339,10 +346,10 @@ A numbered revision of a plan (`DMP_VERSION` in the ERD).
 
 ### Attributes
 
-- `object` (string, value is `"dmp_version"`) <!-- ADDED -->
-  The object's type. <!-- ADDED -->
-- `dmp_id` (string, required) <!-- ADDED -->
-  The plan this version belongs to. <!-- ADDED -->
+- `object` (string, value is `"dmp_version"`)
+  The object's type.
+- `dmp_id` (string, required)
+  The plan this version belongs to.
 - `number` (integer, required)
   Per plan; a rejected number is never reused.
 - `status` (enum, required)
@@ -358,46 +365,57 @@ A numbered revision of a plan (`DMP_VERSION` in the ERD).
   What the revision changes against the version in force. A first submission
   has none.
   - `path` (string, required)
-    Where the value lives, e.g. `dataset[0].access`. <!-- ADDED: from FieldChange in src/config/plan-diff.ts -->
+    Where the value lives, e.g. `dataset[0].access`.
   - `label` (string, required)
-    The same thing in words. <!-- ADDED: from FieldChange -->
+    The same thing in words.
   - `from` (string, required)
-    The value before. <!-- ADDED: from FieldChange -->
+    The value before.
   - `to` (string, required)
-    The value after. <!-- ADDED: from FieldChange -->
+    The value after.
   - `edit_type` (enum, required)
-    `minor` or `major`. <!-- ADDED: from FieldChange -->
+    `minor` or `major`.
 - `created_at` (date-time, required)
   Submitted.
 - `decided_at` (date-time, nullable)
-  When the version was decided. <!-- ADDED -->
+  When the version was decided.
 - `decided_by` (string, nullable)
-  The deciding reviewer's `user_id`.
+  The deciding reviewer's `user_id`. Older records may hold the bare value
+  `committee` instead of an id.
 - `approver` (object, nullable)
   The deciding member as they were at decision time. A later change of
   committee doesn't rewrite it.
-  - `user_id` (string, required) <!-- ADDED -->
-    The member's user id. <!-- ADDED -->
-  - `name` (string, required) <!-- ADDED -->
-    Display name, from the session. <!-- ADDED -->
-  - `position` (string, required) <!-- ADDED -->
-    The position they typed. <!-- ADDED -->
-  - `mbox` (string, required) <!-- ADDED -->
-    Email, from the session. <!-- ADDED -->
+  - `user_id` (string, nullable)
+    The member's user id, when the approver is a project committee member.
+  - `name` (string, required)
+    Display name, from the session.
+  - `position` (string, required)
+    The position they typed.
+  - `mbox` (string, nullable)
+    Email, from the session.
 - `note` (string, nullable)
   The reviewer's comment.
+- `minor_edits` (array of objects, required)
+  Minor edits folded into this version without review. May be empty.
+  - `at` (date-time, required)
+    When the edit was saved.
+  - `by` (string, required)
+    The `user_id` of who saved it.
+  - `changes` (array of objects, required)
+    Same attributes as an item in `changes`.
+  - `restored_from` (integer, nullable)
+    Set when the edit brought back an earlier version's content.
 - `carried_minor_edits` (array of objects, nullable)
   Fixes merged into an approved revision. Each has the same attributes as an
-  item in `changes`. <!-- ADDED: item shape from `FieldChange[]` in src/store/dmpStore.ts -->
+  item in `changes`.
 - `dropped_minor_edits` (array of objects, nullable)
   Fixes that couldn't be merged. Each has the same attributes as an item in
-  `changes`. <!-- ADDED: split from the combined carried/dropped bullet; item shape from `FieldChange[]` -->
-- `plan_status` (enum, nullable) <!-- ADDED -->
-  Response-only: returned by [Reject a version](#reject-a-version) only. The <!-- ADDED -->
-  plan's status afterwards. <!-- ADDED -->
-  Possible enum values: <!-- ADDED -->
-  - `draft`: a returned first submission. <!-- ADDED -->
-  - `approved`: a version stays in force. <!-- ADDED -->
+  `changes`.
+- `plan_status` (enum, nullable)
+  Response-only: returned by [Reject a version](#reject-a-version) only. The
+  plan's status afterwards.
+  Possible enum values:
+  - `draft`: a returned first submission.
+  - `approved`: a version stays in force.
 
 ### Retrieve a plan
 
@@ -408,7 +426,7 @@ is the content under review: the pending version as submitted (never the
 researcher's later, unsubmitted edits), else the version in force, else the
 draft.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useDmpLibrary().find(...)` with `reviewedSnapshot(record)`
 and `computeReadiness(snapshot)`.
@@ -453,8 +471,10 @@ curl "https://api.example.ac.th/v1/dmps/dmp-soil?include=versions,readiness" \
       "changes": [],
       "created_at": "2026-10-20T03:12:00Z",
       "decided_at": null,
+      "decided_by": null,
       "approver": null,
-      "note": null
+      "note": null,
+      "minor_edits": []
     }
   ],
   "readiness": {
@@ -488,20 +508,18 @@ curl "https://api.example.ac.th/v1/dmps/dmp-soil?include=versions,readiness" \
 Lists a project's plans for the **Project** page, newest activity first.
 Archived plans are left out.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useDmpLibrary().filter((d) => d.project_id === id)`
 
 **Request**
 
 ```bash
-curl "https://api.example.ac.th/v1/dmps?project_id=proj-1" \
+curl "https://api.example.ac.th/v1/dmps?project_id=proj-1&include=versions" \
   -H "Authorization: Bearer <session_token>"
 ```
 
 **Response**
-
-<!-- ADDED: JSON response. Values from the seeded dmp-pollinator in src/store/dmpStore.ts and the proj-1 researcher; timestamps are the seed's relative days (96 and 12 days ago) taken from 2026-10-22, and active_version 1 assumes its single approval. TODO: confirm -->
 
 ```json
 {
@@ -519,7 +537,22 @@ curl "https://api.example.ac.th/v1/dmps?project_id=proj-1" \
       "active_version": 1,
       "created_at": "2026-07-18T03:00:00Z",
       "updated_at": "2026-10-10T03:00:00Z",
-      "researcher": { "user_id": "user-1", "name": "Dr. Aran Suwannachot" }
+      "researcher": { "user_id": "user-1", "name": "Dr. Aran Suwannachot" },
+      "versions": [
+        {
+          "object": "dmp_version",
+          "number": 1,
+          "status": "approved",
+          "edit_type": "major",
+          "changes": [],
+          "created_at": "2026-07-18T03:00:00Z",
+          "decided_at": "2026-10-10T03:00:00Z",
+          "decided_by": null,
+          "approver": null,
+          "note": null,
+          "minor_edits": []
+        }
+      ]
     }
   ],
   "has_more": false,
@@ -527,8 +560,9 @@ curl "https://api.example.ac.th/v1/dmps?project_id=proj-1" \
 }
 ```
 
-Each plan is returned without `review_snapshot` or `versions` unless asked for
-with `include`.
+Each plan is returned without `review_snapshot`, and without `versions` or
+`readiness` unless asked for with `include`. Drafts are included: the page lists every plan that isn't
+archived.
 
 **Parameters**
 
@@ -540,8 +574,6 @@ with `include`.
 **Returns** a list of [Plans](#the-plan-object).
 
 **Error codes**
-
-<!-- ADDED: table -->
 
 | HTTP status code | Code | Description |
 | --- | --- | --- |
@@ -560,7 +592,7 @@ Approves the pending version. It comes into force (`active_version` becomes
 - tasks of any research output the new version removes are cancelled, and the
   researcher is notified (`tasks_cancelled`).
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useDmpStore.approveDmp(dmp_id, approver, note)`, which runs
 the same path as `approve(approver)` (`activate` in `dmpStore.ts`).
@@ -595,6 +627,7 @@ curl -X POST https://api.example.ac.th/v1/dmps/dmp-soil/versions/1/approve \
     "mbox": "mali@example.edu"
   },
   "note": "Clear plan. Please confirm the repository before data collection starts.",
+  "minor_edits": [],
   "carried_minor_edits": null,
   "dropped_minor_edits": null
 }
@@ -606,8 +639,8 @@ curl -X POST https://api.example.ac.th/v1/dmps/dmp-soil/versions/1/approve \
   The deciding member's role, e.g. "Committee member" or "Committee chair".
   The page pre-fills "Committee member".
 - `note` (string, optional)
-  A comment for the researcher. Stored on the version and included in the
-  approval notification.
+  A comment for the researcher, trimmed. Stored on the version when it isn't
+  blank. The approval notification doesn't include it.
 
 **Returns** the decided [Version](#the-version-object).
 
@@ -633,7 +666,7 @@ them (`dmp_returned`). What happens to the plan depends on the version:
 
 The page calls this **Send back**; the stored status is `rejected`.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useDmpStore.returnDmp(dmp_id, approver, note)`, which runs
 `rejectRevision(note, approver)`.
@@ -668,6 +701,7 @@ curl -X POST https://api.example.ac.th/v1/dmps/dmp-soil/versions/1/reject \
     "mbox": "mali@example.edu"
   },
   "note": "Add a preservation statement for the sequence reads.",
+  "minor_edits": [],
   "plan_status": "draft"
 }
 ```

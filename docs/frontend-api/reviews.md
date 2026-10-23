@@ -13,8 +13,6 @@ decision stands. The Review queue, the dashboard and the
 
 ## The Review object
 
-<!-- ADDED: JSON example, copied from `data[0]` of the List reviews response. -->
-
 ```json
 {
   "object": "review",
@@ -46,14 +44,14 @@ decision stands. The Review queue, the dashboard and the
 
 ### Attributes
 
-- `object` (string, value is `"review"`) <!-- ADDED -->
-  The object's type. <!-- ADDED -->
+- `object` (string, value is `"review"`)
+  The object's type.
 - `id` (string, required)
   `dmp_id` and version number, e.g. `dmp-soil:1`.
 - `dmp_id` (string, required)
   The plan.
 - `title` (string, required)
-  The plan's title. <!-- ADDED: split from the combined `dmp_id, title` bullet -->
+  The plan's title.
 - `version` (integer, required)
   The version this review is about, the plan's newest.
 - `status` (enum, required)
@@ -68,36 +66,38 @@ decision stands. The Review queue, the dashboard and the
 - `submitted_at` (date-time, required)
   When the version was submitted.
 - `days_waiting` (integer, required)
-  Whole days since submission. The frontend tags 3+ days amber and
-  **7+ days red**.
+  Calendar days since submission; `0` means today. The frontend tags 3+ days
+  amber and **7+ days red**.
 - `changes_summary` (object, required)
   Change counts, for revisions.
-  - `major` (integer, required) <!-- ADDED -->
-    Number of major changes. <!-- ADDED -->
-  - `minor` (integer, required) <!-- ADDED -->
-    Number of minor changes. <!-- ADDED -->
+  - `major` (integer, required)
+    Number of major changes.
+  - `minor` (integer, required)
+    Number of minor changes.
 - `timeline` (string, required)
-  Where today falls in the plan, e.g. "Week 4 of 14".
+  Where today falls in the plan, e.g. "Week 4 of 14". Taken from the dates of
+  the version in force, else the draft, not the version under review
+  (`"Starts …"`, `"Timeline ended"` or `"No timeline set"` when there's no week to give).
 - `researcher` (object, required)
-  Who wrote the plan. <!-- ADDED -->
+  Who wrote the plan.
   - `user_id` (string, required)
-    The researcher's user id. <!-- ADDED -->
+    The researcher's user id.
   - `name` (string, required)
     Display name.
 - `project` (object, required)
-  The project the plan belongs to. <!-- ADDED -->
+  The project the plan belongs to.
   - `project_id` (string, required)
-    The project's id. <!-- ADDED -->
+    The project's id.
   - `project_name` (string, required)
-    The project's name. <!-- ADDED -->
+    The project's name.
 - `decided_at` (date-time, nullable)
   As on the [Version](./dmps.md#the-version-object), once decided.
 - `decided_by` (string, nullable)
-  As on the [Version](./dmps.md#the-version-object), once decided. <!-- ADDED: split from the combined decided_at/decided_by/approver/note bullet -->
+  As on the [Version](./dmps.md#the-version-object), once decided.
 - `approver` (object, nullable)
-  As on the [Version](./dmps.md#the-version-object), once decided. <!-- ADDED: split -->
+  As on the [Version](./dmps.md#the-version-object), once decided.
 - `note` (string, nullable)
-  As on the [Version](./dmps.md#the-version-object), once decided. <!-- ADDED: split -->
+  As on the [Version](./dmps.md#the-version-object), once decided.
 
 ### List reviews
 
@@ -106,7 +106,7 @@ decision stands. The Review queue, the dashboard and the
 Lists reviews, oldest submission first by default, so the head of the pending
 list is always the plan that has waited longest.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `reviewQueue(useDmpLibrary())` for pending reviews; the
 decided list and the dashboard numbers are computed in `ReviewQueue.tsx` and
@@ -177,11 +177,12 @@ curl "https://api.example.ac.th/v1/reviews?decided_by=me&sort=-decided_at&limit=
   - `rejected`: sent back to the researcher.
 - `decided_by` (string, optional)
   Only versions decided by this `user_id`, or `me` for the signed-in reviewer.
-- `project_id` (string, optional)
+  Matches the version's `decided_by` or its `approver.user_id`.- `project_id` (string, optional)
   Only reviews of plans in this project.
 - `submitted_after` (date-time, optional)
   Only versions submitted after this moment. The dashboard's
-  "N submitted this week" card sends today minus 7 days.
+  "N submitted this week" card counts today and the six days before it, so it
+  sends the start of the day six days ago.
 - `sort` (enum, optional)
   Defaults to `submitted_at`. Possible enum values:
   - `submitted_at`: oldest submission first.
@@ -202,6 +203,10 @@ curl "https://api.example.ac.th/v1/reviews?decided_by=me&sort=-decided_at&limit=
 | Longest waiting | `status=pending&limit=1` | `data[0].days_waiting` |
 | Approved by you | `decided_by=me&status=approved` | `total_count` |
 | Decisions / sent back | `decided_by=me`, `decided_by=me&status=rejected` | `total_count` |
+| Review queue badge (sidebar, every page) | `status=pending` | `total_count` |
+
+The Review queue's "Recently decided" list shows committee decisions only;
+plans a researcher finalized themselves are independent, so never reviews.
 
 **Error codes**
 

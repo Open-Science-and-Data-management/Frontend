@@ -11,8 +11,6 @@ follow a project's progress; they can't tick, move, or edit them.
 
 ## The Task object
 
-<!-- ADDED: JSON example, copied from `data[0]` of the List tasks response, with the attributes the example lacked (start_date, completed_at, completed_by) added as null. -->
-
 ```json
 {
   "object": "task",
@@ -36,20 +34,20 @@ follow a project's progress; they can't tick, move, or edit them.
 
 ### Attributes
 
-- `object` (string, value is `"task"`) <!-- ADDED -->
-  The object's type. <!-- ADDED -->
+- `object` (string, value is `"task"`)
+  The object's type.
 - `task_id` (string, required)
-  Unique id. <!-- ADDED -->
+  Unique id.
 - `dmp_id` (string, required)
-  The plan the task belongs to. <!-- ADDED -->
+  The plan the task belongs to.
 - `dataset_id` (string, nullable)
-  The research output the task is for. <!-- ADDED -->
+  The research output the task is for.
 - `dataset_title` (string, nullable)
   The research output's title, for display.
 - `title` (string, required)
-  What the task is. <!-- ADDED -->
-- `details` (string, required)
-  More detail. <!-- ADDED -->
+  What the task is.
+- `details` (string, nullable)
+  More detail.
 - `lifecycle_stage` (enum, required)
   Possible enum values:
   - `collect`
@@ -71,11 +69,11 @@ follow a project's progress; they can't tick, move, or edit them.
 - `progress_percent` (integer, required)
   Derived from the checklist.
 - `start_date` (date, nullable)
-  When the task starts. <!-- ADDED -->
+  When the task starts.
 - `end_date` (date, nullable)
-  When the task is due. <!-- ADDED: split from the combined start_date/end_date bullet -->
+  When the task is due.
 - `evidence` (object, required)
-  What shows the work was done.  <!-- ADDED -->
+  What shows the work was done.
   - `type` (enum, required)
     Possible enum values:
     - `none`
@@ -83,15 +81,16 @@ follow a project's progress; they can't tick, move, or edit them.
     - `url`
     - `rdm_deposit`
   - `ref` (string, nullable)
-    The file id, URL or deposit reference. <!-- ADDED --> <!-- TODO: confirm -->
+    File id, URL, or DOI, depending on `type`.
   - `label` (string, nullable)
-    A label for the evidence. <!-- ADDED --> <!-- TODO: confirm -->
+    Shown in place of `ref` in the task table, so the file doesn't need
+    looking up.
   - `attached_at` (date-time, nullable)
-    When it was attached. <!-- ADDED --> <!-- TODO: confirm -->
+    When it was attached.
 - `completed_at` (date-time, nullable)
-  When the task was completed. <!-- ADDED -->
+  When the task was completed.
 - `completed_by` (string, nullable)
-  Who completed it. <!-- ADDED: split from the combined completed_at/completed_by bullet -->
+  Who completed it.
 
 ### List tasks
 
@@ -100,7 +99,7 @@ follow a project's progress; they can't tick, move, or edit them.
 Lists a project's tasks for the read-only task table on the **Project** page:
 task, stage, status, progress, due date, evidence.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useTaskStore.tasks` filtered to the project's plans,
 shown by `TaskReadOnlyList`.
@@ -146,7 +145,7 @@ curl "https://api.example.ac.th/v1/tasks?project_id=proj-1" \
 - `dmp_id` (string, one of `project_id` or `dmp_id` **required**)
   Tasks of one plan.
 - `status` (enum, optional)
-  Possible enum values: <!-- ADDED: reformatted from the inline list -->
+  Possible enum values:
   - `todo`
   - `in_progress`
   - `done`
@@ -156,8 +155,6 @@ curl "https://api.example.ac.th/v1/tasks?project_id=proj-1" \
 then title.
 
 **Error codes**
-
-<!-- ADDED: table -->
 
 | HTTP status code | Code | Description |
 | --- | --- | --- |

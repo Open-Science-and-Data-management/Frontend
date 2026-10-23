@@ -16,8 +16,6 @@ submitted. Each user only ever sees their own.
 
 ## The Notification object
 
-<!-- ADDED: JSON example, copied from `data[0]` of the List notifications response. -->
-
 ```json
 {
   "object": "notification",
@@ -36,36 +34,36 @@ submitted. Each user only ever sees their own.
 
 ### Attributes
 
-- `object` (string, value is `"notification"`) <!-- ADDED -->
-  The object's type. <!-- ADDED -->
+- `object` (string, value is `"notification"`)
+  The object's type.
 - `notification_id` (string, required)
-  Unique id. <!-- ADDED -->
+  Unique id.
 - `user_id` (string, required)
-  The recipient. <!-- ADDED: split from the combined notification_id/user_id bullet -->
+  The recipient.
 - `type` (enum, required)
   Possible enum values:
   - `dmp_submitted`
-  - `dmp_approved`: to the researcher when a version is approved. <!-- ADDED: from Approve a version -->
+  - `dmp_approved`: to the researcher when a version is approved.
   - `dmp_finalized`
   - `tasks_generated`
-  - `tasks_cancelled`: to the researcher when an approval cancels tasks of a removed output. <!-- ADDED: from Approve a version -->
+  - `tasks_cancelled`: to the researcher when an approval cancels tasks of a removed output.
   - `proposal_superseded`
-  - `review_requested`: to every reviewer when a plan or revision is submitted. <!-- ADDED: from the ERD -->
-  - `dmp_returned`: to the researcher when a version is sent back. <!-- ADDED: from the ERD -->
+  - `review_requested`: to every `committee` and `chief` user when a plan or revision is submitted.
+  - `dmp_returned`: to the researcher when a version is sent back.
 - `title` (string, required)
-  The notification's heading. <!-- ADDED -->
+  The notification's heading.
 - `message` (string, nullable)
-  The body text. <!-- ADDED: split from the combined title/message bullet -->
+  The body text.
 - `link` (string, nullable)
   The frontend route to open, e.g. `/review/dmp-soil`.
 - `dmp_id` (string, nullable)
-  The plan it refers to. <!-- ADDED -->
+  The plan it refers to.
 - `project_id` (string, nullable)
-  The project it refers to. <!-- ADDED: split from the combined dmp_id/project_id bullet -->
+  The project it refers to.
 - `read_at` (date-time, nullable)
-  When it was read; `null` while unread. <!-- ADDED -->
+  When it was read; `null` while unread.
 - `created_at` (date-time, required)
-  When it was sent. <!-- ADDED: split from the combined read_at/created_at bullet -->
+  When it was sent.
 
 ### List notifications
 
@@ -74,7 +72,7 @@ submitted. Each user only ever sees their own.
 Lists the signed-in user's notifications, newest first, for the
 **Notifications** page and the sidebar's unread badge.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useNotificationStore.notifications` filtered to the
 signed-in `user_id`.
@@ -119,14 +117,14 @@ curl "https://api.example.ac.th/v1/notifications?limit=50" \
 - `limit` (integer, optional)
   As in [README](./README.md#lists-and-pagination).
 - `starting_after` (string, optional)
-  As in [README](./README.md#lists-and-pagination). <!-- ADDED: split from the combined limit/starting_after bullet -->
+  As in [README](./README.md#lists-and-pagination).
 
 **Returns** a list of [Notifications](#the-notification-object), plus
 `unread_count` for the sidebar badge.
 
 **Error codes**
 
-Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
+Only the common errors listed in [README](./README.md#errors).
 
 ### Mark a notification read
 
@@ -135,7 +133,7 @@ Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
 Marks one notification read. The page calls it when a notification is opened,
 then follows its `link`.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useNotificationStore.markRead(id)`
 
@@ -147,8 +145,6 @@ curl -X POST https://api.example.ac.th/v1/notifications/ntf-review-soil/read \
 ```
 
 **Response**
-
-<!-- ADDED: JSON response, the Notification object example with read_at set. The read_at value is illustrative. TODO: confirm -->
 
 ```json
 {
@@ -168,7 +164,7 @@ curl -X POST https://api.example.ac.th/v1/notifications/ntf-review-soil/read \
 
 Already-read notifications are returned unchanged.
 
-**Parameters** none. <!-- ADDED -->
+**Parameters** none.
 
 **Returns** the [Notification](#the-notification-object) with `read_at` set.
 
@@ -184,7 +180,7 @@ Already-read notifications are returned unchanged.
 
 Marks every unread notification of the signed-in user read (**Mark all read**).
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useNotificationStore.markAllRead(user_id)`
 
@@ -201,13 +197,13 @@ curl -X POST https://api.example.ac.th/v1/notifications/read_all \
 { "object": "notification_batch", "updated": 3 }
 ```
 
-**Parameters** none. <!-- ADDED -->
+**Parameters** none.
 
 **Returns** how many notifications were marked read.
 
 **Error codes**
 
-Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
+Only the common errors listed in [README](./README.md#errors).
 
 ### Delete a notification
 
@@ -215,7 +211,7 @@ Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
 
 Dismisses one notification (the **×** on a row).
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useNotificationStore.remove(id)`
 
@@ -232,13 +228,11 @@ curl -X DELETE https://api.example.ac.th/v1/notifications/ntf-review-soil \
 { "object": "notification", "notification_id": "ntf-review-soil", "deleted": true }
 ```
 
-**Parameters** none. <!-- ADDED -->
+**Parameters** none.
 
-**Returns** a deletion confirmation. <!-- ADDED -->
+**Returns** a deletion confirmation.
 
 **Error codes**
-
-<!-- ADDED: table. Not in the requested list; the code is the one Mark a notification read uses for the same path. TODO: confirm -->
 
 | HTTP status code | Code | Description |
 | --- | --- | --- |
@@ -251,7 +245,7 @@ curl -X DELETE https://api.example.ac.th/v1/notifications/ntf-review-soil \
 Removes all of the signed-in user's notifications (**Clear all**, after a
 confirmation). Other users' notifications are untouched.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useNotificationStore.clearAll(user_id)`
 
@@ -268,10 +262,10 @@ curl -X DELETE https://api.example.ac.th/v1/notifications \
 { "object": "notification_batch", "deleted": 4 }
 ```
 
-**Parameters** none. <!-- ADDED -->
+**Parameters** none.
 
-**Returns** how many notifications were deleted. <!-- ADDED -->
+**Returns** how many notifications were deleted.
 
 **Error codes**
 
-Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
+Only the common errors listed in [README](./README.md#errors).

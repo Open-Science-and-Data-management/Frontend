@@ -13,8 +13,6 @@ Signing in and out, and the signed-in person's own profile.
 
 ## The User object
 
-<!-- ADDED: JSON example, built from the `user` in the Sign in response plus `ai_token_limit` / `ai_token_used` (values from the seeded user-2 in src/store/projectStore.ts). -->
-
 ```json
 {
   "object": "user",
@@ -26,14 +24,19 @@ Signing in and out, and the signed-in person's own profile.
   "role": "committee",
   "username": "mali",
   "ai_token_limit": 4500,
-  "ai_token_used": 0
+  "ai_token_used": 0,
+  "account_type": null,
+  "phone": null,
+  "orcid": null,
+  "affiliation": null,
+  "address": null
 }
 ```
 
 ### Attributes
 
-- `object` (string, value is `"user"`) <!-- ADDED -->
-  The object's type. <!-- ADDED -->
+- `object` (string, value is `"user"`)
+  The object's type.
 - `user_id` (string, required)
   Unique id.
 - `title` (string, nullable)
@@ -51,12 +54,31 @@ Signing in and out, and the signed-in person's own profile.
   - `chief`
   - `committee`
   - `researcher`
-- `username` (string, required)
-  Sign-in name.
+- `username` (string, nullable)
+  Sign-in name, set at sign-up.
 - `ai_token_limit` (integer, required)
   AI budget; researchers only use it.
 - `ai_token_used` (integer, required)
-  AI budget used so far; researchers only use it. <!-- ADDED: split from the combined ai_token_limit/ai_token_used bullet -->
+  AI budget used so far; researchers only use it.
+- `account_type` (enum, nullable)
+  Researchers only; `null` for committee and chief accounts.
+  Possible enum values:
+  - `institutional`: belongs to an organisation (มีสังกัด).
+  - `citizen`: no affiliation (ไม่มีสังกัด).
+- `phone` (string, nullable)
+  Phone number.
+- `orcid` (string, nullable)
+  ORCID iD, the same format as a contributor's `orcid`.
+- `affiliation` (object, nullable)
+  Institutional researchers only.
+  - `organization` (string, required)
+    The organisation.
+  - `department` (string, nullable)
+    The department.
+  - `position` (string, nullable)
+    Their position.
+- `address` (string, nullable)
+  Citizen researchers only.
 
 ### Sign in
 
@@ -65,7 +87,7 @@ Signing in and out, and the signed-in person's own profile.
 Starts a session for a username and password. Committee accounts are granted
 by the institution; there is no committee sign-up.
 
-**Who can call:** `committee`, `chief`. Called without a session token. <!-- ADDED --> <!-- TODO: confirm -->
+**Who can call:** anyone with an account; no session token needed.
 
 **Frontend today:** `useAuthStore.signIn(username, password)`
 
@@ -122,7 +144,7 @@ curl -X POST https://api.example.ac.th/v1/auth/sessions \
 
 Ends the current session. The frontend then shows the public landing page.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useAuthStore.logout()`
 
@@ -145,7 +167,7 @@ curl -X DELETE https://api.example.ac.th/v1/auth/sessions/current \
 
 **Error codes**
 
-Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
+Only the common errors listed in [README](./README.md#errors).
 
 ### Retrieve the current user
 
@@ -154,7 +176,7 @@ Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
 Returns the signed-in user. The navbar, user menu, dashboard greeting and
 Settings form read it.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useCurrentUser()`
 
@@ -167,8 +189,6 @@ curl https://api.example.ac.th/v1/users/me \
 
 **Response**
 
-<!-- ADDED: JSON response, the same as the User object example. -->
-
 ```json
 {
   "object": "user",
@@ -180,7 +200,12 @@ curl https://api.example.ac.th/v1/users/me \
   "role": "committee",
   "username": "mali",
   "ai_token_limit": 4500,
-  "ai_token_used": 0
+  "ai_token_used": 0,
+  "account_type": null,
+  "phone": null,
+  "orcid": null,
+  "affiliation": null,
+  "address": null
 }
 ```
 
@@ -190,7 +215,7 @@ curl https://api.example.ac.th/v1/users/me \
 
 **Error codes**
 
-Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
+Only the common errors listed in [README](./README.md#errors).
 
 ### Update the current user
 
@@ -199,7 +224,7 @@ Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
 Updates the signed-in user's profile from the **Settings** page. Role, username
 and AI quota can't be changed here.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useProjectStore.updateUser(user_id, patch)`, after
 `userProfileSchema` validation and `isEmailTaken` check.
@@ -219,8 +244,6 @@ curl -X PATCH https://api.example.ac.th/v1/users/me \
 
 **Response**
 
-<!-- ADDED: JSON response, the User object example with the email from the request applied. -->
-
 ```json
 {
   "object": "user",
@@ -232,7 +255,12 @@ curl -X PATCH https://api.example.ac.th/v1/users/me \
   "role": "committee",
   "username": "mali",
   "ai_token_limit": 4500,
-  "ai_token_used": 0
+  "ai_token_used": 0,
+  "account_type": null,
+  "phone": null,
+  "orcid": null,
+  "affiliation": null,
+  "address": null
 }
 ```
 
@@ -247,6 +275,8 @@ curl -X PATCH https://api.example.ac.th/v1/users/me \
 - `email` (string, optional)
   A valid email no other account uses, ignoring case and surrounding spaces.
   Accounts are matched to plan contributors by email, so it must be unique.
+
+Every value is trimmed before it's checked (`userProfileSchema`).
 
 **Returns** the updated [User](#the-user-object).
 

@@ -13,8 +13,6 @@ for committee members.
 
 ## The Project object
 
-<!-- ADDED: JSON example, copied from `data[0]` of the List projects response (with include=progress). -->
-
 ```json
 {
   "object": "project",
@@ -31,6 +29,8 @@ for committee members.
   "awaiting_review": false,
   "progress": {
     "dmp_id": "dmp-pollinator",
+    "title": "Urban Pollinator Genomics Data Management Plan",
+    "active_version": 1,
     "overall": 50,
     "done": 2,
     "total": 4,
@@ -42,14 +42,14 @@ for committee members.
 
 ### Attributes
 
-- `object` (string, value is `"project"`) <!-- ADDED -->
-  The object's type. <!-- ADDED -->
+- `object` (string, value is `"project"`)
+  The object's type.
 - `project_id` (string, required)
-  Unique id. <!-- ADDED -->
+  Unique id.
 - `project_name` (string, required)
-  The project's name. <!-- ADDED -->
-- `description` (string, required)
-  What the project is about. <!-- ADDED -->
+  The project's name.
+- `description` (string, nullable)
+  What the project is about.
 - `status` (enum, required)
   Possible enum values:
   - `draft`
@@ -62,37 +62,38 @@ for committee members.
 - `proposal_file_id` (string, nullable)
   The active proposal.
 - `created_at` (date-time, required)
-  When the project was created. <!-- ADDED -->
+  When the project was created.
 - `updated_at` (date-time, required)
-  When the project last changed. <!-- ADDED -->
+  When the project last changed.
 - `file_count` (integer, required)
-  Number of files, for the project cards. <!-- ADDED: split from the combined file_count/member_count/awaiting_review bullet -->
+  Number of files, for the project cards.
 - `member_count` (integer, required)
-  Number of members, for the project cards. <!-- ADDED: split -->
+  Number of members, for the project cards.
 - `awaiting_review` (boolean, required)
-  Whether a plan is waiting on the committee, for the project cards. <!-- ADDED: split --> <!-- TODO: confirm meaning -->
-- `progress` (object, nullable)
+  `true` when any of the project's plans has a version with status `pending`.
+  The card shows "Waiting on the committee".
+- `progress` (object, includable, nullable)
   The lead plan's [Progress](#the-progress-object). Returned only with
-  `include=progress`.
-- `researcher` (object, nullable) <!-- ADDED: attribute described in Retrieve a project but missing from the object list -->
-  The project's researcher member. Returned only with `include=researcher`. <!-- ADDED -->
-  - `user_id` (string, required) <!-- ADDED -->
-    The researcher's user id. <!-- ADDED -->
-  - `name` (string, required) <!-- ADDED -->
-    Display name. <!-- ADDED -->
-  - `email` (string, required) <!-- ADDED -->
-    The researcher's email. <!-- ADDED -->
+  `include=progress`; `null` when the project has no plan yet.
+- `researcher` (object, includable)
+  The project's researcher member. Returned only with `include=researcher`.
+  - `user_id` (string, required)
+    The researcher's user id.
+  - `name` (string, required)
+    Display name.
+  - `email` (string, required)
+    The researcher's email.
 
 ## The Progress object
 
 The lifecycle progress of a project's lead plan: the one in force, else the
 newest.
 
-<!-- ADDED: JSON example, copied from `progress` in the List projects response. The existing example has no `object` field. -->
-
 ```json
 {
   "dmp_id": "dmp-pollinator",
+  "title": "Urban Pollinator Genomics Data Management Plan",
+  "active_version": 1,
   "overall": 50,
   "done": 2,
   "total": 4,
@@ -103,17 +104,21 @@ newest.
 
 ### Attributes
 
-- `object` (string, value is `"project_progress"`) <!-- ADDED --> <!-- TODO: confirm; no existing example carries an object value for progress -->
-  The object's type. <!-- ADDED -->
+- `object` (string, value is `"project_progress"`)
+  The object's type.
 - `dmp_id` (string, required)
   The plan measured.
+- `title` (string, required)
+  The lead plan's title (`DMP.title`).
+- `active_version` (integer, nullable)
+  The lead plan's version in force (`DMP.active_version`), if any.
 - `overall` (integer, required)
   0–100. Each lifecycle stage with tasks counts equally, by the share of its
   tasks done. Cancelled tasks are left out.
 - `done` (integer, required)
   Tasks done.
 - `total` (integer, required)
-  All tasks that aren't cancelled. <!-- ADDED: split from the combined done/total bullet -->
+  All tasks that aren't cancelled.
 - `overdue` (integer, required)
   Open tasks past their due date.
 - `timeline` (string, required)
@@ -126,7 +131,7 @@ newest.
 Lists institutional projects for the **Projects** page and the dashboard's
 "Project progress" card and "Projects overseeing" stat.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useProjectStore.projects` filtered to
 `plan_mode === "institutional"`; progress from `projectProgressFor`.
@@ -159,6 +164,8 @@ curl "https://api.example.ac.th/v1/projects?plan_mode=institutional&include=prog
       "awaiting_review": false,
       "progress": {
         "dmp_id": "dmp-pollinator",
+        "title": "Urban Pollinator Genomics Data Management Plan",
+        "active_version": 1,
         "overall": 50,
         "done": 2,
         "total": 4,
@@ -183,14 +190,17 @@ curl "https://api.example.ac.th/v1/projects?plan_mode=institutional&include=prog
 - `limit` (integer, optional)
   As in [README](./README.md#lists-and-pagination).
 - `starting_after` (string, optional)
-  As in [README](./README.md#lists-and-pagination). <!-- ADDED: split from the combined limit/starting_after bullet -->
+  As in [README](./README.md#lists-and-pagination).
 
 **Returns** a list of [Projects](#the-project-object). "Projects overseeing" is
 `total_count`; "N with overdue tasks" counts `progress.overdue > 0`.
 
+The dashboard's "Project progress" card shows the first 4 projects that have
+a plan, most recently updated lead plan first.
+
 **Error codes**
 
-Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
+Only the common errors listed in [README](./README.md#errors).
 
 ### Retrieve a project
 
@@ -198,7 +208,7 @@ Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
 
 Returns one project for the **Project** page, including who its researcher is.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useProjectStore.projects.find(...)`, `getResearcherFor(id)`
 
@@ -210,8 +220,6 @@ curl "https://api.example.ac.th/v1/projects/proj-3?include=progress,researcher" 
 ```
 
 **Response**
-
-<!-- ADDED: JSON response. Values from the seeded proj-3 and its members in src/store/projectStore.ts (seed times read as UTC+7). proj-3 has no seeded files or proposal; its plan dmp-soil is pending with no tasks, so progress counts are 0 and the timeline matches the Review example. TODO: confirm -->
 
 ```json
 {
@@ -229,6 +237,8 @@ curl "https://api.example.ac.th/v1/projects/proj-3?include=progress,researcher" 
   "awaiting_review": true,
   "progress": {
     "dmp_id": "dmp-soil",
+    "title": "Soil Microbiome Survey DMP",
+    "active_version": null,
     "overall": 0,
     "done": 0,
     "total": 0,
@@ -246,7 +256,7 @@ curl "https://api.example.ac.th/v1/projects/proj-3?include=progress,researcher" 
 **Parameters**
 
 - `include` (array of enums, optional)
-  Possible enum values: <!-- ADDED: reformatted from the inline list -->
+  Possible enum values:
   - `progress`: the lead plan's lifecycle [progress](#the-progress-object).
   - `researcher`: the project's researcher member.
 
@@ -264,7 +274,7 @@ curl "https://api.example.ac.th/v1/projects/proj-3?include=progress,researcher" 
 
 Lists the project's team for the **Team** section.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useProjectStore.members.filter(...)` with `getUser(...)`
 
@@ -307,4 +317,4 @@ curl https://api.example.ac.th/v1/projects/proj-1/members \
 
 **Error codes**
 
-Only the common errors listed in [README](./README.md#errors). <!-- ADDED -->
+Only the common errors listed in [README](./README.md#errors).

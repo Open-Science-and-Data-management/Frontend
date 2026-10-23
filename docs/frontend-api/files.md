@@ -12,8 +12,6 @@ members can list and download them; they can't upload or remove them.
 
 ## The File object
 
-<!-- ADDED: JSON example, copied from `data[0]` of the List files response. -->
-
 ```json
 {
   "object": "file",
@@ -31,16 +29,16 @@ members can list and download them; they can't upload or remove them.
 
 ### Attributes
 
-- `object` (string, value is `"file"`) <!-- ADDED -->
-  The object's type. <!-- ADDED -->
+- `object` (string, value is `"file"`)
+  The object's type.
 - `file_id` (string, required)
-  Unique id. <!-- ADDED -->
+  Unique id.
 - `project_id` (string, required)
-  The project the file belongs to. <!-- ADDED -->
+  The project the file belongs to.
 - `uploaded_by` (string, required)
-  The uploader's `user_id`. <!-- ADDED -->
+  The uploader's `user_id`.
 - `filename` (string, required)
-  The original filename. <!-- ADDED: split from the combined file_id/project_id/uploaded_by/filename bullet -->
+  The original filename.
 - `file_type` (enum, required)
   Possible enum values:
   - `docx`
@@ -51,14 +49,14 @@ members can list and download them; they can't upload or remove them.
   - `proposal`
   - `task_deliverable`
   - `evidence`
-- `metadata` (object, required)
-  About the file's content. <!-- ADDED -->
-  - `byte_size` (integer, required)
-    Size in bytes. <!-- ADDED -->
+- `metadata` (object, nullable)
+  About the file's content.
+  - `byte_size` (integer, nullable)
+    Size in bytes.
   - `mime_type` (string, nullable)
-    The content's MIME type. <!-- ADDED --> <!-- TODO: confirm nullable; the seeded file-2 has no mime_type -->
+    The content's MIME type.
 - `uploaded_at` (date-time, required)
-  When the file was uploaded. <!-- ADDED -->
+  When the file was uploaded.
 - `superseded_at` (date-time, nullable)
   Set when a newer proposal replaced it.
 
@@ -69,7 +67,7 @@ members can list and download them; they can't upload or remove them.
 Lists a project's files for the **Files** section, current files first and
 superseded proposals after.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `useProjectStore.files.filter(...)` in `FileList` with
 `readOnly`.
@@ -110,7 +108,7 @@ curl "https://api.example.ac.th/v1/files?project_id=proj-1" \
 - `project_id` (string, **required**)
   The project whose files to list.
 - `purpose` (enum, optional)
-  Possible enum values: <!-- ADDED: reformatted from the inline list -->
+  Possible enum values:
   - `proposal`
   - `task_deliverable`
   - `evidence`
@@ -119,11 +117,9 @@ curl "https://api.example.ac.th/v1/files?project_id=proj-1" \
 
 **Error codes**
 
-<!-- ADDED: table -->
-
 | HTTP status code | Code | Description |
 | --- | --- | --- |
-| 400 | `project_id_required` | `project_id` wasn't sent. <!-- TODO: confirm; not in the requested list, but `project_id` is required here as in List plans --> |
+| 400 | `project_id_required` | `project_id` wasn't sent. |
 | 400 | `invalid_purpose` | `purpose` holds a value other than the three above. |
 
 ### Download a file
@@ -133,7 +129,7 @@ curl "https://api.example.ac.th/v1/files?project_id=proj-1" \
 Returns the file's bytes, with `Content-Disposition: attachment` and its
 original filename.
 
-**Who can call:** `committee`, `chief` <!-- ADDED -->
+**Who can call:** `committee`, `chief`
 
 **Frontend today:** `fileApi.getDownloadUrl(file_id)`. It only works for files
 uploaded in the current browser session; this endpoint removes that limit.
@@ -149,7 +145,7 @@ curl -L -O -J https://api.example.ac.th/v1/files/file-1/content \
 
 **Parameters** none.
 
-**Returns** the file's content. <!-- ADDED -->
+**Returns** the file's content.
 
 **Error codes**
 
