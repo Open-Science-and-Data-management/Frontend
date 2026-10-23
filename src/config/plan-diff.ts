@@ -80,6 +80,9 @@ const LABELS: Record<string, string> = {
   surname: "Surname",
   value: "Amount",
   currency_code: "Currency",
+  "preservation.repository": "Repository",
+  "preservation.duration": "Retention period",
+  "distribution.license": "Licence",
 };
 
 const humanise = (key: string) =>
@@ -103,23 +106,46 @@ const show = (value: unknown): string => {
 
 const same = (a: unknown, b: unknown) => show(a) === show(b);
 
+/** One part of an object, or that part of every entry of a list. */
+const partOf = (value: unknown, part: string): unknown =>
+  Array.isArray(value)
+    ? value.map((entry) => (entry as Record<string, unknown> | null)?.[part])
+    : value && typeof value === "object"
+      ? (value as Record<string, unknown>)[part]
+      : undefined;
+
 /**
  * Whether changing this field means the plan has to be looked at again.
  *
  * It isn't a judgement made here — `field-policy` already marks the fields
  * that carry a commitment (access, protection, security classification), and
  * this reads that same mark so the two can't disagree.
+ *
+ * A field held as an object or list (preservation, distribution) is judged by
+ * its parts: it's major only when a part the policy marks major actually
+ * changed, so rewording the preservation statement stays minor while a new
+ * repository doesn't. Given no values, any major part counts.
  */
 const editTypeFor = (
   key: string,
   policies: Record<string, { isMajorTrigger?: boolean }>,
-): Edit =>
-  Object.entries(policies).some(
-    ([path, policy]) =>
-      (path === key || path.startsWith(`${key}.`)) && policy.isMajorTrigger,
+  values?: [unknown, unknown],
+): Edit => {
+  if (policies[key]?.isMajorTrigger) return "major";
+  const majorParts = Object.entries(policies)
+    .filter(
+      ([path, policy]) => path.startsWith(`${key}.`) && policy.isMajorTrigger,
+    )
+    .map(([path]) => path.slice(key.length + 1));
+  if (majorParts.length === 0) return "minor";
+  if (!values) return "major";
+  const [before, after] = values;
+  return majorParts.some(
+    (part) => !same(partOf(before, part), partOf(after, part)),
   )
     ? "major"
     : "minor";
+};
 
 const listEdit = (policy: FieldPolicy): Edit =>
   policy.isMajorTrigger ? "major" : "minor";
@@ -141,7 +167,7 @@ const compare = (
       label: `${labelPrefix}${humanise(key)}`,
       from: show(before[key]),
       to: show(after[key]),
-      edit_type: editTypeFor(key, policies),
+      edit_type: editTypeFor(key, policies, [before[key], after[key]]),
     }));
 
 const DMP_KEYS = Object.keys(dmpFieldPolicy).filter(
@@ -368,9 +394,11 @@ export const majorTriggers = (): string[] => [
   ...DMP_KEYS.filter((key) => editTypeFor(key, dmpFieldPolicy) === "major").map(
     humanise,
   ),
-  ...DATASET_KEYS.filter(
-    (key) => editTypeFor(key, datasetFieldPolicy) === "major",
-  ).map((key) => `${humanise(key)} of a research output`),
+  // Named one by one, nested parts included ("Repository of a research
+  // output"), so the list says exactly which edits need sign-off.
+  ...Object.entries(datasetFieldPolicy)
+    .filter(([, policy]) => policy.isMajorTrigger)
+    .map(([key]) => `${humanise(key)} of a research output`),
   ...(planListPolicy.dataset.isMajorTrigger
     ? ["Adding or removing a research output"]
     : []),

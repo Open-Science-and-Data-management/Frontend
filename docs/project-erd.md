@@ -304,10 +304,15 @@ single fields, `planListPolicy` for adding or removing list entries. The diff
 compares every field those policies name, and the "needs sign-off again" list
 shown to people is generated from the same flags. Tests enforce both.
 
-Currently major: begin date, end date, ethical issues, Indigenous
-considerations; a research output's access, personal data, personal data
-plan, protection level, and security classification; adding or removing a
-research output. Contributor (including contact) and cost changes are minor.
+Currently major, as anything that alters a data-management commitment:
+begin date, end date, ethical issues, Indigenous considerations; a research
+output's access, personal data, personal data plan, protection level,
+security classification, repository, retention period, and a distribution's
+licence; adding or removing a research output; any change to contributors,
+the contact included. Cost changes and wording fixes are minor. Preservation
+and distribution are judged by their parts, so rewording the preservation
+statement or renaming a distribution stays minor while a new repository or
+licence doesn't.
 
 **Removing a research output** from a plan in force is proposed, not applied:
 its tasks keep running until the version that drops it is put in force, and

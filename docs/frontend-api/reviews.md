@@ -117,15 +117,15 @@ decided list and the dashboard numbers are computed in `ReviewQueue.tsx` and
 ```bash
 # Dashboard and Review queue: everything waiting, longest-waiting first
 curl "https://api.example.ac.th/v1/reviews?status=pending" \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 
 # Review queue: the 8 most recent decisions
 curl "https://api.example.ac.th/v1/reviews?status=approved,rejected&sort=-decided_at&limit=8" \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 
 # Dashboard: decisions I made
 curl "https://api.example.ac.th/v1/reviews?decided_by=me&sort=-decided_at&limit=5" \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **Response**

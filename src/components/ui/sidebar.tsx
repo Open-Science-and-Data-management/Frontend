@@ -15,7 +15,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useAuthStore, useCurrentUser } from "@/store/authStore";
 import { usePendingReviewCount } from "@/hooks/useDmpLibrary";
-import { isReviewer } from "@/config/roles";
+import { isReviewer, isResearcher } from "@/config/roles";
 import { cn } from "@/utils/cn";
 
 type BadgeKind = "notifications" | "reviews";
@@ -38,6 +38,24 @@ const BADGE_NOUN: Record<BadgeKind, string> = {
   notifications: "unread",
   reviews: "waiting",
 };
+
+/** Admin has no plan screens; only what every account has. */
+const ADMIN_SECTIONS: SidebarSection[] = [
+  {
+    label: "Admin",
+    items: [
+      { label: "Dashboard", to: "/", icon: Home },
+      {
+        label: "Notifications",
+        to: "/notifications",
+        icon: Bell,
+        badge: "notifications",
+      },
+      { label: "Settings", to: "/settings", icon: SettingsIcon },
+      { label: "Help & Guide", to: "/help", icon: HelpCircle },
+    ],
+  },
+];
 
 /** Committee members read and decide; they don't draft, so no editor or tasks. */
 const REVIEWER_SECTIONS: SidebarSection[] = [
@@ -118,7 +136,9 @@ const SidebarNav: React.FC<{ onNavigate: () => void; collapsed?: boolean }> = ({
   };
   const SECTIONS = isReviewer(user?.role)
     ? REVIEWER_SECTIONS
-    : RESEARCHER_SECTIONS;
+    : isResearcher(user?.role)
+      ? RESEARCHER_SECTIONS
+      : ADMIN_SECTIONS;
 
   return (
     <nav

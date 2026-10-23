@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { useDmpStore } from "@/store/dmpStore";
+import { outputsInForce, useDmpStore } from "@/store/dmpStore";
 import { useNotificationStore } from "@/store/notificationStore";
 import type { DmpDraft } from "@/types/dmp";
 import type { Dataset } from "@/types/dataset";
@@ -238,6 +238,10 @@ describe("the list shown before editing", () => {
         "Protection level of a research output",
         "Security classification of a research output",
         "Adding or removing a research output",
+        "Repository of a research output",
+        "Retention period of a research output",
+        "Licence of a research output",
+        "Any change to contributors",
       ]),
     );
   });
@@ -303,7 +307,7 @@ describe("the agreed split", () => {
     });
   });
 
-  it("notices a change of contact, and keeps it minor", () => {
+  it("notices a change of contact, and sends it for sign-off", () => {
     edit({
       contributor: [
         {
@@ -324,12 +328,50 @@ describe("the agreed split", () => {
     });
     const changes = state().pendingChanges();
     expect(changes.length).toBeGreaterThan(0);
-    expect(changes.every((c) => c.edit_type === "minor")).toBe(true);
+    expect(changes.every((c) => c.edit_type === "major")).toBe(true);
     expect(changes.map((c) => c.label)).toContain("Contributor added: Mali");
 
+    // Not applied in place: it waits for a decision.
     state().saveMinorEdits();
-    expect(record().versions).toHaveLength(1);
-    expect(record().versions[0].minor_edits).toHaveLength(1);
+    expect(record().versions[0].minor_edits).toHaveLength(0);
+    expect(state().submitRevision()).toBe(true);
+    expect(record().versions.at(-1)!.status).toBe("pending");
+  });
+
+  it.each([
+    [
+      "Repository",
+      { preservation: { doi_requested: false, repository: "Zenodo" } },
+    ],
+    [
+      "Retention period",
+      { preservation: { doi_requested: false, duration: "15 years" } },
+    ],
+    [
+      "Licence",
+      { distribution: [{ title: "Reads", license: "CC-BY-4.0" }] as never },
+    ],
+  ])("a research output's %s is major", (_label, patch) => {
+    edit({ dataset: [output(patch as Partial<Dataset>)] });
+    expect(state().pendingChanges()[0].edit_type).toBe("major");
+  });
+
+  // The parts that carry a commitment are major; the rest of the same
+  // object stays a wording fix.
+  it.each([
+    [
+      "the preservation statement",
+      { preservation: { doi_requested: false, statement: "Kept in Zenodo." } },
+    ],
+    [
+      "a distribution's title",
+      { distribution: [{ title: "Raw reads, v2" }] as never },
+    ],
+  ])("rewording %s stays minor", (_label, patch) => {
+    edit({ dataset: [output(patch as Partial<Dataset>)] });
+    const changes = state().pendingChanges();
+    expect(changes.length).toBeGreaterThan(0);
+    expect(changes.every((c) => c.edit_type === "minor")).toBe(true);
   });
 });
 
@@ -612,5 +654,26 @@ describe("the committee deciding from its queue", () => {
     expect(state().approveDmp("dmp-x", mali)).toBe(false);
     expect(record().status).toBe("draft");
     expect(record().versions).toHaveLength(0);
+  });
+});
+
+describe("tasks are drafted from the approved plan", () => {
+  beforeEach(() => {
+    edit({ dataset: [output()] });
+    state().submitForApproval();
+    state().approve({ name: "Prof. Mali Chaiyasit", position: "Chair" });
+  });
+
+  it("leaves out an output that's only in a revision waiting on a decision", () => {
+    edit({
+      dataset: [output(), output({ dataset_id: "ds-2", title: "Trait table" })],
+    });
+    expect(state().submitRevision()).toBe(true);
+
+    expect(outputsInForce(record()).map((d) => d.dataset_id)).toEqual(["ds-1"]);
+  });
+
+  it("is empty for a plan with nothing in force", () => {
+    expect(outputsInForce(undefined)).toEqual([]);
   });
 });

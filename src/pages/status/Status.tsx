@@ -20,7 +20,7 @@ import { ReopenTasksPrompt } from "@/components/task/ReopenTasksPrompt";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AiProgress } from "@/components/ui/ai-progress";
 import { estimateCost, generateTasks } from "@/api/aiApi";
-import { useDmpStore } from "@/store/dmpStore";
+import { outputsInForce, useDmpStore } from "@/store/dmpStore";
 import { recordAiEvent } from "@/store/aiThread";
 import { useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
@@ -41,7 +41,7 @@ const GENERATE_STEPS = [
 export const Status: React.FC = () => {
   const changeText = useChangeText();
   const navigate = useNavigate();
-  const { draft, status, tasksGenerated, finalize, markTasksGenerated } =
+  const { status, tasksGenerated, finalize, markTasksGenerated } =
     useDmpStore();
   const hasTokensFor = useQuotaStore((s) => s.hasTokensFor);
   const tokensLeft = useQuotaStore((s) => s.tokensLeft);
@@ -71,7 +71,12 @@ export const Status: React.FC = () => {
   const [generating, setGenerating] = React.useState(false);
   const [step, setStep] = React.useState(0);
 
-  const outputs = draft.dataset ?? [];
+  // Tasks execute the approved plan: its outputs and dates, never edits
+  // still waiting to be saved or decided.
+  const inForce = record?.versions.find(
+    (v) => v.number === record.active_version,
+  )?.snapshot;
+  const outputs = outputsInForce(record);
   const cost = estimateCost.generateTasks(outputs.length);
   const mode = useOpenPlanMode();
   const route = activation(mode);
@@ -101,8 +106,8 @@ export const Status: React.FC = () => {
           type: d.type,
           access: d.access,
         })),
-        beginDate: draft.begin_date,
-        endDate: draft.end_date,
+        beginDate: inForce?.begin_date,
+        endDate: inForce?.end_date,
       });
 
       addGeneratedTasks(

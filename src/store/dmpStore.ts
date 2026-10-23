@@ -416,6 +416,16 @@ export const buildDmpList = (state: {
   return state.includeArchived ? list : list.filter((d) => !d.archived_at);
 };
 
+/**
+ * The research outputs the version in force approved: what tasks are drafted
+ * from. Tasks execute the approved plan, so an output added or changed in the
+ * working copy, or in a revision still waiting on a decision, isn't one yet.
+ * Empty when nothing is in force.
+ */
+export const outputsInForce = (record?: DmpRecord): Dataset[] =>
+  record?.versions.find((v) => v.number === record.active_version)?.snapshot
+    .dataset ?? [];
+
 export const createEmptyDataset = (type: Dataset["type"]): Dataset => {
   const base = {
     dataset_id: makeId(),

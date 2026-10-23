@@ -8,7 +8,7 @@ import { QuotaBar } from "@/components/ui/quota-indicator";
 import { useCurrentUser } from "@/store/authStore";
 import { useQuotaStore } from "@/store/quotaStore";
 import { useAssistantStore } from "@/store/assistantStore";
-import { isReviewer } from "@/config/roles";
+import { isResearcher } from "@/config/roles";
 
 const SIDEBAR_KEY = "sidebar-collapsed";
 
@@ -18,9 +18,9 @@ interface MainLayoutProps {
 
 export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-  // The token budget is for drafting; reviewers only read.
+  // The token budget is for drafting: only researchers have one to show.
   const user = useCurrentUser();
-  const reviewer = isReviewer(user?.role);
+  const drafts = isResearcher(user?.role);
   // The plan editor docks the assistant; the shell only makes room for it.
   const chatOpen = useAssistantStore((s) => s.open);
   // The budget is the signed-in account's, read from the server — on sign-in
@@ -57,7 +57,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             onToggleSidebar={toggleSidebar}
             sidebarCollapsed={sidebarCollapsed}
           >
-            {!reviewer && <QuotaBar />}
+            {drafts && <QuotaBar />}
           </Navbar>
 
           <div className="flex flex-1">

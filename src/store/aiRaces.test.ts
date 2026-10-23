@@ -252,6 +252,20 @@ describe("asking the chat to reword a field", () => {
   });
 });
 
+describe("asking the chat for advice it can't ground yet", () => {
+  it("says so plainly instead of the generic fallback", async () => {
+    const run = useChatStore
+      .getState()
+      .send("Which repository should I use for sequencing reads?");
+    await settle();
+    await run;
+
+    const reply = turns("dmp-a").at(-1)!;
+    expect(reply.text).toMatch(/can't recommend a repository/);
+    expect(reply.proposals).toBeUndefined();
+  });
+});
+
 describe("batch suggestions", () => {
   it("come back marked out of date for fields edited meanwhile", async () => {
     // A title formal wording can change: "Plan A" would come back as it was.

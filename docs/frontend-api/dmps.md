@@ -1,7 +1,8 @@
 # Plans (DMPs)
 
-A **Plan** is a Data Management Plan with its full version history. The
-committee reads plans; it never edits their content.
+A **Plan** is a Data Management Plan with its full version history. It has one
+author, its researcher, who writes it; the committee reads it and decides on
+its versions, and never edits its content.
 
 A decision moves a pending version to `approved` or `rejected`. It's recorded
 on the version with the deciding member as its **approver**: name and email
@@ -16,6 +17,51 @@ approver.
 | [List plans](#list-plans) | `GET /v1/dmps` |
 | [Approve a version](#approve-a-version) | `POST /v1/dmps/:dmp_id/versions/:number/approve` |
 | [Reject a version](#reject-a-version) | `POST /v1/dmps/:dmp_id/versions/:number/reject` |
+| [Create a plan](#create-a-plan) | `POST /v1/dmps` |
+| [Update a draft](#update-a-draft) | `PATCH /v1/dmps/:dmp_id/draft` |
+| [Discard draft edits](#discard-draft-edits) | `POST /v1/dmps/:dmp_id/draft/discard` |
+| [Restore a version](#restore-a-version) | `POST /v1/dmps/:dmp_id/draft/restore` |
+| [Submit for approval](#submit-for-approval) | `POST /v1/dmps/:dmp_id/submit` |
+| [Finalize a plan](#finalize-a-plan) | `POST /v1/dmps/:dmp_id/finalize` |
+| [Save minor edits](#save-minor-edits) | `POST /v1/dmps/:dmp_id/minor-edits` |
+| [Submit a revision](#submit-a-revision) | `POST /v1/dmps/:dmp_id/revisions` |
+| [Archive a plan](#archive-a-plan) | `POST /v1/dmps/:dmp_id/archive` |
+| [Unarchive a plan](#unarchive-a-plan) | `POST /v1/dmps/:dmp_id/unarchive` |
+
+## Who works on a plan
+
+- **One author.** A plan is written by one researcher: the one who created
+  it (`researcher`). Being a member of the plan's project lets someone follow
+  it, not edit it, which keeps autosave single-user (see
+  [Update a draft](#update-a-draft)). Co-editing would need a deliberate
+  change to both this rule and concurrency.
+- The author reads and writes their plan. Another researcher gets
+  `404 resource_missing`, so the plan's existence isn't confirmed.
+- `committee` and `chief` read every institutional plan and decide on its
+  versions ([Approve](#approve-a-version), [Reject](#reject-a-version)).
+- `admin` gets `403` on every plan endpoint, reading included.
+
+## Editing a plan in force
+
+Once a version is in force, every edit is either **minor** (applied in place,
+logged, nothing reviewed) or **major** (a new pending version that has to be
+approved again). The rule is a governance decision kept in one place,
+`isMajorTrigger` in [`field-policy.ts`](../../src/config/field-policy.ts), and
+the server applies the same rule. A change is **major** when it alters a
+data-management commitment:
+
+- the plan's begin or end date, whether ethical issues exist, Indigenous
+  considerations;
+- a research output's access, personal data, personal data plan, protection
+  level, security classification, **repository**, **retention period**, or a
+  distribution's **licence**;
+- adding or removing a research output;
+- **any change to contributors**, the contact included.
+
+Everything else is minor: wording and typo fixes, including the title,
+description, the preservation statement and a distribution's title. One major
+change makes the whole batch major. The full rules are the ERD's
+[Versions and edit classification](../project-erd.md#versions-and-edit-classification).
 
 ## The Plan object
 
@@ -95,7 +141,8 @@ approver.
 - `updated_at` (date-time, required)
   When the plan last changed.
 - `researcher` (object, required)
-  The plan's researcher.
+  The plan's author: the researcher who created it. Set once and never
+  changed (see [Who works on a plan](#who-works-on-a-plan)).
   - `user_id` (string, required)
     The researcher's user id.
   - `name` (string, required)
@@ -298,6 +345,15 @@ approver.
 - `versions` (array of objects, includable)
   Every [Version](#the-version-object), newest first. Returned only with
   `include=versions`.
+- `draft` (object, includable)
+  The author's working draft, unsaved and unsubmitted edits included.
+  Returned only to the author, only with `include=draft`. Same shape as
+  [`dmpDraftSchema`](../../src/schemas/dmp/dmp.schema.ts).
+- `draft_revision` (integer, required)
+  Increases with every saved change to the draft. Sent back with
+  [Update a draft](#update-a-draft) so two saves can't overwrite each other.
+- `archived_at` (date-time, nullable)
+  When the plan was [archived](#archive-a-plan), or `null`.
 - `readiness` (object, includable)
   Whether the reviewed content passes the plan rules. Returned only with
   `include=readiness`.
@@ -426,7 +482,7 @@ is the content under review: the pending version as submitted (never the
 researcher's later, unsubmitted edits), else the version in force, else the
 draft.
 
-**Who can call:** `committee`, `chief`
+**Who can call:** `committee`, `chief`; `researcher` for plans they wrote
 
 **Frontend today:** `useDmpLibrary().find(...)` with `reviewedSnapshot(record)`
 and `computeReadiness(snapshot)`.
@@ -435,7 +491,7 @@ and `computeReadiness(snapshot)`.
 
 ```bash
 curl "https://api.example.ac.th/v1/dmps/dmp-soil?include=versions,readiness" \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **Response**
@@ -491,6 +547,7 @@ curl "https://api.example.ac.th/v1/dmps/dmp-soil?include=versions,readiness" \
   - `versions`: every [Version](#the-version-object), newest first.
   - `readiness`: whether the reviewed content passes the plan rules, and
     which items don't (`unmet_items`, each with `label` and `section`).
+  - `draft`: the working draft, for the plan's author only.
 
 **Returns** a [Plan](#the-plan-object).
 
@@ -508,7 +565,7 @@ curl "https://api.example.ac.th/v1/dmps/dmp-soil?include=versions,readiness" \
 Lists a project's plans for the **Project** page, newest activity first.
 Archived plans are left out.
 
-**Who can call:** `committee`, `chief`
+**Who can call:** `committee`, `chief`; `researcher` for plans they wrote
 
 **Frontend today:** `useDmpLibrary().filter((d) => d.project_id === id)`
 
@@ -516,7 +573,7 @@ Archived plans are left out.
 
 ```bash
 curl "https://api.example.ac.th/v1/dmps?project_id=proj-1&include=versions" \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **Response**
@@ -567,7 +624,17 @@ archived.
 **Parameters**
 
 - `project_id` (string, **required** for committee members)
-  The project whose plans to list.
+  The project whose plans to list. Optional for a researcher: without it,
+  every plan they wrote is listed (**My DMPs**).
+- `archived` (boolean, optional, researcher only)
+  `true` lists archived plans instead (My DMPs' *Archived* filter). Archived
+  plans are left out otherwise.
+- `status` (array of enums, optional)
+  Only plans in these statuses.
+- `q` (string, optional)
+  Matches the title and description.
+- `sort` (enum, optional)
+  `updated` (default, newest first), `title`, or `status`.
 - `include` (array of enums, optional)
   As in [Retrieve a plan](#retrieve-a-plan).
 
@@ -601,7 +668,7 @@ the same path as `approve(approver)` (`activate` in `dmpStore.ts`).
 
 ```bash
 curl -X POST https://api.example.ac.th/v1/dmps/dmp-soil/versions/1/approve \
-  -H "Authorization: Bearer <session_token>" \
+  -H "Authorization: Bearer <access_token>" \
   --json '{
     "position": "Committee chair",
     "note": "Clear plan. Please confirm the repository before data collection starts."
@@ -675,7 +742,7 @@ The page calls this **Send back**; the stored status is `rejected`.
 
 ```bash
 curl -X POST https://api.example.ac.th/v1/dmps/dmp-soil/versions/1/reject \
-  -H "Authorization: Bearer <session_token>" \
+  -H "Authorization: Bearer <access_token>" \
   --json '{
     "position": "Committee member",
     "note": "Add a preservation statement for the sequence reads."
@@ -726,3 +793,482 @@ the plan's status afterwards (`draft` for a returned first submission,
 | 400 | `note_required` | `note` is missing or blank. A version can't be sent back without a reason. |
 | 404 | `version_not_found` | The plan has no version with that number. |
 | 409 | `version_not_pending` | That version was already decided. |
+
+### Create a plan
+
+`POST /v1/dmps`
+
+Starts an empty plan, for a researcher who isn't drafting from a proposal.
+Drafting from one is [Analyze a proposal](./ai.md#analyze-a-proposal), which
+creates the plan itself.
+
+- The caller becomes the plan's author.
+- An optional `project_id` must be a project they're a member of. Without one
+  the plan is unfiled until it gets one.
+- The plan starts as a `draft` with no versions and `draft_revision: 0`. Its
+  plan mode follows its project until it's first submitted, then it's frozen
+  on the plan.
+
+**Who can call:** `researcher`
+
+**Frontend today:** `useDmpStore.startManual(projectId)`. The browser keeps a
+blank plan out of My DMPs until it has content; the server can do the same
+by listing only plans with content.
+
+**Request**
+
+```bash
+curl -X POST https://api.example.ac.th/v1/dmps \
+  -H "Authorization: Bearer <access_token>" \
+  --json '{ "project_id": "proj-1" }'
+```
+
+**Response**
+
+A [Plan](#the-plan-object) with `include=draft` applied: status `draft`, an
+empty draft, `draft_revision: 0`.
+
+**Parameters**
+
+- `project_id` (string, optional)
+  One of the caller's projects.
+
+**Returns** the new [Plan](#the-plan-object).
+
+**Error codes**
+
+| HTTP status code | Code | Description |
+| --- | --- | --- |
+| 404 | `project_not_found` | No project of yours with that id. |
+
+### Update a draft
+
+`PATCH /v1/dmps/:dmp_id/draft`
+
+Saves changes to the working draft. The editor autosaves field by field, so
+this is the endpoint the app calls most.
+
+- **Partial update.** The body is a JSON merge patch
+  ([RFC 7396](https://www.rfc-editor.org/rfc/rfc7396)) over the draft. Lists
+  (`dataset`, `contributor`, `cost`) are sent whole, each entry with its id,
+  so adding, editing, reordering and removing an output, contributor or cost
+  item all go through this one endpoint.
+- **Optimistic concurrency.** The request carries `draft_revision`, the
+  revision the client last saw. If the draft has moved on since (another tab,
+  another device, an accepted AI proposal), the server answers
+  `409 draft_conflict` with **the current server draft and its revision**;
+  the client rebases its own change onto that draft and sends it again. This
+  is what stops field-by-field autosaves from overwriting each other.
+- **No completeness check here.** A draft may be incomplete; values are only
+  checked for type and format. Completeness is checked when the plan is
+  [submitted](#submit-for-approval).
+- **Field policy is enforced by the server**
+  ([`field-policy.ts`](../../src/config/field-policy.ts)): a `locked` field
+  (e.g. `schema_version`) is refused; begin and end dates can be changed until
+  the plan is approved.
+- **Editing a plan in force changes nothing in force.** The edits stay in the
+  draft until they're [saved as minor](#save-minor-edits) or
+  [submitted as a revision](#submit-a-revision). Removing a research output is
+  therefore only proposed: its tasks keep running.
+- Editing a field retires its AI provenance. Switching an output's domain
+  drops the `domain_metadata` keys the new profile has no place for.
+
+**Who can call:** `researcher`, the plan's author
+
+**Frontend today:** `setField`, `addContributor`, `updateContributor`,
+`removeContributor`, `setPrimaryContact`, `addCost`, `updateCost`,
+`removeCost`, `addDataset`, `updateDataset`, `removeDataset`,
+`changeDatasetType` and `changeDatasetDomain` on `useDmpStore`. The client
+doesn't track a draft revision yet; it will need to keep the last
+`draft_revision` it received.
+
+**Request**
+
+```bash
+curl -X PATCH https://api.example.ac.th/v1/dmps/dmp-soil/draft \
+  -H "Authorization: Bearer <access_token>" \
+  --json '{ "draft_revision": 41, "patch": { "title": "Soil Microbiome DMP" } }'
+```
+
+The `patch` is a merge patch over [`dmpDraftSchema`](../../src/schemas/dmp/dmp.schema.ts), with outputs as
+[`dataset.schema.ts`](../../src/schemas/dataset/dataset.schema.ts),
+contributors as
+[`contributor.schema.ts`](../../src/schemas/contributor/contributor.schema.ts)
+and costs as [`cost.schema.ts`](../../src/schemas/contributor/cost.schema.ts).
+
+**Response**
+
+```json
+{ "object": "dmp_draft", "dmp_id": "dmp-soil", "draft_revision": 42, "draft": { } }
+```
+
+The saved `draft` ([`dmpDraftSchema`](../../src/schemas/dmp/dmp.schema.ts)) and its new `draft_revision`.
+
+**Parameters**
+
+- `draft_revision` (integer, **required**)
+  The revision this change was made against.
+- `patch` (object, **required**)
+  The merge patch.
+
+**Returns** the saved draft and its revision.
+
+**Error codes**
+
+| HTTP status code | Code | Description |
+| --- | --- | --- |
+| 400 | `field_invalid` | A value doesn't fit its field. `param` names it. |
+| 400 | `field_locked` | The patch changes a locked field. |
+| 409 | `draft_conflict` | `draft_revision` is out of date. The error carries the current `draft` and `draft_revision` to rebase onto. |
+
+### Discard draft edits
+
+`POST /v1/dmps/:dmp_id/draft/discard`
+
+Throws away the draft's unsaved, unsubmitted edits: the editor's **Cancel**
+for a plan that has been submitted.
+
+- A plan in force goes back to the version in force. A plan waiting for its
+  first decision keeps its submission exactly as submitted. Nothing in force
+  or under review changes.
+- An unsubmitted plan has nothing to go back to: Cancel
+  [archives it](#archive-a-plan) instead. Nothing is ever deleted.
+
+**Who can call:** `researcher`, the plan's author
+
+**Frontend today:** `useDmpStore.closeDraft()` (returns `discarded`, `kept`,
+`archived` or `cleared`).
+
+**Request**
+
+```bash
+curl -X POST https://api.example.ac.th/v1/dmps/dmp-soil/draft/discard \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response**
+
+The [Plan](#the-plan-object) with `include=draft`: the draft is back to the
+version in force, or to the submission.
+
+**Parameters** none.
+
+**Returns** the [Plan](#the-plan-object).
+
+**Error codes**
+
+| HTTP status code | Code | Description |
+| --- | --- | --- |
+| 409 | `never_submitted` | The plan has no submission to go back to. Archive it instead. |
+
+### Restore a version
+
+`POST /v1/dmps/:dmp_id/draft/restore`
+
+Loads a version's snapshot into the working draft.
+
+- Restoring the version in force discards unsubmitted edits and records
+  nothing.
+- Restoring any other version (an earlier approved one, or one that was sent
+  back) is from then on an ordinary edit: compared with the version in force
+  and saved as minor or submitted as a revision like any other, so a rollback
+  can't skip approval. What it produces records `restored_from`.
+
+**Who can call:** `researcher`, the plan's author
+
+**Frontend today:** `useDmpStore.restoreVersion(number)`.
+
+**Request**
+
+```bash
+curl -X POST https://api.example.ac.th/v1/dmps/dmp-soil/draft/restore \
+  -H "Authorization: Bearer <access_token>" \
+  --json '{ "number": 1, "draft_revision": 42 }'
+```
+
+**Response**
+
+The [Plan](#the-plan-object) with `include=draft`, the draft now holding the
+restored snapshot and a new `draft_revision`.
+
+**Parameters**
+
+- `number` (integer, **required**)
+  The version to restore.
+- `draft_revision` (integer, **required**)
+  As in [Update a draft](#update-a-draft).
+
+**Returns** the [Plan](#the-plan-object).
+
+**Error codes**
+
+| HTTP status code | Code | Description |
+| --- | --- | --- |
+| 404 | `version_not_found` | No version with that number. |
+| 409 | `version_pending` | That version is still waiting on a decision. |
+| 409 | `draft_conflict` | As in Update a draft. |
+
+### Submit for approval
+
+`POST /v1/dmps/:dmp_id/submit`
+
+Sends an institutional plan to the committee for its first decision.
+
+- The draft must pass `dmpSchema` and the submission checklist
+  ([Plan rules](../project-erd.md#plan-rules-the-schema-enforces)). The error
+  lists every unmet item with its field path: the same list the readiness
+  checklist shows. This is the only gate, and nothing from the AI takes part.
+- `draft_revision` names the draft the researcher reviewed. If the draft has
+  changed since, the submission is refused, so what's submitted is what they
+  saw.
+- Freezes the plan's `plan_mode`, creates version 1 as `pending`, and
+  notifies the committee and chief (`review_requested`) and the author
+  (`dmp_submitted`).
+- Independent plans don't go to the committee: they use
+  [Finalize a plan](#finalize-a-plan).
+
+**Who can call:** `researcher`, the plan's author
+
+**Frontend today:** `useDmpStore.submitForApproval()`, from Review & submit.
+
+**Request**
+
+```bash
+curl -X POST https://api.example.ac.th/v1/dmps/dmp-soil/submit \
+  -H "Authorization: Bearer <access_token>" \
+  --json '{ "draft_revision": 42 }'
+```
+
+**Response**
+
+The [Plan](#the-plan-object), status `pending`, with its new pending
+[Version](#the-version-object) under `versions`.
+
+**Parameters**
+
+- `draft_revision` (integer, **required**)
+  The draft the researcher reviewed.
+
+**Returns** the [Plan](#the-plan-object).
+
+**Error codes**
+
+| HTTP status code | Code | Description |
+| --- | --- | --- |
+| 409 | `already_submitted` | The plan already has a version. Changes go through Submit a revision. |
+| 409 | `plan_is_independent` | Independent plans are finalized by their author. |
+| 409 | `draft_conflict` | The draft changed after it was reviewed. |
+| 422 | `plan_incomplete` | The checklist has unmet items; each is listed with its `param`. |
+
+### Finalize a plan
+
+`POST /v1/dmps/:dmp_id/finalize`
+
+Puts an independent plan's draft in force, with its author as approver. Used
+for the first version and for any later change that includes a major edit:
+an independent plan has no committee, so its author signs off.
+
+- Same completeness check and `draft_revision` rule as
+  [Submit for approval](#submit-for-approval).
+- Lands where an approval lands: the version is in force, tasks can be
+  generated, and the export names the author as approver. The plan's mode is
+  frozen as `independent`.
+- Notifies the author (`dmp_finalized`).
+
+**Who can call:** `researcher`, the plan's author, on an independent plan
+
+**Frontend today:** `useDmpStore.finalize()`, from Review & submit and from
+the editor's changes panel.
+
+**Request**
+
+```bash
+curl -X POST https://api.example.ac.th/v1/dmps/dmp-river/finalize \
+  -H "Authorization: Bearer <access_token>" \
+  --json '{ "draft_revision": 17 }'
+```
+
+**Response**
+
+The [Plan](#the-plan-object), status `approved`, with the new version in
+force.
+
+**Parameters**
+
+- `draft_revision` (integer, **required**)
+  As in Submit for approval.
+
+**Returns** the [Plan](#the-plan-object).
+
+**Error codes**
+
+| HTTP status code | Code | Description |
+| --- | --- | --- |
+| 409 | `plan_is_institutional` | Institutional plans are decided by the committee. |
+| 409 | `draft_conflict` | The draft changed after it was reviewed. |
+| 422 | `plan_incomplete` | As in Submit for approval. |
+
+### Save minor edits
+
+`POST /v1/dmps/:dmp_id/minor-edits`
+
+Applies the draft's edits to the version in force when every one of them is
+minor (see [Editing a plan in force](#editing-a-plan-in-force)). No new
+version, nothing to review.
+
+- The server classifies the edits with the same rule; the client's
+  classification is never trusted.
+- The edits are logged in the version's `minor_edits`.
+- Works while a revision waits: the fixes go onto the version in force and
+  the pending snapshot stays frozen. When the revision is approved they're
+  carried into it (`carried_minor_edits`), or recorded in
+  `dropped_minor_edits` when they touch an output the revision removed.
+
+**Who can call:** `researcher`, the plan's author
+
+**Frontend today:** `useDmpStore.saveMinorEdits()`, from the editor's changes
+panel.
+
+**Request**
+
+```bash
+curl -X POST https://api.example.ac.th/v1/dmps/dmp-soil/minor-edits \
+  -H "Authorization: Bearer <access_token>" \
+  --json '{ "draft_revision": 43 }'
+```
+
+**Response**
+
+The version in force ([Version](#the-version-object)), its `minor_edits`
+including the new ones.
+
+**Parameters**
+
+- `draft_revision` (integer, **required**)
+  As in Update a draft.
+
+**Returns** the [Version](#the-version-object) in force.
+
+**Error codes**
+
+| HTTP status code | Code | Description |
+| --- | --- | --- |
+| 409 | `plan_not_in_force` | The plan has no version in force yet. |
+| 409 | `no_new_edits` | Nothing to save. |
+| 409 | `edits_include_major` | At least one edit is major. It needs Submit a revision, or Finalize for an independent plan. |
+| 409 | `draft_conflict` | As in Update a draft. |
+
+### Submit a revision
+
+`POST /v1/dmps/:dmp_id/revisions`
+
+Submits a change that includes a major edit as the next numbered version,
+`pending`. The version in force keeps running until the committee decides.
+
+- **One revision waits at a time.** Refused while another version is pending,
+  since a second would be built on a version that may never be approved.
+- The version records its changes, its snapshot, and `based_on`: the version
+  in force it was made against.
+- Same completeness check and `draft_revision` rule as
+  [Submit for approval](#submit-for-approval).
+- Notifies the committee and chief (`review_requested`) and the author
+  (`dmp_submitted`).
+
+**Who can call:** `researcher`, the plan's author, on an institutional plan
+
+**Frontend today:** `useDmpStore.submitRevision()`, from the editor's changes
+panel.
+
+**Request**
+
+```bash
+curl -X POST https://api.example.ac.th/v1/dmps/dmp-soil/revisions \
+  -H "Authorization: Bearer <access_token>" \
+  --json '{ "draft_revision": 44 }'
+```
+
+**Response**
+
+The new pending [Version](#the-version-object).
+
+**Parameters**
+
+- `draft_revision` (integer, **required**)
+  As in Submit for approval.
+
+**Returns** the new [Version](#the-version-object).
+
+**Error codes**
+
+| HTTP status code | Code | Description |
+| --- | --- | --- |
+| 409 | `revision_pending` | Another version is waiting on a decision. |
+| 409 | `no_new_edits` | Nothing has changed since the version in force. |
+| 409 | `plan_is_independent` | Use Finalize a plan. |
+| 409 | `draft_conflict` | As in Submit for approval. |
+| 422 | `plan_incomplete` | As in Submit for approval. |
+
+### Archive a plan
+
+`POST /v1/dmps/:dmp_id/archive`
+
+Sets a plan aside. There's no way to delete a plan.
+
+- Refused while the plan is in force: its tasks and evidence are the record
+  of work done.
+- An archived plan keeps everything it held, drops out of My DMPs, Tasks and
+  project views, and is listed with `archived=true`.
+
+**Who can call:** `researcher`, the plan's author
+
+**Frontend today:** `useDmpStore.archiveDmp(id)`.
+
+**Request**
+
+```bash
+curl -X POST https://api.example.ac.th/v1/dmps/dmp-old/archive \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response**
+
+The [Plan](#the-plan-object) with `archived_at` set.
+
+**Parameters** none.
+
+**Returns** the [Plan](#the-plan-object).
+
+**Error codes**
+
+| HTTP status code | Code | Description |
+| --- | --- | --- |
+| 409 | `plan_in_force` | A plan in force can't be archived. |
+
+### Unarchive a plan
+
+`POST /v1/dmps/:dmp_id/unarchive`
+
+Brings an archived plan back, unchanged.
+
+**Who can call:** `researcher`, the plan's author
+
+**Frontend today:** `useDmpStore.unarchiveDmp(id)`.
+
+**Request**
+
+```bash
+curl -X POST https://api.example.ac.th/v1/dmps/dmp-old/unarchive \
+  -H "Authorization: Bearer <access_token>"
+```
+
+**Response**
+
+The [Plan](#the-plan-object) with `archived_at: null`.
+
+**Parameters** none.
+
+**Returns** the [Plan](#the-plan-object).
+
+**Error codes**
+
+Only the common errors listed in [README](./README.md#errors).

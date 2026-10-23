@@ -6,7 +6,7 @@ import { X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useTaskStore } from "@/store/taskStore";
-import type { DmpRecord } from "@/store/dmpStore";
+import { outputsInForce, type DmpRecord } from "@/store/dmpStore";
 import { recordAiEvent } from "@/store/aiThread";
 import { useToastStore } from "@/store/toastStore";
 import { estimateCost, generateTasks, TASK_DIRECTIONS } from "@/api/aiApi";
@@ -33,7 +33,9 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
   const [direction, setDirection] = React.useState("");
   const [running, setRunning] = React.useState(false);
 
-  const allOutputs = plan.draft.dataset ?? [];
+  // From the version in force: an output in a revision still waiting on a
+  // decision isn't approved, so it gets no tasks yet.
+  const allOutputs = outputsInForce(plan);
   // A new output added to an approved plan usually wants tasks of its own,
   // without disturbing the ones already running.
   const untouchedOutputs = allOutputs.filter(

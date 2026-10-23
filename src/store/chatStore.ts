@@ -157,6 +157,10 @@ const asRegenerateDirection = (text: string): RegenerateDirection => {
   return { kind: "custom", detail: trimmed || "clearer" };
 };
 
+/** "Which repository should I use?" and the like: advice, not plan content. */
+const ASKS_FOR_ADVICE =
+  /\b(?:recommend|which|what|should i)\b.*\b(?:repositor(?:y|ies)|tools?|software|licen[cs]es?|formats?|platforms?)\b|ควรใช้|แนะนำ/i;
+
 const thread = () => useAiThread.getState();
 const currentScope = () => useDmpStore.getState().currentDmpId;
 
@@ -267,6 +271,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const reply =
         answers.join("\n\n") ||
+        // Advice needs grounding the assistant doesn't have yet (a repository
+        // and guidance source). Saying so beats a generic "try asking…".
+        (calls.length === 0 && ASKS_FOR_ADVICE.test(trimmed)
+          ? "I can't recommend a repository, tool, licence or format yet: I don't have a trusted source to check advice against. Your institution's data steward or library can help. I can explain what a field means, or change one once you've decided."
+          : "") ||
         (proposals.length
           ? `I've drafted ${proposals.length} change${proposals.length === 1 ? "" : "s"} below. Nothing is applied until you accept it.`
           : rejections.length
