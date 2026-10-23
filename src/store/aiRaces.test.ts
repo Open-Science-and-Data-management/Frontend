@@ -71,11 +71,23 @@ describe("a field rewrite", () => {
   const rewrite = () =>
     state().regenerateField("description", "Description", { kind: "formal" });
 
-  it("lands when nothing moved, and the server's count is what's shown", async () => {
+  /** The pending suggestion a rewrite left on plan A, and its turn. */
+  const waiting = () => {
+    const turn = turns("dmp-a").at(-1)!;
+    return { turn, proposal: turn.proposals![0] };
+  };
+
+  it("waits for a decision, and the server's count is what's shown", async () => {
     const run = rewrite();
     await settle();
     await run;
-    expect(state().draft.description).toMatch(/institutional data governance/);
+    expect(state().draft.description).toBe("About Plan A");
+    expect(waiting().proposal).toMatchObject({
+      path: "description",
+      status: "pending",
+      needsHumanConfirm: false,
+    });
+    expect(toasts().at(-1)?.title).toBe("Description: suggestion ready");
     // Charged on the server, read back — never added up in the browser.
     expect(account().ai_token_used).toBeGreaterThan(0);
     expect(useQuotaStore.getState().quota?.used).toBe(account().ai_token_used);
@@ -113,21 +125,28 @@ describe("a field rewrite", () => {
     expect(kept.proposals![0].staleReason).toMatch(/My own words/);
   });
 
-  it("undoes only its own rewrite", async () => {
+  it("is written in only when accepted", async () => {
     const run = rewrite();
     await settle();
     await run;
-    const rewritten = state().draft.description;
-    const undo = toasts().at(-1)?.action?.onClick;
-    expect(undo).toBeDefined();
+    const { turn, proposal } = waiting();
 
-    state().setField("description", "Edited after the rewrite");
-    undo!();
-    expect(state().draft.description).toBe("Edited after the rewrite");
+    useChatStore.getState().acceptProposal(turn.id, proposal.id);
 
-    state().setField("description", rewritten);
-    undo!();
+    expect(state().draft.description).toBe("About Plan A.");
+    expect(waiting().proposal.status).toBe("accepted");
+  });
+
+  it("leaves the field alone when rejected", async () => {
+    const run = rewrite();
+    await settle();
+    await run;
+    const { turn, proposal } = waiting();
+
+    useChatStore.getState().rejectProposal(turn.id, proposal.id);
+
     expect(state().draft.description).toBe("About Plan A");
+    expect(waiting().proposal.status).toBe("rejected");
   });
 });
 
@@ -202,8 +221,43 @@ describe("a chat answer", () => {
   });
 });
 
+describe("asking the chat to reword a field", () => {
+  const LONG =
+    "We survey pollinators across green corridors, combining field sampling with sequencing.";
+
+  it("drafts the rewrite as a proposal; the field waits", async () => {
+    useDmpStore.setState({ draft: { title: "Plan A", description: LONG } });
+    const run = useChatStore.getState().send("Make the description shorter");
+    await settle();
+    await run;
+
+    expect(state().draft.description).toBe(LONG);
+    const reply = turns("dmp-a").at(-1)!;
+    expect(reply.proposals?.[0]).toMatchObject({
+      path: "description",
+      value: "We survey pollinators across green corridors.",
+      status: "pending",
+    });
+    // The drafting is paid for, and shows on the turn.
+    expect(reply.token_count).toBeGreaterThan(0);
+  });
+
+  it("says so when there's nothing to change", async () => {
+    const run = useChatStore.getState().send("Make the description shorter");
+    await settle();
+    await run;
+
+    expect(turns("dmp-a").at(-1)!.text).toMatch(/already reads that way/);
+    expect(turns("dmp-a").at(-1)!.proposals).toBeUndefined();
+  });
+});
+
 describe("batch suggestions", () => {
   it("come back marked out of date for fields edited meanwhile", async () => {
+    // A title formal wording can change: "Plan A" would come back as it was.
+    useDmpStore.setState({
+      draft: { title: "plan a", description: "About Plan A" },
+    });
     const run = useChatStore.getState().suggestChanges({
       source: "current",
       direction: "more formal",
@@ -442,8 +496,11 @@ describe("polishing the researcher's own text", () => {
       needsHumanConfirm: true,
       status: "pending",
     });
-    expect(useAssistantStore.getState().open).toBe(true);
-    expect(toasts().at(-1)?.title).toBe("Suggestion ready");
+    // It waits under the field; the panel stays as it was.
+    expect(useAssistantStore.getState().open).toBe(false);
+    expect(toasts().at(-1)?.title).toBe(
+      "Ethical issues description: suggestion ready",
+    );
   });
 
   it("rewords without adding anything of the AI's own", async () => {
@@ -560,10 +617,15 @@ describe("rewriting an output's description", () => {
     useDmpStore.setState({ draft: { ...state().draft, dataset: [d2, d1] } });
     await settle();
     await run;
+    // Reordered again before accepting: found by id, not by position.
+    useDmpStore.setState({ draft: { ...state().draft, dataset: [d1, d2] } });
+    const turn = turns("dmp-a").at(-1)!;
+    expect(turn.proposals![0].status).toBe("pending");
+    useChatStore.getState().acceptProposal(turn.id, turn.proposals![0].id);
 
     const byId = (id: string) =>
       state().draft.dataset!.find((d) => d.dataset_id === id)!;
-    expect(byId("d2").description).toMatch(/institutional data governance/);
+    expect(byId("d2").description).toBe("Trait table.");
     expect(byId("d1").description).toBe("Raw reads");
     expect(state().regeneratingFields["dataset:d2:description"]).toBe(false);
   });

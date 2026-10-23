@@ -45,7 +45,7 @@ describe("which fields get “Regenerate with AI”", () => {
     ["personal data plan", datasetFieldPolicy.personal_data_plan],
   ])("%s, human-owned prose: a suggestion to accept", (_name, policy) => {
     expect(policy.permission).toBe("human");
-    expect(regenerateMode(policy)).toBe("suggest");
+    expect(regenerateMode(policy)).toBe("polish");
   });
 
   it("indigenous considerations: no AI at all, not even a polish", () => {
@@ -59,7 +59,7 @@ describe("which fields get “Regenerate with AI”", () => {
     ["plan title", dmpFieldPolicy.title],
     ["output description", datasetFieldPolicy.description],
   ])("%s, AI-owned prose: written in directly", (_name, policy) => {
-    expect(regenerateMode(policy)).toBe("apply");
+    expect(regenerateMode(policy)).toBe("rewrite");
   });
 
   it("a field with no policy (data type, cost amount) is never offered", () => {

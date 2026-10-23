@@ -18,14 +18,6 @@ export type RegenerateDirection =
   | { kind: "shorter" | "formal" }
   | { kind: "emphasize" | "custom"; detail: string };
 
-/**
- * The directions that change wording only. A rewrite of the researcher's own
- * text is limited to these: "emphasise X" or a free instruction can put
- * something in their mouth they never said.
- */
-export const isWordingOnly = (direction: RegenerateDirection) =>
-  direction.kind === "shorter" || direction.kind === "formal";
-
 /** A direction in words, for toasts and the AI thread. */
 export const describeDirection = (direction: RegenerateDirection): string => {
   switch (direction.kind) {
@@ -637,23 +629,72 @@ export const generateTasks = async (
   return { tasks, ...metered(usage) };
 };
 
+/** The output a task is for, as the checklist needs to know it. */
+export interface ChecklistOutput {
+  dataset_id: string;
+  title: string;
+  type: string;
+  access: string;
+  personal_data?: string;
+  repository?: string;
+  duration?: string;
+}
+
 export interface GenerateChecklistInput {
   taskTitle: string;
   lifecycleStage: string;
-  /** The outputs the plan approved, so steps name real deliverables. */
-  outputs: { title: string; type: string; access: string }[];
+  /**
+   * The output this task is about, and the primary context: the steps are
+   * for this output. Absent for a task about the whole plan. Without it a
+   * model would have to guess which of the plan's outputs a task means.
+   */
+  taskOutput?: ChecklistOutput;
+  /** The plan's other outputs, by title. Context only, never the subject. */
+  otherOutputs?: string[];
   direction?: string;
 }
 
-/** The steps a list is drafted from, before the direction narrows them. */
-const CHECKLIST_TEMPLATE = [
-  "Agree the approach and record it",
-  "Do the work and note what changed",
-  "Produce the deliverable",
-  "Check it against the plan",
-  "Deposit it in the repository",
-  "Record the DOI or receipt",
-];
+/** Steps per lifecycle stage, before the output and direction shape them. */
+const CHECKLIST_BY_STAGE: Record<string, (o?: ChecklistOutput) => string[]> = {
+  collect: () => [
+    "Confirm permits and consent are in place",
+    "Collect the samples or data",
+    "Record where, when and how each item was collected",
+    "Store the raw data in the agreed location",
+    "Back up the raw data",
+  ],
+  process: () => [
+    "Agree the processing steps",
+    "Run the processing and keep the scripts",
+    "Check the processed data against the raw data",
+    "Record the software and versions used",
+    "Store the processed data",
+  ],
+  analyse: () => [
+    "Agree the analysis plan",
+    "Run the analysis and keep the code",
+    "Check the results can be reproduced",
+    "Record the results and where they are kept",
+  ],
+  preserve: (o) => [
+    "Convert the files to an archival format",
+    "Write the README and metadata",
+    `Deposit it in ${o?.repository || "the repository"}`,
+    "Record the DOI or receipt",
+    o?.duration
+      ? `Confirm it is kept for ${o.duration}`
+      : "Confirm how long it is kept",
+  ],
+  share: (o) => [
+    o?.access
+      ? `Check the access conditions (${o.access})`
+      : "Check the access conditions",
+    "Prepare the version to share",
+    "Publish or release it",
+    "Record the DOI or link",
+    "Tell collaborators where to find it",
+  ],
+};
 
 /**
  * Drafts the steps for one task from the approved plan. The direction has to
@@ -665,10 +706,23 @@ export const generateTaskChecklist = async (
   opts: AiCallOptions = {},
 ): Promise<Metered & { steps: string[] }> => {
   const d = (input.direction ?? "").trim().toLowerCase();
-  const output = input.outputs[0]?.title;
+  const output = input.taskOutput;
+  const template =
+    CHECKLIST_BY_STAGE[input.lifecycleStage] ??
+    (() => [
+      "Agree the approach and record it",
+      "Do the work and note what changed",
+      "Check it against the plan",
+    ]);
 
-  let steps = CHECKLIST_TEMPLATE.map((s) =>
-    output ? `${s} (${output})` : `${s} (${input.lifecycleStage})`,
+  let steps = template(output);
+  if (
+    output?.personal_data === "yes" &&
+    (input.lifecycleStage === "collect" || input.lifecycleStage === "share")
+  )
+    steps.splice(1, 0, "Check the consent covers this use of personal data");
+  steps = steps.map((s) =>
+    output ? `${s} (${output.title})` : `${s} (${input.lifecycleStage})`,
   );
 
   if (/brief|fewer|short|minimal|simpl/.test(d))
@@ -679,13 +733,18 @@ export const generateTaskChecklist = async (
       "Log the decisions taken along the way",
       "Have a second person review it",
     ];
-  if (/preserv|archive|deposit|backup/.test(d))
-    steps = steps.filter((s) => /deposit|doi|receipt/i.test(s));
+  if (/preserv|archive|deposit|backup/.test(d)) {
+    const kept = steps.filter((s) => /deposit|doi|receipt|back up/i.test(s));
+    steps = kept.length ? kept : steps;
+  }
   if (/quality|check|valid|qa/.test(d))
     steps = [...steps, "Run the quality checks and keep the report"];
 
   const usage = await serve({
-    input: PROMPT_OVERHEAD.generate_tasks / 2 + tokensIn(d),
+    input:
+      PROMPT_OVERHEAD.generate_tasks / 2 +
+      tokensIn(d) +
+      tokensIn(JSON.stringify(input.taskOutput ?? {})),
     output: tokensIn(JSON.stringify(steps)),
     ms: 900,
     signal: opts.signal,
@@ -761,8 +820,12 @@ const CANNED_DRAFT: DmpDraft = {
   schema_version: MADMP_SCHEMA_VERSION,
 };
 
-// The stand-in for a rewording that adds nothing: contractions spelled out,
-// the first letter capitalised, one closing full stop.
+// Stand-ins for a model's rewording. Each changes wording only and never
+// adds a claim the text didn't make; when there's nothing honest to change,
+// the text comes back as it was and the UI says there was nothing new.
+const swap = (text: string, words: [RegExp, string][]) =>
+  words.reduce((t, [pattern, plain]) => t.replace(pattern, plain), text);
+
 const CONTRACTIONS: [RegExp, string][] = [
   [/\bcan't\b/gi, "cannot"],
   [/\bwon't\b/gi, "will not"],
@@ -771,12 +834,61 @@ const CONTRACTIONS: [RegExp, string][] = [
   [/\b(\w+)'ll\b/gi, "$1 will"],
   [/\bit's\b/gi, "it is"],
 ];
-const polish = (text: string) => {
-  const spelled = CONTRACTIONS.reduce(
-    (t, [pattern, full]) => t.replace(pattern, full),
-    text.trim(),
-  );
-  return `${spelled.charAt(0).toUpperCase()}${spelled.slice(1).replace(/\.*$/, "")}.`;
+const FORMAL_WORDS: [RegExp, string][] = [
+  [/\blots of\b/gi, "many"],
+  [/\bget\b/gi, "obtain"],
+  [/\bbig\b/gi, "large"],
+  [/\bkids\b/gi, "children"],
+];
+const PLAIN_WORDS: [RegExp, string][] = [
+  [/\bin accordance with\b/gi, "under"],
+  [/\butili[sz]e\b/gi, "use"],
+  [/\bapproximately\b/gi, "about"],
+  [/\bcommence\b/gi, "start"],
+  [/\bfacilitate\b/gi, "help"],
+  [/\bprior to\b/gi, "before"],
+  [/\bin order to\b/gi, "to"],
+  [/\bsubsequently\b/gi, "then"],
+  [/\bassess\b/gi, "check"],
+  [/\bascertain\b/gi, "find out"],
+];
+
+/** Capital first letter; a closing full stop, except on a title. */
+const tidy = (text: string, fieldLabel: string) => {
+  const t = text.trim().replace(/\.+$/, "");
+  const capped = `${t.charAt(0).toUpperCase()}${t.slice(1)}`;
+  return /title/i.test(fieldLabel) ? capped : `${capped}.`;
+};
+
+/** The first sentence, or the main clause of a long single one. */
+const shorten = (text: string) => {
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  if (sentences.length > 1) return sentences[0];
+  const cut = text.lastIndexOf(", ");
+  return cut > 0 && text.slice(0, cut).split(/\s+/).length >= 6
+    ? text.slice(0, cut)
+    : text;
+};
+
+const reword = (
+  text: string,
+  direction: RegenerateDirection,
+  fieldLabel: string,
+) => {
+  const detail = "detail" in direction ? direction.detail : "";
+  if (direction.kind === "shorter" || /short|concise|brief/i.test(detail)) {
+    const short = shorten(text);
+    return short === text ? text : tidy(short, fieldLabel);
+  }
+  if (direction.kind === "formal" || /formal/i.test(detail))
+    return tidy(swap(swap(text, CONTRACTIONS), FORMAL_WORDS), fieldLabel);
+  if (/plain|simpl|clear/i.test(detail)) {
+    const plain = swap(text, PLAIN_WORDS);
+    return plain === text ? text : tidy(plain, fieldLabel);
+  }
+  // "Emphasise X", or an instruction the stand-in can't follow: no change,
+  // rather than pasting the instruction into the text.
+  return text;
 };
 
 export const aiApi = {
@@ -842,46 +954,21 @@ export const aiApi = {
   },
 
   /**
-   * `suggest` asks for the same meaning in better words, nothing added: the
+   * `polish` asks for the same meaning in better words, nothing added: the
    * text is the researcher's. The real prompt has to carry that too.
    */
   regenerateField: async (
     fieldLabel: string,
     currentValue: string,
     direction: RegenerateDirection,
-    mode: RegenerateMode = "apply",
+    mode: RegenerateMode = "rewrite",
     opts: AiCallOptions = {},
   ): Promise<RegenerateResult> => {
-    const base = currentValue || `${fieldLabel} (AI draft)`;
-    let text: string;
-    if (mode === "suggest" && direction.kind === "formal") text = polish(base);
-    else
-      switch (direction.kind) {
-        case "shorter": {
-          const firstSentence = base.split(". ")[0]?.trim() ?? "";
-          if (firstSentence && firstSentence.length < base.trim().length - 1) {
-            text = firstSentence.replace(/\.?$/, ".");
-          } else {
-            // Already a single sentence — trim it back instead of returning
-            // the input unchanged, which reads as a no-op to the user.
-            const words = base.replace(/\.\s*$/, "").split(/\s+/);
-            const kept = Math.max(6, Math.ceil(words.length * 0.6));
-            text = `${words.slice(0, kept).join(" ")}.`;
-          }
-          break;
-        }
-        case "formal":
-          text = `${base.replace(/\.$/, "")}, in accordance with institutional data governance standards.`;
-          break;
-        case "emphasize":
-          text = `${base.replace(/\.$/, "")}, with particular emphasis on ${direction.detail}.`;
-          break;
-        case "custom":
-          text = `${base.replace(/\.$/, "")} (${direction.detail}).`;
-          break;
-        default:
-          text = base;
-      }
+    // The stand-in rewords for both modes; the real prompt must also hold
+    // `polish` to the researcher's meaning. It writes nothing from blank.
+    void mode;
+    const base = currentValue.trim();
+    const text = base ? reword(base, direction, fieldLabel) : currentValue;
 
     const usage = await serve({
       input: PROMPT_OVERHEAD.regenerate_field + tokensIn(base),

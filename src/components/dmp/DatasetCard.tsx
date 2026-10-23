@@ -1,6 +1,7 @@
 import React from "react";
 import { ChevronDown, Trash2 } from "lucide-react";
 import { FormField } from "@/components/ui/form-field";
+import { InlineSuggestion } from "@/components/dmp/InlineSuggestion";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
@@ -115,6 +116,12 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
       isRegenerating:
         regeneratingFields[regenerateFlag({ datasetId: id, field })],
       hasText: Boolean(value?.trim()),
+      suggestion: (
+        <InlineSuggestion
+          match={{ datasetId: id, field }}
+          currentValue={value}
+        />
+      ),
     };
   };
 

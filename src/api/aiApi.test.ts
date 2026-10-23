@@ -93,7 +93,14 @@ describe("generateTaskChecklist honours the direction", () => {
   const base = {
     taskTitle: "Deposit the sequence reads",
     lifecycleStage: "preserve",
-    outputs: [{ title: "Sequence reads", type: "raw", access: "shared" }],
+    taskOutput: {
+      dataset_id: "d2",
+      title: "Sequence reads",
+      type: "raw",
+      access: "shared",
+      repository: "ENA",
+    },
+    otherOutputs: ["Trait table"],
   };
 
   it("drafts a list of plain steps", async () => {
@@ -103,10 +110,33 @@ describe("generateTaskChecklist honours the direction", () => {
     expect(steps.every((s) => typeof s === "string")).toBe(true);
   });
 
-  it("names the plan's output in the steps", async () => {
+  it("is about the task's own output, never another of the plan's", async () => {
     const { steps } = await generateTaskChecklist(base);
 
     expect(steps.some((s) => s.includes("Sequence reads"))).toBe(true);
+    expect(steps.some((s) => s.includes("Trait table"))).toBe(false);
+    expect(steps.some((s) => s.includes("ENA"))).toBe(true);
+  });
+
+  it("follows the task's stage: collecting isn't depositing", async () => {
+    const { steps } = await generateTaskChecklist({
+      ...base,
+      taskTitle: "Collect the samples",
+      lifecycleStage: "collect",
+    });
+
+    expect(steps.some((s) => /collect/i.test(s))).toBe(true);
+    expect(steps.some((s) => /deposit|doi/i.test(s))).toBe(false);
+  });
+
+  it("drafts plan-wide steps when the task has no output of its own", async () => {
+    const { steps } = await generateTaskChecklist({
+      taskTitle: "Agree the naming convention",
+      lifecycleStage: "process",
+      otherOutputs: ["Sequence reads", "Trait table"],
+    });
+
+    expect(steps.every((s) => !s.includes("Sequence reads"))).toBe(true);
   });
 
   it("trims the list when asked to keep it brief", async () => {
@@ -306,5 +336,52 @@ describe("a thin proposal yields a thin draft, not an invented one", () => {
     expect(coverageGaps(guided.draft).map((g) => g.id)).not.toContain(
       "outputs",
     );
+  });
+});
+
+// The stand-in must not damage text: testers should judge the review flow,
+// not a stub that pastes instructions into a title.
+describe("the rewrite stand-in only changes wording", () => {
+  const rewrite = (label: string, text: string, direction: never) =>
+    aiApi.regenerateField(label, text, direction).then((r) => r.text);
+  const LONG =
+    "This project surveys genomic diversity in urban pollinator populations across metropolitan green corridors, combining field sampling with sequencing.";
+
+  it("shortens at a clause, never mid-phrase", async () => {
+    expect(
+      await rewrite("Description", LONG, { kind: "shorter" } as never),
+    ).toBe(
+      "This project surveys genomic diversity in urban pollinator populations across metropolitan green corridors.",
+    );
+  });
+
+  it("never pastes the instruction into the text", async () => {
+    const title = "Genomic Diversity Mapping of Urban Pollinator Populations";
+    for (const detail of [
+      "Plainer language",
+      "More specific",
+      "community benefit",
+    ]) {
+      const out = await rewrite("Title", title, {
+        kind: "custom",
+        detail,
+      } as never);
+      expect(out).not.toMatch(new RegExp(detail, "i"));
+    }
+  });
+
+  it("adds no claim the text didn't make", async () => {
+    const out = await rewrite("Description", LONG, { kind: "formal" } as never);
+    expect(out).not.toMatch(/governance|accordance|standards/i);
+  });
+
+  it("writes nothing from a blank field", async () => {
+    expect(await rewrite("Title", "", { kind: "formal" } as never)).toBe("");
+  });
+
+  it("doesn't end a title with a full stop", async () => {
+    expect(
+      await rewrite("Title", "urban pollinators", { kind: "formal" } as never),
+    ).toBe("Urban pollinators");
   });
 });

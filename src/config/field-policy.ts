@@ -17,19 +17,29 @@ export interface FieldPolicy {
 }
 
 /**
- * How an AI rewrite lands. `apply`: the AI owns the wording, so the rewrite
- * is written in (with undo). `suggest`: the words are the researcher's, so
- * the rewrite only rewords what they wrote and waits for them to accept it.
+ * How far a rewrite may go. Either way it comes back as a suggestion the
+ * researcher accepts or rejects; nothing is written in on its own.
+ * `rewrite`: the AI owns the wording, so any direction, even from blank.
+ * `polish`: the words are the researcher's, so wording changes only, and
+ * only once they've written something.
  */
-export type RegenerateMode = "apply" | "suggest";
+export type RegenerateMode = "rewrite" | "polish";
 
 /** The one rule for "Regenerate with AI": free text, and never a locked field. */
 export const regenerateMode = (policy?: FieldPolicy): RegenerateMode | null => {
   if (!policy || policy.kind !== "prose" || policy.noAiAssist) return null;
-  if (policy.permission === "ai") return "apply";
-  if (policy.permission === "human") return "suggest";
+  if (policy.permission === "ai") return "rewrite";
+  if (policy.permission === "human") return "polish";
   return null;
 };
+
+/**
+ * The directions that change wording only. A rewrite of the researcher's own
+ * text is limited to these: "emphasise X" or a free instruction can put
+ * something in their mouth they never said.
+ */
+export const isWordingOnly = (direction: { kind: string }) =>
+  direction.kind === "shorter" || direction.kind === "formal";
 
 export const canRegenerate = (policy?: FieldPolicy): boolean =>
   regenerateMode(policy) !== null;

@@ -13,7 +13,7 @@ interface RegeneratePopoverProps {
   onRegenerate: (direction: RegenerateDirection) => void;
   disabled?: boolean;
   fieldLabel: string;
-  /** `suggest`: the researcher's own text, so wording changes only. */
+  /** `polish`: the researcher's own text, so wording changes only. */
   mode?: RegenerateMode;
 }
 
@@ -21,9 +21,9 @@ export const RegeneratePopover: React.FC<RegeneratePopoverProps> = ({
   onRegenerate,
   disabled,
   fieldLabel,
-  mode = "apply",
+  mode = "rewrite",
 }) => {
-  const polishOnly = mode === "suggest";
+  const polishOnly = mode === "polish";
   const [open, setOpen] = React.useState(false);
   const [customText, setCustomText] = React.useState("");
 

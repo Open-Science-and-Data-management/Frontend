@@ -31,6 +31,7 @@ erDiagram
     FILE_RECORD o|--o{ TASK : may_be_attached_to
     FILE_RECORD o|--o{ DISTRIBUTION : may_back
     DMP o|--o{ AI_THREAD_ENTRY : scopes
+    USER ||--o{ AI_THREAD_ENTRY : owns
 
     USER {
         string user_id PK "optional in schema"
@@ -221,6 +222,7 @@ erDiagram
 
     AI_THREAD_ENTRY {
         string id PK
+        string owner_id FK "the researcher; the only one who reads the row"
         string scope "dmp_id, or unscoped"
         string kind "event | user | assistant"
         string action "for events"
@@ -229,6 +231,7 @@ erDiagram
         json proposals "for assistant turns; pending | accepted | rejected | stale"
         json failed "optional; retryable + the request, when no reply came"
         date at
+        date hidden_at "set by Clear; the row is kept, never returned"
     }
 ```
 
@@ -435,10 +438,12 @@ exists, using the account record as its database.
   existed follows `adopt(unscoped → id)` into the plan that adopted that
   conversation. The reply is always recorded there. It is only applied to
   the open draft if that plan is still open *and* the field hasn't changed:
-  - A field rewrite that comes back to an unchanged field is applied (with
-    an Undo that only reverses the rewrite itself). Otherwise it's kept on
-    its plan's thread as a suggestion: pending if the person moved to another
-    plan, marked stale if the field changed.
+  - A field rewrite is never written in on its own. It comes back as a
+    suggestion shown under the field as a word diff (`InlineSuggestion`),
+    with Accept and Reject, and in the thread. If the field changes before
+    a decision, the suggestion says it's out of date and can only be
+    dismissed. Suggestions from the chat or Improve for the same field show
+    there too.
   - Chat and batch suggestions are drafted against the plan as it was when
     asked. Any whose field moved meanwhile are marked stale before they're
     shown. Accepting re-checks again (`guardBeforeApply`).
@@ -447,6 +452,51 @@ exists, using the account record as its database.
     it" toast. A second pass over a thin draft replaces it in place instead
     of filing a copy.
   - Generated tasks always belong to the plan they were made for.
+- **The thread lives on the server** (`AI_THREAD_ENTRY`, mocked by
+  `src/api/mock/threadServer.ts`; the client goes through
+  `src/api/aiThreadApi.ts`). The client keeps an in-memory cache, writes
+  every change through, and loads a plan's newest 50 entries when the
+  assistant opens, with "Show earlier" for older pages. There is no cap: the
+  server keeps every row. So the history follows the researcher to another
+  browser and survives a cleared one.
+  - `GET /dmps/:scope/ai-thread?before=:entryId&limit=50`
+  - `POST /dmps/:scope/ai-thread` and `PUT /dmps/:scope/ai-thread/:entryId`
+    (a proposal accepted or rejected)
+  - `POST /dmps/:scope/ai-thread/clear`
+  - `POST /ai-thread/adopt` (an unscoped conversation joins its new plan)
+- **Only the researcher who made a thread sees it.** Every row has an
+  `owner_id`; the server returns rows to their owner and nobody else, and
+  only researchers write. Committee members and admins review the plan, not
+  the researcher's conversation with the assistant, so it is never shown to
+  them. Signing out empties the client cache, so a shared tab never shows
+  one person's thread to the next.
+- **Clear drops the chat, not the record.** Questions, answers, refusals and
+  suggestions that weren't accepted are hidden (`hidden_at`). Every AI action
+  (the events) and every accepted change stay with the plan, so a field never
+  loses the trace of the AI having proposed it. Server and client apply the
+  same rule (`keptOnClear` in `src/store/threadRetention.ts`).
+- **The AI is never a gate.** "Is it ready?" and "what's missing?" are
+  answered from the same submission checklist the form shows, worded as
+  advice ("still needed before you submit"). An empty checklist is reported
+  as exactly that, with a reminder that the committee decides; the assistant
+  never says a plan is ready, approved or good to go.
+- **Rewrites asked in the chat** ("make the description shorter") run the
+  same call as the field's regenerate button, under the same rules
+  (`prepareRewrite`: free text only, nothing for fields marked
+  `noAiAssist`, the researcher's own words polished only), and come back as
+  a proposal like any other change.
+- **A task's checklist is drafted for that task's output.** The request
+  carries the output the task is about (`taskOutput`: id, title, type,
+  access, personal data, repository, duration) as the primary context, and
+  the plan's other outputs by title only. A plan-wide task sends no
+  `taskOutput`. The backend must draft for `taskOutput`, never for another
+  output in the plan.
+- **Open for the backend: grounded advice.** Questions like "which
+  repository should I use for sequencing reads?" have no tool yet: the
+  assistant can read, explain and propose, but not advise. Answering them
+  well needs retrieval over a repository and guidance source (re3data,
+  funder and institutional policy), which ties to the RAG decision. Until
+  then such questions get the fallback reply.
 - **Provenance gates the confidence note.** The analysis may return, per
   field, where a value came from: the proposal (with section/quote), or
   `none` (the proposal didn't cover it, so the value is a guess). The form
@@ -512,9 +562,9 @@ they're built.
   notification has title/message/link, optional DMP and project IDs, and
   optional `read_at`; it has no generic `related_entity` or `is_read` field.
 - **AI generation:** there is no `AI_GENERATION` record with inputs, outputs,
-  or token totals. AI activity is a separate persisted thread store of
-  user/assistant turns and lightweight events, scoped by DMP ID when available
-  (or stored as unscoped activity). Its actions are `analyze_proposal`,
+  or token totals. AI activity is the server-side `AI_THREAD_ENTRY` table of
+  user/assistant turns and lightweight events, owned by the researcher and
+  scoped by DMP ID when available (or stored as unscoped activity). Its actions are `analyze_proposal`,
   `regenerate_field`, `batch_regenerate`, `generate_tasks`, and
   `redraft_steps`. See *AI calls* for how replies, quota and failures work.
 - **Contributors and users:** a contributor may be linked to an account

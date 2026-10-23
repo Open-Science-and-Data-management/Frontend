@@ -140,15 +140,27 @@ export const TaskEvidence: React.FC<TaskEvidenceProps> = ({ task }) => {
 
   const redraft = async () => {
     setRedrafting(true);
+    // The task's own output is what the steps are for; the rest is context.
+    const outputs = plan?.draft.dataset ?? [];
+    const own = task.dataset_id
+      ? outputs.find((d) => d.dataset_id === task.dataset_id)
+      : undefined;
     try {
       const { steps, token_count, usage } = await generateTaskChecklist({
         taskTitle: task.title,
         lifecycleStage: task.lifecycle_stage,
-        outputs: (plan?.draft.dataset ?? []).map((d) => ({
-          title: d.title || "Untitled output",
-          type: d.type,
-          access: d.access,
-        })),
+        taskOutput: own && {
+          dataset_id: own.dataset_id as string,
+          title: own.title || "Untitled output",
+          type: own.type,
+          access: own.access,
+          personal_data: own.personal_data,
+          repository: own.preservation?.repository,
+          duration: own.preservation?.duration,
+        },
+        otherOutputs: outputs
+          .filter((d) => d !== own)
+          .map((d) => d.title || "Untitled output"),
         direction,
       });
 

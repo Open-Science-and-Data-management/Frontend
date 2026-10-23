@@ -12,7 +12,6 @@ import {
   aiApi,
   describeDirection,
   estimateCost,
-  isWordingOnly,
   type Coverage,
   type RegenerateDirection,
 } from "@/api/aiApi";
@@ -26,13 +25,13 @@ import {
   UNSCOPED,
 } from "@/store/aiThread";
 import { useQuotaStore, formatTokensLeft } from "@/store/quotaStore";
-import { useAssistantStore } from "@/store/assistantStore";
 import { reportAiError, syncQuota } from "@/store/aiErrors";
 import { flagDrift, runToolCall } from "@/store/chatTools";
 import { notify } from "@/store/notificationStore";
 import type { CreateNotification } from "@/types/notification";
 import { actingUserId } from "@/config/current-user";
 import {
+  isWordingOnly,
   regenerateMode,
   dmpFieldPolicy,
   datasetFieldPolicy,
@@ -59,7 +58,7 @@ export interface BatchTarget {
   id: string;
   scope: "dmp" | "dataset";
   datasetId?: string;
-  /** A free-text field the AI writes outright (`regenerateMode` "apply"). */
+  /** A free-text field the AI owns the wording of (`regenerateMode` "rewrite"). */
   key: string;
   label: string;
   group: string;
@@ -592,8 +591,8 @@ interface DmpDraftState {
   }>;
   startManual: (projectId?: string) => void;
   /**
-   * Rewrites one free-text field; anything else is refused. The AI's own
-   * text is written in; the researcher's comes back as a suggestion.
+   * Drafts a rewrite of one free-text field; anything else is refused. The
+   * result is always a suggestion to accept, shown under the field.
    */
   regenerateField: (
     target: RegenerateTarget,
@@ -1690,7 +1689,7 @@ export const useDmpStore = create<DmpDraftState>()(
           // nothing to start from, or a direction that adds content, and
           // there's no call at all.
           if (
-            mode === "suggest" &&
+            mode === "polish" &&
             (!currentText.trim() || !isWordingOnly(direction))
           )
             return;
@@ -1726,15 +1725,12 @@ export const useDmpStore = create<DmpDraftState>()(
             const unchanged =
               stillOpen && sameValue(field.read(get().draft), previousValue);
             const summary =
-              mode === "suggest"
+              mode === "polish"
                 ? `Suggested a polish of ${label} (${describeDirection(direction)})`
-                : `Rewrote ${label} (${describeDirection(direction)})`;
+                : `Suggested a rewrite of ${label} (${describeDirection(direction)})`;
 
-            if (
-              mode === "suggest" &&
-              unchanged &&
-              sameValue(text, previousValue)
-            ) {
+            // Nothing new: say so, rather than offer a no-op to accept.
+            if (unchanged && sameValue(text, previousValue)) {
               recordAiEvent(scope, {
                 action: "regenerate_field",
                 summary: `${summary}: nothing to change`,
@@ -1742,95 +1738,55 @@ export const useDmpStore = create<DmpDraftState>()(
                 usage,
               });
               useToastStore.getState().toast({
-                title: "Nothing to polish",
+                title: mode === "polish" ? "Nothing to polish" : "Nothing new",
                 description: `${label} already reads that way, so it's unchanged.`,
               });
               return;
             }
 
-            if (mode === "suggest" || !unchanged) {
-              // Built against the plan as it was asked about, then checked
-              // against the plan as it is: stale if the field moved, pending
-              // if the person simply went elsewhere.
-              const path = field.path(snapshot);
-              const { proposals } = path
-                ? runToolCall(
-                    { tool: "proposeFieldChange", path, value: text },
-                    { draft: snapshot, planActive: false, unmet: [] },
-                  )
-                : { proposals: [] };
-              const kept = flagDrift(proposals, get().draftFor(scope));
-              useAiThread.getState().append(scope, {
-                id: makeId(),
-                kind: "assistant",
-                text:
-                  mode === "suggest" && unchanged
-                    ? `${summary}. Your text stays as it is unless you accept this.`
-                    : `${summary}. It wasn't applied. Review it here.`,
-                token_count,
-                at: new Date(),
-                proposals: kept.length ? kept : undefined,
-              });
-              recordAiEvent(scope, {
-                action: "regenerate_field",
-                summary: `${summary} (kept as a suggestion)`,
-                detail: text.slice(0, 120),
-                token_count,
-                usage,
-              });
-              if (mode === "suggest" && unchanged) {
-                useAssistantStore.getState().setOpen(true);
-                useToastStore.getState().toast({
-                  title: "Suggestion ready",
-                  description: `Your ${label.toLowerCase()} is unchanged. The polished version is in the assistant panel to accept or reject.`,
-                });
-                return;
-              }
-              useToastStore.getState().toast({
-                title: `${label} wasn't changed`,
-                description: stillOpen
-                  ? "It changed while the rewrite was being written, so your version was kept. The rewrite is in the assistant panel, marked out of date."
-                  : "You opened another plan before the rewrite was ready. It's saved as a suggestion on the plan it was for.",
-              });
-              return;
-            }
-
-            // Written like any edit, which also retires the field's
-            // provenance: an AI rewrite isn't from the proposal.
-            field.write(get(), text);
-
+            // Never written straight in. The rewrite waits under the field,
+            // and in the thread, until the researcher accepts or rejects it.
+            // Built against the plan as it was asked about, then checked
+            // against the plan as it is: stale if the field moved meanwhile.
+            const path = field.path(snapshot);
+            const { proposals } = path
+              ? runToolCall(
+                  { tool: "proposeFieldChange", path, value: text },
+                  { draft: snapshot, planActive: false, unmet: [] },
+                )
+              : { proposals: [] };
+            const kept = flagDrift(proposals, get().draftFor(scope));
+            useAiThread.getState().append(scope, {
+              id: makeId(),
+              kind: "assistant",
+              text: unchanged
+                ? `${summary}. It's waiting under the field for you to accept or reject.`
+                : `${summary}. It wasn't applied. Review it here.`,
+              token_count,
+              at: new Date(),
+              proposals: kept.length ? kept : undefined,
+            });
             recordAiEvent(scope, {
               action: "regenerate_field",
-              summary,
+              summary: `${summary} (kept as a suggestion)`,
               detail: text.slice(0, 120),
               token_count,
               usage,
             });
-
-            useToastStore.getState().toast({
-              title: `${label} regenerated`,
-              description: `Used ${token_count.toLocaleString()} tokens.`,
-              action: {
-                label: "Undo",
-                // Only undoes the rewrite itself: once the field holds
-                // anything else, or another plan is open, there's nothing
-                // of the AI's left to take back.
-                onClick: () => {
-                  const state = get();
-                  if (
-                    scopeKey(state.currentDmpId) !== scope ||
-                    !sameValue(field.read(state.draft), text)
-                  ) {
-                    useToastStore.getState().toast({
-                      title: "Nothing to undo",
-                      description: `${label} has changed since the rewrite.`,
-                    });
-                    return;
+            useToastStore.getState().toast(
+              unchanged
+                ? {
+                    title: `${label}: suggestion ready`,
+                    description:
+                      "Review it under the field. Nothing changes until you accept it.",
                   }
-                  field.write(state, previousValue);
-                },
-              },
-            });
+                : {
+                    title: `${label} wasn't changed`,
+                    description: stillOpen
+                      ? "It changed while the rewrite was being written, so your version was kept. The rewrite is in the assistant panel, marked out of date."
+                      : "You opened another plan before the rewrite was ready. It's saved as a suggestion on the plan it was for.",
+                  },
+            );
           } catch (err) {
             const e = reportAiError(err, {
               what: `regenerate ${label}`,
@@ -1861,12 +1817,13 @@ export const useDmpStore = create<DmpDraftState>()(
         eligibleBatchTargets: () => {
           const { draft } = get();
           const targets: BatchTarget[] = [];
-          // The per-field rule, "apply" side only: the researcher's own text
+          // The per-field rule, "rewrite" side only: the researcher's own text
           // is polished one field at a time, where they can see it.
           const prose = (policies: Record<string, FieldPolicy>) =>
             Object.keys(policies).filter(
               (key) =>
-                !key.includes(".") && regenerateMode(policies[key]) === "apply",
+                !key.includes(".") &&
+                regenerateMode(policies[key]) === "rewrite",
             );
           const text = (value: unknown) =>
             typeof value === "string" ? value : "";

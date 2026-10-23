@@ -25,6 +25,8 @@ import {
 import { AiEventRow } from "@/components/dmp/AiEventRow";
 import { AiImproveForm } from "@/components/dmp/AiImproveForm";
 import { useConfirm } from "@/components/ui/confirm-provider";
+import { hasClearableChat } from "@/store/threadRetention";
+import { describeOutcome } from "@/store/chatTools";
 import { useDmpStore } from "@/store/dmpStore";
 import { formatTokensLeft, useQuotaStore } from "@/store/quotaStore";
 import { cn } from "@/utils/cn";
@@ -33,7 +35,7 @@ import { cn } from "@/utils/cn";
 // never leads to the "I can only answer from this plan" fallback.
 const SUGGESTIONS = [
   "Summarise this plan",
-  "What is the current access?",
+  "What's still needed before I submit?",
   "Explain protection level",
   "Change retention to 15 years for every output",
 ];
@@ -72,6 +74,9 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
   const entries = useAiThread(
     (s) => s.threads[scopeKey(currentDmpId)] ?? NO_ENTRIES,
   );
+  const paging = useAiThread((s) => s.paging[scopeKey(currentDmpId)]);
+  const loadThread = useAiThread((s) => s.load);
+  const loadEarlier = useAiThread((s) => s.loadEarlier);
   const { pathname, search } = useLocation();
   // The assistant answers about the plan on screen, so it says which one.
   const section = pathname.startsWith("/dmp/create")
@@ -87,9 +92,17 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
   );
   const endRef = React.useRef<HTMLDivElement>(null);
 
+  // The thread lives on the server; this plan's newest page comes in once.
+  React.useEffect(() => {
+    void loadThread(currentDmpId);
+  }, [loadThread, currentDmpId]);
+
+  // Follows new entries only: older ones loaded above shouldn't yank the
+  // view down to the bottom.
+  const newestId = entries.at(-1)?.id;
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [entries, isThinking, mode]);
+  }, [newestId, isThinking, mode]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -100,8 +113,8 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
 
   if (!open) return null;
 
-  // The thread is the plan's AI history, suggestions still waiting included,
-  // and there's no getting it back.
+  // Only the chat goes. What the AI did to the plan, and every change that
+  // was accepted, stays with it (see `keptOnClear`).
   const confirmClear = async () => {
     const waiting = entries.reduce(
       (n, e) =>
@@ -119,7 +132,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
         waiting
           ? `${waiting} suggestion${waiting === 1 ? " is" : "s are"} still waiting for your decision and will be lost. `
           : ""
-      }The messages and the record of what the AI did on this plan go too. Your plan stays as it is.`,
+      }The messages go. The record of what the AI did and the changes you accepted stay with the plan, and so does the plan itself.`,
       confirmLabel: "Clear",
       cancelLabel: "Keep",
     });
@@ -153,7 +166,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
           </div>
         </div>
         <div className="flex items-center gap-1">
-          {entries.length > 0 && (
+          {hasClearableChat(entries) && (
             <Button
               variant="ghost"
               size="icon"
@@ -211,9 +224,20 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
             className="flex-1 space-y-3 overflow-y-auto p-4"
             aria-live="polite"
           >
-            {/* The panel only exists in the editor, so there's always a plan —
+            {paging?.hasMore && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full text-muted-foreground"
+                isLoading={paging.loading}
+                onClick={() => void loadEarlier(currentDmpId)}
+              >
+                Show earlier
+              </Button>
+            )}
+            {/* The panel only exists in the editor, so there's always a plan,
             even one that's still blank and unsaved. */}
-            {entries.length === 0 && (
+            {entries.length === 0 && !paging?.loading && (
               <div className="space-y-3">
                 <p className="text-sm text-muted-foreground">
                   {hasDraft
@@ -245,6 +269,7 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
               const pending = (m.proposals ?? []).filter(
                 (p) => p.status === "pending",
               );
+              const outcome = describeOutcome(m.proposals);
 
               return (
                 <div key={m.id} className="space-y-2">
@@ -263,7 +288,9 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
                             ? "border border-destructive/40 bg-destructive/10 text-destructive"
                             : m.stopped
                               ? "bg-muted italic text-muted-foreground"
-                              : "bg-muted",
+                              : outcome
+                                ? "bg-muted text-muted-foreground"
+                                : "bg-muted",
                       )}
                     >
                       {m.text}
@@ -306,6 +333,12 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
                       onReject={() => rejectProposal(m.id, p.id)}
                     />
                   ))}
+
+                  {outcome && (
+                    <p className="text-xs text-muted-foreground">
+                      Decided: {outcome}
+                    </p>
+                  )}
 
                   {pending.length > 1 && (
                     <Button

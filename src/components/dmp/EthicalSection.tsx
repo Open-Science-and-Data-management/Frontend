@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Toggle } from "@/components/ui/toggle";
 import { FormField } from "@/components/ui/form-field";
+import { InlineSuggestion } from "@/components/dmp/InlineSuggestion";
 import { dmpFieldPolicy } from "@/config/field-policy";
 import { useDmpStore } from "@/store/dmpStore";
 import { dmpDraftSchema } from "@/schemas/dmp";
@@ -53,6 +54,12 @@ export const EthicalSection: React.FC = () => {
               )
             }
             isRegenerating={regeneratingFields.ethical_issues_description}
+            suggestion={
+              <InlineSuggestion
+                match={{ path: "ethical_issues_description" }}
+                currentValue={draft.ethical_issues_description}
+              />
+            }
           >
             <Textarea
               id="ethical_issues_description"

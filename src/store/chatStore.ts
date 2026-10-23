@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { sameValue } from "@/utils/sameValue";
 import { aiApi, estimateCost, PROMPT_OVERHEAD, tokensIn } from "@/api/aiApi";
 import {
   asAiError,
@@ -29,6 +30,7 @@ import {
 import {
   flagDrift,
   guardBeforeApply,
+  prepareRewrite,
   runToolCall,
   type ChatProposal,
   type ChatRejection,
@@ -217,12 +219,51 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const answers: string[] = [];
       const proposals: ChatProposal[] = [];
       const rejections: ChatRejection[] = [];
-      calls.forEach((call) => {
+      // What drafting rewrites cost, on top of the chat turn itself.
+      let rewriteUsage: AiUsage = NO_USAGE;
+      for (const call of calls) {
+        if (call.tool === "proposeRewrite") {
+          // Drafted like the field's own regenerate, under the same rules,
+          // then proposed like any other change: nothing is written in.
+          const check = prepareRewrite(call.path, call.direction, snapshot);
+          if (!check.ok) {
+            rejections.push(check.rejection);
+            continue;
+          }
+          const result = await aiApi.regenerateField(
+            check.label,
+            check.current,
+            call.direction,
+            check.mode,
+            { signal },
+          );
+          rewriteUsage = {
+            input_tokens: rewriteUsage.input_tokens + result.usage.input_tokens,
+            output_tokens:
+              rewriteUsage.output_tokens + result.usage.output_tokens,
+            cached_input_tokens:
+              rewriteUsage.cached_input_tokens +
+              result.usage.cached_input_tokens,
+          };
+          if (sameValue(result.text, check.current)) {
+            answers.push(
+              `${check.label} already reads that way, so there's nothing to change.`,
+            );
+            continue;
+          }
+          const run = runToolCall(
+            { tool: "proposeFieldChange", path: call.path, value: result.text },
+            snapshot,
+          );
+          proposals.push(...run.proposals);
+          rejections.push(...run.rejections);
+          continue;
+        }
         const run = runToolCall(call, snapshot);
         answers.push(...run.answers);
         proposals.push(...run.proposals);
         rejections.push(...run.rejections);
-      });
+      }
 
       const reply =
         answers.join("\n\n") ||
@@ -230,7 +271,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? `I've drafted ${proposals.length} change${proposals.length === 1 ? "" : "s"} below. Nothing is applied until you accept it.`
           : rejections.length
             ? "I couldn't do that. The reason is below."
-            : "I can answer questions about this plan, explain a field, or suggest changes for you to review. Try “what is the current access?” or “change retention to 15 years for every output”.");
+            : "I can answer questions about this plan, explain a field, or suggest changes for you to review. Try “what’s still needed before I submit?”, “make the description shorter” or “change retention to 15 years for every output”.");
 
       const usage = await serve({
         input: PROMPT_OVERHEAD.chat + tokensIn(trimmed),
@@ -250,7 +291,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         id: makeId(),
         kind: "assistant",
         text: reply,
-        token_count: totalTokens(usage),
+        token_count: totalTokens(usage) + totalTokens(rewriteUsage),
         at: new Date(),
         proposals: checked.length ? checked : undefined,
         rejections: rejections.length ? rejections : undefined,
@@ -335,7 +376,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               target.label,
               target.value,
               steer,
-              "apply",
+              "rewrite",
               { signal },
             );
             const index = datasets.findIndex(
@@ -352,7 +393,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }),
         );
 
-        fields = rewritten.map(({ path, value }) => ({ path, value }));
+        // A field that came back as it was isn't a change to decide on.
+        fields = rewritten
+          .filter(({ value }, i) => !sameValue(value, targets[i].value))
+          .map(({ path, value }) => ({ path, value }));
         usage = rewritten.reduce<AiUsage>(
           (sum, r) => ({
             input_tokens: sum.input_tokens + r.usage.input_tokens,
@@ -362,7 +406,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }),
           NO_USAGE,
         );
-        summary = `Rewrote ${fields.length} field${fields.length === 1 ? "" : "s"} (${describeDirection(steer)})`;
+        summary = fields.length
+          ? `Rewrote ${fields.length} field${fields.length === 1 ? "" : "s"} (${describeDirection(steer)})`
+          : `Checked ${targets.length} field${targets.length === 1 ? "" : "s"} (${describeDirection(steer)})`;
       }
 
       const proposals: ChatProposal[] = [];

@@ -29,6 +29,8 @@ export interface FormFieldProps {
    * only polishes their words, so a blank field gets no control.
    */
   hasText?: boolean;
+  /** An AI suggestion waiting for a decision, shown under the input. */
+  suggestion?: React.ReactNode;
   /** locked fields */
   isApproved?: boolean;
   lockedReason?: string;
@@ -54,6 +56,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   onRegenerate,
   isRegenerating,
   hasText,
+  suggestion,
   isApproved,
   lockedReason,
   children,
@@ -76,7 +79,7 @@ export const FormField: React.FC<FormFieldProps> = ({
   const effectiveHint = hint ?? autoHint;
   const mode = regenerateMode(policy);
   const offerRegenerate =
-    mode !== null && onRegenerate && (mode === "apply" || hasText);
+    mode !== null && onRegenerate && (mode === "rewrite" || hasText);
 
   return (
     <div className="space-y-1.5">
@@ -121,9 +124,10 @@ export const FormField: React.FC<FormFieldProps> = ({
       >
         {children}
       </fieldset>
+      {suggestion}
       {isRegenerating && (
         <p className="text-xs text-ai" role="status">
-          {mode === "suggest"
+          {mode === "polish"
             ? "AI is polishing your wording…"
             : "AI is rewriting this…"}
         </p>

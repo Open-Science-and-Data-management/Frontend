@@ -1,8 +1,10 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
-import { jsonStorage, storageKey } from "@/store/persist";
 import type { ChatProposal, ChatRejection } from "@/store/chatTools";
 import type { AiUsage } from "@/api/aiContract";
+import { aiThreadApi } from "@/api/aiThreadApi";
+import { keptOnClear } from "@/store/threadRetention";
+import { useToastStore } from "@/store/toastStore";
+import { onSessionChange } from "@/config/current-user";
 
 export type AiAction =
   | "analyze_proposal"
@@ -53,15 +55,50 @@ export const UNSCOPED = "unscoped";
 export const scopeKey = (dmpId: string | null | undefined) => dmpId ?? UNSCOPED;
 const makeId = () => Math.random().toString(36).substring(2, 10);
 export const NO_ENTRIES: ThreadEntry[] = [];
-export const MAX_THREAD_ENTRIES = 200;
 
-const capped = (entries: ThreadEntry[]) =>
-  entries.length > MAX_THREAD_ENTRIES
-    ? entries.slice(entries.length - MAX_THREAD_ENTRIES)
-    : entries;
+/** How much of a thread the client has from the server. */
+export interface ThreadPaging {
+  loaded: boolean;
+  loading: boolean;
+  /** Older entries are on the server, not yet fetched. */
+  hasMore: boolean;
+}
+
+const at = (e: ThreadEntry) => new Date(e.at).getTime();
+
+/**
+ * Server entries joined with what's already here, oldest first. Local wins on
+ * a clash: it may hold a status change the server hasn't echoed yet.
+ */
+const merge = (server: ThreadEntry[], local: ThreadEntry[]) => {
+  const ids = new Set(local.map((e) => e.id));
+  return [...server.filter((e) => !ids.has(e.id)), ...local].sort(
+    (a, b) => at(a) - at(b),
+  );
+};
+
+/**
+ * Writes go through to the server in the background; the screen doesn't
+ * wait. A failed write is said out loud, since the history would otherwise
+ * quietly differ after a reload.
+ */
+const sync = (write: Promise<unknown>) =>
+  void write.catch(() =>
+    useToastStore.getState().toast({
+      title: "Couldn't save to your AI history",
+      description:
+        "It's still on screen, but may be missing when you come back.",
+      variant: "destructive",
+    }),
+  );
 
 interface AiThreadState {
+  /** A cache of what's been loaded or written this session. */
   threads: Record<string, ThreadEntry[]>;
+  paging: Record<string, ThreadPaging>;
+  /** Fetches the newest page once per session; later calls do nothing. */
+  load: (dmpId: string | null | undefined) => Promise<void>;
+  loadEarlier: (dmpId: string | null | undefined) => Promise<void>;
   append: (dmpId: string | null | undefined, entry: ThreadEntry) => void;
   updateEntry: (
     dmpId: string | null | undefined,
@@ -74,83 +111,151 @@ interface AiThreadState {
   ticket: (dmpId: string | null | undefined) => ThreadTicket;
   /** The scope a reply to this ticket belongs in now. */
   resolve: (ticket: ThreadTicket) => string;
+  /** Drops the chat; the AI actions and accepted changes stay. */
   clear: (dmpId: string | null | undefined) => void;
   entriesFor: (dmpId: string | null | undefined) => ThreadEntry[];
 }
 
-export const useAiThread = create<AiThreadState>()(
-  persist(
-    (set, get) => ({
-      threads: {},
+// Not persisted: the server keeps the thread, so it follows the researcher
+// to another browser and survives clearing this one.
+export const useAiThread = create<AiThreadState>()((set, get) => ({
+  threads: {},
+  paging: {},
 
-      append: (dmpId, entry) =>
-        set((state) => {
-          const key = scopeKey(dmpId);
-          return {
-            threads: {
-              ...state.threads,
-              [key]: capped([...(state.threads[key] ?? []), entry]),
-            },
-          };
-        }),
+  load: async (dmpId) => {
+    const key = scopeKey(dmpId);
+    const paging = get().paging[key];
+    if (paging?.loaded || paging?.loading) return;
+    set((s) => ({
+      paging: {
+        ...s.paging,
+        [key]: { loaded: false, loading: true, hasMore: false },
+      },
+    }));
+    try {
+      const page = await aiThreadApi.list(key);
+      set((s) => ({
+        threads: {
+          ...s.threads,
+          [key]: merge(page.entries, s.threads[key] ?? []),
+        },
+        paging: {
+          ...s.paging,
+          [key]: { loaded: true, loading: false, hasMore: page.hasMore },
+        },
+      }));
+    } catch {
+      set((s) => ({
+        paging: {
+          ...s.paging,
+          [key]: { loaded: false, loading: false, hasMore: false },
+        },
+      }));
+    }
+  },
 
-      updateEntry: (dmpId, entryId, update) =>
-        set((state) => {
-          const key = scopeKey(dmpId);
-          return {
-            threads: {
-              ...state.threads,
-              [key]: (state.threads[key] ?? []).map((e) =>
-                e.id === entryId ? update(e) : e,
-              ),
-            },
-          };
-        }),
+  loadEarlier: async (dmpId) => {
+    const key = scopeKey(dmpId);
+    const paging = get().paging[key];
+    const oldest = get().threads[key]?.[0];
+    if (!paging?.hasMore || paging.loading || !oldest) return;
+    set((s) => ({
+      paging: { ...s.paging, [key]: { ...paging, loading: true } },
+    }));
+    try {
+      const page = await aiThreadApi.list(key, { before: oldest.id });
+      set((s) => ({
+        threads: {
+          ...s.threads,
+          [key]: merge(page.entries, s.threads[key] ?? []),
+        },
+        paging: {
+          ...s.paging,
+          [key]: { loaded: true, loading: false, hasMore: page.hasMore },
+        },
+      }));
+    } catch {
+      set((s) => ({
+        paging: { ...s.paging, [key]: { ...paging, loading: false } },
+      }));
+    }
+  },
 
-      adopt: (from, to) =>
-        set((state) => {
-          if (from === to) return state;
-          // Recorded even when nothing is carried yet: a request still in
-          // flight from the unscoped thread belongs to `to` from now on.
-          const adoptions =
-            from === UNSCOPED ? [...state.adoptions, to] : state.adoptions;
-          const carried = state.threads[from] ?? [];
-          if (carried.length === 0) return { adoptions };
+  append: (dmpId, entry) => {
+    const key = scopeKey(dmpId);
+    set((state) => ({
+      threads: {
+        ...state.threads,
+        [key]: [...(state.threads[key] ?? []), entry],
+      },
+    }));
+    sync(aiThreadApi.append(key, entry));
+  },
 
-          const { [from]: _dropped, ...rest } = state.threads;
-          return {
-            adoptions,
-            threads: {
-              ...rest,
-              [to]: capped([...carried, ...(state.threads[to] ?? [])]),
-            },
-          };
-        }),
+  updateEntry: (dmpId, entryId, update) => {
+    const key = scopeKey(dmpId);
+    let updated: ThreadEntry | undefined;
+    set((state) => ({
+      threads: {
+        ...state.threads,
+        [key]: (state.threads[key] ?? []).map((e) =>
+          e.id === entryId ? (updated = update(e)) : e,
+        ),
+      },
+    }));
+    if (updated) sync(aiThreadApi.update(key, updated));
+  },
 
-      adoptions: [],
+  adopt: (from, to) => {
+    if (from !== to) sync(aiThreadApi.adopt(from, to));
+    set((state) => {
+      if (from === to) return state;
+      // Recorded even when nothing is carried yet: a request still in
+      // flight from the unscoped thread belongs to `to` from now on.
+      const adoptions =
+        from === UNSCOPED ? [...state.adoptions, to] : state.adoptions;
+      const carried = state.threads[from] ?? [];
+      if (carried.length === 0) return { adoptions };
 
-      ticket: (dmpId) => ({
-        scope: scopeKey(dmpId),
-        epoch: get().adoptions.length,
-      }),
+      const { [from]: _dropped, ...rest } = state.threads;
+      return {
+        adoptions,
+        threads: {
+          ...rest,
+          [to]: [...carried, ...(state.threads[to] ?? [])],
+        },
+      };
+    });
+  },
 
-      resolve: ({ scope, epoch }) =>
-        scope === UNSCOPED ? (get().adoptions[epoch] ?? UNSCOPED) : scope,
+  adoptions: [],
 
-      clear: (dmpId) =>
-        set((state) => ({
-          threads: { ...state.threads, [scopeKey(dmpId)]: [] },
-        })),
+  ticket: (dmpId) => ({
+    scope: scopeKey(dmpId),
+    epoch: get().adoptions.length,
+  }),
 
-      entriesFor: (dmpId) => get().threads[scopeKey(dmpId)] ?? NO_ENTRIES,
-    }),
-    {
-      name: storageKey("ai-thread"),
-      storage: jsonStorage,
-      version: 1,
-      partialize: (state) => ({ threads: state.threads }),
-    },
-  ),
+  resolve: ({ scope, epoch }) =>
+    scope === UNSCOPED ? (get().adoptions[epoch] ?? UNSCOPED) : scope,
+
+  clear: (dmpId) => {
+    const key = scopeKey(dmpId);
+    set((state) => ({
+      threads: {
+        ...state.threads,
+        [key]: (state.threads[key] ?? []).flatMap((e) => keptOnClear(e) ?? []),
+      },
+    }));
+    sync(aiThreadApi.clear(key));
+  },
+
+  entriesFor: (dmpId) => get().threads[scopeKey(dmpId)] ?? NO_ENTRIES,
+}));
+
+// The thread is one researcher's private history. Whoever signs in next in
+// this tab starts from the server, never from what the last person loaded.
+onSessionChange(() =>
+  useAiThread.setState({ threads: {}, paging: {}, adoptions: [] }),
 );
 
 export const recordAiEvent = (

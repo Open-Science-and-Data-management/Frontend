@@ -8,6 +8,11 @@ import { ENABLED_TOOLS, toolCallSchema, type ToolCall } from "@/api/aiTools";
 import type { DmpDraft } from "@/types/dmp";
 import type { Task } from "@/types/task";
 import { sameValue } from "@/utils/sameValue";
+import {
+  isWordingOnly,
+  regenerateMode,
+  type RegenerateMode,
+} from "@/config/field-policy";
 
 export interface ChatProposal {
   id: string;
@@ -86,8 +91,30 @@ const summarise = (ctx: ToolContext): string => {
       ? `Contact: ${contributorFullName(people.find((p) => p.is_contact) ?? people[0]) || "not set"}.`
       : "No contributors yet.",
     ctx.unmet.length
-      ? `Still needed before submission: ${ctx.unmet.slice(0, 4).join("; ")}${ctx.unmet.length > 4 ? "…" : ""}.`
-      : "Everything needed for submission is in place.",
+      ? `Still needed before you submit: ${ctx.unmet.slice(0, 4).join("; ")}${ctx.unmet.length > 4 ? "…" : ""}.`
+      : "Nothing is left open on the submission checklist.",
+  ].join("\n");
+};
+
+/**
+ * What the submission checklist still has open, as advice. It reads the
+ * same checklist the form shows and never more than that: it can't tell
+ * whether the plan is good enough, and it must never sound as if it can.
+ * The committee decides; the AI is never a gate.
+ */
+const readiness = (ctx: ToolContext): string => {
+  const SHOWN = 8;
+  if (ctx.unmet.length === 0)
+    return "Nothing is left open on the submission checklist. That only means the required fields are filled in. Whether the plan is right is for your committee to decide when they review it.";
+  const listed = ctx.unmet.slice(0, SHOWN).map((item) => `• ${item}`);
+  const more = ctx.unmet.length - SHOWN;
+  return [
+    `Still needed before you submit, from the checklist (${ctx.unmet.length}):`,
+    ...listed,
+    ...(more > 0
+      ? [`…and ${more} more in the checklist beside the form.`]
+      : []),
+    "This is the checklist, not a review. Your committee decides on the plan.",
   ].join("\n");
 };
 
@@ -149,6 +176,19 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
 
     case "summarizeDmp":
       return { ...empty, answers: [summarise(ctx)] };
+
+    case "checkReadiness":
+      return { ...empty, answers: [readiness(ctx)] };
+
+    // Needs a model call, so the chat runs it through `prepareRewrite` and
+    // proposes the result. Reaching here means nothing drafted it.
+    case "proposeRewrite":
+      return {
+        ...empty,
+        rejections: [
+          { label: tool.path, reason: "Nothing was drafted for this rewrite." },
+        ],
+      };
 
     case "queryDmp": {
       const target = resolveFieldPath(ctx.draft, tool.path);
@@ -335,6 +375,88 @@ export interface GuardResult {
  * isn't overwritten silently — so if the field moved since, or policy now
  * refuses it, accepting stops here and says why.
  */
+/**
+ * Where a proposal's field is in this draft. An output's field is found by
+ * the output's id, as applying it is: the list may have been reordered since
+ * it was suggested, and its old position would point at another output.
+ * Null when that output is gone.
+ */
+const currentPath = (proposal: ChatProposal, draft: DmpDraft) => {
+  if (!proposal.datasetId || !proposal.datasetField) return proposal.path;
+  const index = (draft.dataset ?? []).findIndex(
+    (d) => d.dataset_id === proposal.datasetId,
+  );
+  return index < 0 ? null : `dataset[${index}].${proposal.datasetField}`;
+};
+
+type RewriteDirection = Extract<
+  ToolCall,
+  { tool: "proposeRewrite" }
+>["direction"];
+
+/**
+ * Checks a rewrite asked for in the chat against the same rules as the
+ * field's own regenerate button, before any model is called: free text
+ * only, never a field the AI stays out of, and the researcher's own words
+ * only polished, never written for them.
+ */
+export const prepareRewrite = (
+  path: string,
+  direction: RewriteDirection,
+  ctx: ToolContext,
+):
+  | { ok: true; label: string; current: string; mode: RegenerateMode }
+  | { ok: false; rejection: ChatRejection } => {
+  const target = resolveFieldPath(ctx.draft, path);
+  if ("error" in target)
+    return { ok: false, rejection: { label: path, reason: target.error } };
+  const refuse = (reason: string) => ({
+    ok: false as const,
+    rejection: { label: target.label, reason },
+  });
+  if (target.policy.noAiAssist)
+    return refuse("Only you write this field, so I won't suggest text for it.");
+  const mode = regenerateMode(target.policy);
+  if (!mode)
+    return refuse(
+      "I can only reword free text. For this field, ask me to change it to a specific value.",
+    );
+  const raw = target.read(ctx.draft);
+  const current = typeof raw === "string" ? raw : "";
+  if (mode === "polish" && !current.trim())
+    return refuse(
+      "This one is yours to write. Once you have, I can suggest a polish.",
+    );
+  if (mode === "polish" && !isWordingOnly(direction))
+    return refuse(
+      "This is your own text, so I only change the wording: shorter or more formal.",
+    );
+  return { ok: true, label: target.label, current, mode };
+};
+
+/**
+ * How a turn's suggestions were settled, e.g. "1 accepted · 1 dismissed".
+ * Null while any still waits: the AI's own words ("nothing is applied until
+ * you accept it") describe the moment they were written, and this is what
+ * happened after. The record itself is never rewritten.
+ */
+export const describeOutcome = (proposals: ChatProposal[] = []) => {
+  if (proposals.length === 0 || proposals.some((p) => p.status === "pending"))
+    return null;
+  const count = (status: ChatProposal["status"]) =>
+    proposals.filter((p) => p.status === status).length;
+  return (
+    [
+      [count("accepted"), "accepted"],
+      [count("rejected"), "dismissed"],
+      [count("stale"), "out of date"],
+    ] as const
+  )
+    .filter(([n]) => n > 0)
+    .map(([n, label]) => `${n} ${label}`)
+    .join(" · ");
+};
+
 export const guardBeforeApply = (
   proposal: ChatProposal,
   ctx: ToolContext,
@@ -351,7 +473,14 @@ export const guardBeforeApply = (
 
   if (!proposal.path) return { ok: false, reason: "Nothing to apply." };
 
-  const target = resolveFieldPath(ctx.draft, proposal.path);
+  const path = currentPath(proposal, ctx.draft);
+  if (!path)
+    return {
+      ok: false,
+      reason: "That research output is no longer in the plan.",
+    };
+
+  const target = resolveFieldPath(ctx.draft, path);
   if ("error" in target) return { ok: false, reason: target.error };
 
   if (target.policy.permission === "locked") {
@@ -388,7 +517,9 @@ export const flagDrift = (
   draft
     ? proposals.map((proposal) => {
         if (proposal.status !== "pending" || !proposal.path) return proposal;
-        const target = resolveFieldPath(draft, proposal.path);
+        const path = currentPath(proposal, draft);
+        if (!path) return proposal;
+        const target = resolveFieldPath(draft, path);
         if ("error" in target) return proposal;
         const current = target.read(draft);
         return sameValue(current, proposal.beforeValue)

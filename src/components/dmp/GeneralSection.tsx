@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { FormField } from "@/components/ui/form-field";
+import { InlineSuggestion } from "@/components/dmp/InlineSuggestion";
 import { dmpFieldPolicy } from "@/config/field-policy";
 import { IdentifierType, LANGUAGE_CODES } from "@/schemas/shared";
 import { useDmpStore } from "@/store/dmpStore";
@@ -47,6 +48,12 @@ export const GeneralSection: React.FC = () => {
         provenance={provenance?.title}
         onRegenerate={runRegenerate("title", "Title")}
         isRegenerating={regeneratingFields.title}
+        suggestion={
+          <InlineSuggestion
+            match={{ path: "title" }}
+            currentValue={draft.title}
+          />
+        }
       >
         <Input
           id="title"
@@ -64,6 +71,12 @@ export const GeneralSection: React.FC = () => {
         provenance={provenance?.description}
         onRegenerate={runRegenerate("description", "Description")}
         isRegenerating={regeneratingFields.description}
+        suggestion={
+          <InlineSuggestion
+            match={{ path: "description" }}
+            currentValue={draft.description}
+          />
+        }
       >
         <Textarea
           id="description"
