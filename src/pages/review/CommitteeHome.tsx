@@ -14,7 +14,6 @@ import { StatCard } from "@/components/dashboard/StatCard";
 import { AwaitingReviewList } from "@/components/dashboard/AwaitingReviewList";
 import { RecentDecisions } from "@/components/dashboard/RecentDecisions";
 import { ProjectProgressList } from "@/components/dashboard/ProjectProgressList";
-import { RecentNotifications } from "@/components/dashboard/RecentNotifications";
 import { useCommitteeDashboard } from "@/hooks/useCommitteeDashboard";
 import { useCurrentUser } from "@/store/authStore";
 
@@ -138,7 +137,6 @@ export const CommitteeHome: React.FC = () => {
               items={data.progress}
               description="How the projects you oversee are getting on."
             />
-            <RecentNotifications description="New submissions and revisions to review." />
           </div>
         </div>
       </div>
