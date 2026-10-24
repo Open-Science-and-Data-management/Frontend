@@ -17,7 +17,6 @@ const form = (patch: Partial<Record<string, unknown>> = {}): Registration =>
     username: "Somchai.P",
     password: "rice2026",
     confirm_password: "rice2026",
-    accept: true,
     ...patch,
   });
 
@@ -135,7 +134,6 @@ describe("the sign-up form's rules", () => {
     const result = registrationSchema.safeParse({
       ...form(),
       confirm_password: "rice2026",
-      accept: true,
       ...patch,
     });
     return result.success
@@ -167,10 +165,6 @@ describe("the sign-up form's rules", () => {
     expect(
       issues({ password: "lettersonly", confirm_password: "lettersonly" }),
     ).toContain("password");
-  });
-
-  it("requires the prototype notice to be accepted", () => {
-    expect(issues({ accept: false })).toContain("accept");
   });
 
   it("checks ORCID and phone only when given", () => {

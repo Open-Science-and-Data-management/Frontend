@@ -61,9 +61,6 @@ export const registrationSchema = z
       .regex(/[A-Za-z]/, "Include at least one letter")
       .regex(/\d/, "Include at least one number"),
     confirm_password: z.string(),
-    accept: z.literal(true, {
-      errorMap: () => ({ message: "Please confirm to continue" }),
-    }),
   })
   .superRefine((form, ctx) => {
     if (form.password !== form.confirm_password)
