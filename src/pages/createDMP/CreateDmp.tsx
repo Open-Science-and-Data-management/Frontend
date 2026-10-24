@@ -1,7 +1,7 @@
 import React from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Lock, Sparkles } from "lucide-react";
+import { ArrowLeft, ArrowRight, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Stepper } from "@/components/ui/stepper";
 import { AutosaveIndicator } from "@/components/ui/autosave-indicator";
@@ -16,7 +16,6 @@ import { ContributorList } from "@/components/dmp/ContributorList";
 import { CostList } from "@/components/dmp/CostList";
 import { ReadyChecklist } from "@/components/dmp/ReadyChecklist";
 import { PlanChanges } from "@/components/dmp/PlanChanges";
-import { AiAssistDialog } from "@/components/dmp/AiAssistDialog";
 import {
   DMP_SECTIONS,
   SECTION_LABELS,
@@ -51,7 +50,6 @@ export const CreateDmp: React.FC = () => {
   const toast = useToastStore((s) => s.toast);
   const status = useDmpStore((s) => s.status);
   const [discardOpen, setDiscardOpen] = React.useState(false);
-  const [assistOpen, setAssistOpen] = React.useState(false);
 
   // The URL owns the active section so Review's per-section Edit links work
   // even when we're already on this route — local state would go stale,
@@ -122,15 +120,6 @@ export const CreateDmp: React.FC = () => {
           <Stepper steps={STEPPER_STEPS} activeIndex={2} />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <AutosaveIndicator value={draft} />
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-ai"
-              onClick={() => setAssistOpen(true)}
-            >
-              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-              Ask AI to improve
-            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -241,8 +230,6 @@ export const CreateDmp: React.FC = () => {
         </PlanEditorLayout>
       </div>
 
-      <AiAssistDialog open={assistOpen} onOpenChange={setAssistOpen} />
-
       <ConfirmDialog
         open={discardOpen}
         onOpenChange={setDiscardOpen}
@@ -258,7 +245,7 @@ export const CreateDmp: React.FC = () => {
             ? "The plan in force, its tasks and evidence stay as they are. Only edits you haven't saved or submitted are dropped."
             : awaitingDecision
               ? "The plan stays with your committee exactly as you submitted it. Only edits made since then are dropped."
-              : "It's archived, not deleted — you can bring it back from My DMPs."
+              : "It's archived, not deleted. You can bring it back from My DMPs."
         }
         confirmLabel={
           planIsActive || awaitingDecision ? "Discard changes" : "Archive draft"

@@ -29,7 +29,7 @@ export const REQUIREMENT_COPY: Record<
 > = {
   declared: {
     label: "Self-declared",
-    hint: "General work with no tangible output — tick it when it's done.",
+    hint: "General work with no tangible output. Tick it off when it's done.",
   },
   evidence_linked: {
     label: "Evidence required",
@@ -74,7 +74,7 @@ export const requirementHint = (
   mode: PlanMode = "institutional",
 ): string =>
   requirement === "system_verified" && mode === "independent"
-    ? "Closing this needs the DOI the repository issued — with no committee reviewing the plan, a plain link isn't enough."
+    ? "Closing this needs the DOI the repository issued. With no committee reviewing the plan, a plain link isn't enough."
     : REQUIREMENT_COPY[requirement].hint;
 
 /**

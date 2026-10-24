@@ -106,12 +106,14 @@ describe("linking an account", () => {
     contributor: [person("a", user_id, true)],
   });
 
-  it("is a minor edit, labelled for people", () => {
+  // Who is responsible for the data is a commitment: any contributor change
+  // goes back for sign-off.
+  it("is a major edit, labelled for people", () => {
     const changes = diffPlans(plan(), plan("u-aran"));
     expect(changes.map((c) => [c.label, c.to])).toEqual([
-      ["Contributor 1 — Linked account", "u-aran"],
+      ["Contributor 1: Linked account", "u-aran"],
     ]);
-    expect(editTypeOf(changes)).toBe("minor");
+    expect(editTypeOf(changes)).toBe("major");
   });
 
   it("stays out of both exports", () => {

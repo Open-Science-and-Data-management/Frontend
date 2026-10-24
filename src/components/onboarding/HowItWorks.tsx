@@ -31,15 +31,15 @@ export const FAQS = [
   },
   {
     q: "Does AI ever submit a plan on its own?",
-    a: "No — AI only drafts and suggests. A person always confirms required fields, and your committee makes the final approval decision.",
+    a: "No. AI only drafts and suggests. A person always confirms required fields, and your committee makes the final approval decision.",
   },
   {
     q: "What happens to my AI generation quota?",
-    a: "You get a monthly quota for analyzing proposals and regenerating fields. It resets on the 1st.",
+    a: "You have a token budget for analyzing proposals, regenerating fields and chatting with the assistant. The meter shows what's left, as the AI service counts it.",
   },
   {
     q: "Can I edit a plan after it's approved?",
-    a: "Yes — edits are classified as minor or major based on what changed, and major edits go back to your committee for approval.",
+    a: "Yes. Each edit is classed as minor or major depending on what changed, and major edits go back to your committee for approval.",
   },
 ];
 

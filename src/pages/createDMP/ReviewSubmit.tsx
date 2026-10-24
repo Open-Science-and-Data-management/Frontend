@@ -88,8 +88,8 @@ export const ReviewSubmit: React.FC = () => {
             Review &amp; submit
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            This is exactly what your committee will receive. Check it over —
-            you can still edit any section before submitting.
+            This is exactly what your committee will receive. Check it over. You
+            can still edit any section before submitting.
           </p>
         </div>
 
@@ -109,8 +109,8 @@ export const ReviewSubmit: React.FC = () => {
                 </Button>
                 <p className="text-xs text-muted-foreground">
                   {route.by === "self"
-                    ? "No committee reviews this plan. Finalizing makes it active and unlocks its tasks — your evidence is what stands behind it."
-                    : "Your committee reviews and approves the plan — nothing is approved automatically."}
+                    ? "No committee reviews this plan. Finalizing makes it active and unlocks its tasks, and your evidence is what backs it up."
+                    : "Your committee reviews and approves the plan. Nothing is approved automatically."}
                 </p>
               </>
             ) : (

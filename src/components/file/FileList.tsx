@@ -27,7 +27,7 @@ const PURPOSE_VARIANTS: Record<FileRecord["purpose"], "ai" | "ok" | "neutral"> =
   };
 
 export const formatBytes = (bytes: number | undefined) => {
-  if (bytes === undefined) return "—";
+  if (bytes === undefined) return "Size unknown";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -83,7 +83,7 @@ export const FileList: React.FC<FileListProps> = ({ projectId, readOnly }) => {
       toast({
         title: "No local copy available",
         description:
-          "File contents aren't kept between sessions — re-upload it to download.",
+          "File contents aren't kept between sessions. Upload it again to download it.",
       });
       return;
     }

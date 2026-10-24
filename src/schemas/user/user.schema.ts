@@ -8,7 +8,8 @@ export const userSchema = z.object({
   surname: z.string().min(1),
   email: z.string().email(),
   role: UserRole,
-  ai_token_limit: z.number().int().default(4500),
+  // Set by the server per account; the UI reads it through the quota endpoint.
+  ai_token_limit: z.number().int().nonnegative(),
   ai_token_used: z.number().int().default(0),
   // Set at sign-up. Optional so seeded and older accounts stay valid.
   username: z.string().optional(),

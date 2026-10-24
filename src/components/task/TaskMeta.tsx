@@ -136,7 +136,7 @@ export const TaskStatusBox: React.FC<{
     return (
       <span
         role="img"
-        aria-label={`${STATUS_LABELS[status]} — ${blockedReason}`}
+        aria-label={`${STATUS_LABELS[status]}: ${blockedReason}`}
         title={blockedReason}
         className={cn(
           "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-dashed border-warn/70 bg-warn-subtle text-warn",

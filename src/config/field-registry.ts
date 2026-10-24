@@ -41,7 +41,11 @@ const humanise = (key: string) =>
  * Anything not explicitly marked `ai` is treated as the researcher's call.
  * A field nobody classified is not a field an assistant should fill silently.
  */
-const CONSERVATIVE_DEFAULT: FieldPolicy = { permission: "human" };
+// Also not prose: an unclassified field never gets a rewrite control.
+const CONSERVATIVE_DEFAULT: FieldPolicy = {
+  permission: "human",
+  kind: "identifier",
+};
 
 const DATASET_PATH = /^dataset\[(\d+)\]\.(.+)$/;
 
@@ -75,7 +79,7 @@ export const resolveFieldPath = (
 
     return {
       path,
-      label: `${dataset.title || `Output ${index + 1}`} — ${humanise(key)}`,
+      label: `${dataset.title || `Output ${index + 1}`}: ${humanise(key)}`,
       section: "dataset",
       policy: datasetFieldPolicy[field] ?? CONSERVATIVE_DEFAULT,
       validator,
@@ -137,19 +141,21 @@ export const KNOWN_PATHS = [
 ];
 
 export const FIELD_HELP: Record<string, string> = {
-  title: "The plan's name. AI drafts it from your proposal; you can rewrite it.",
+  title:
+    "The plan's name. AI drafts it from your proposal; you can rewrite it.",
   description: "What the project does, in a paragraph.",
   language: "The language the plan itself is written in.",
   begin_date: "When the project starts. Locked once the committee approves.",
   end_date: "When the project ends. Locked once the committee approves.",
   ethical_issues_exist:
-    "Whether the work raises ethical issues. Yours to answer — AI never sets it.",
+    "Whether the work raises ethical issues. Only you can answer this; AI never sets it.",
   ethical_issues_description: "How those ethical issues are handled.",
   ethical_issues_report: "A link to the ethics approval or review report.",
   access: "Who can reach the output: open, shared, or closed.",
   protection_level: "How the data is protected in practice.",
   security_classification_level: "The classification the institution assigns.",
-  "preservation.duration": "How long the output is kept after the project ends.",
+  "preservation.duration":
+    "How long the output is kept after the project ends.",
   "preservation.repository": "Where the output will be deposited.",
   "preservation.statement": "The preservation plan in prose.",
 };

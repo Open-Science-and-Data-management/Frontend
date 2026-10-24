@@ -82,7 +82,7 @@ export const AwaitingReviewList: React.FC<{
           {total > items.length
             ? `Showing the ${items.length} longest-waiting of ${total}. `
             : ""}
-          The queue updates as you decide — the oldest plan is always first.
+          The queue updates as you decide, oldest plan first.
         </p>
       </>
     )}

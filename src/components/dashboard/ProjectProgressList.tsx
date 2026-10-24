@@ -62,7 +62,7 @@ export const ProjectProgressList: React.FC<{
               <p className="mt-1 text-xs text-muted-foreground">
                 {item.total === 0
                   ? item.plan.active_version !== undefined
-                    ? "Plan approved — no tasks generated yet."
+                    ? "Plan approved. No tasks generated yet."
                     : "Tasks are created once the plan is approved."
                   : `${item.done} of ${item.total} tasks done`}
                 {item.overdue > 0 && (

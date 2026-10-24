@@ -2,17 +2,13 @@ import React from "react";
 import { Navbar } from "@/components/ui/navbar";
 import { Sidebar } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/toast";
-// Hidden until it's opened, so its tool layer shouldn't be in the first load.
-const AiChatPanel = React.lazy(() =>
-  import("@/components/dmp/AiChatPanel").then((m) => ({
-    default: m.AiChatPanel,
-  })),
-);
 import { ConfirmProvider } from "@/components/ui/confirm-provider";
 import { cn } from "@/utils/cn";
 import { QuotaBar } from "@/components/ui/quota-indicator";
 import { useCurrentUser } from "@/store/authStore";
-import { isReviewer } from "@/config/roles";
+import { useQuotaStore } from "@/store/quotaStore";
+import { useAssistantStore } from "@/store/assistantStore";
+import { isResearcher } from "@/config/roles";
 
 const SIDEBAR_KEY = "sidebar-collapsed";
 
@@ -22,10 +18,18 @@ interface MainLayoutProps {
 
 export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-  const [chatOpenState, setChatOpen] = React.useState(false);
-  // The assistant and its token budget are for drafting; reviewers only read.
-  const reviewer = isReviewer(useCurrentUser()?.role);
-  const chatOpen = chatOpenState && !reviewer;
+  // The token budget is for drafting: only researchers have one to show.
+  const user = useCurrentUser();
+  const drafts = isResearcher(user?.role);
+  // The plan editor docks the assistant; the shell only makes room for it.
+  const chatOpen = useAssistantStore((s) => s.open);
+  // The budget is the signed-in account's, read from the server — on sign-in
+  // and whenever the account changes, then after every AI call.
+  React.useEffect(() => {
+    // Never show one account's budget to the next.
+    useQuotaStore.setState({ quota: null, status: "idle" });
+    if (user?.user_id) void useQuotaStore.getState().refresh();
+  }, [user?.user_id]);
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(
     () => localStorage.getItem(SIDEBAR_KEY) === "true",
   );
@@ -52,10 +56,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             onMenuClick={() => setMobileNavOpen(true)}
             onToggleSidebar={toggleSidebar}
             sidebarCollapsed={sidebarCollapsed}
-            onToggleChat={reviewer ? undefined : () => setChatOpen((o) => !o)}
-            chatOpen={chatOpen}
           >
-            {!reviewer && <QuotaBar />}
+            {drafts && <QuotaBar />}
           </Navbar>
 
           <div className="flex flex-1">
@@ -78,11 +80,6 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
           </footer>
         </div>
 
-        {chatOpen && (
-          <React.Suspense fallback={null}>
-            <AiChatPanel open onClose={() => setChatOpen(false)} />
-          </React.Suspense>
-        )}
         <Toaster />
       </div>
     </ConfirmProvider>

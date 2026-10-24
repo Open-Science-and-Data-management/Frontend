@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Toggle } from "@/components/ui/toggle";
 import { FormField } from "@/components/ui/form-field";
+import { InlineSuggestion } from "@/components/dmp/InlineSuggestion";
 import { dmpFieldPolicy } from "@/config/field-policy";
 import { useDmpStore } from "@/store/dmpStore";
 import { dmpDraftSchema } from "@/schemas/dmp";
@@ -12,7 +13,8 @@ const isValidReportUrl = (value: string | undefined) =>
   !value || dmpDraftSchema.shape.ethical_issues_report.safeParse(value).success;
 
 export const EthicalSection: React.FC = () => {
-  const { draft, setField } = useDmpStore();
+  const { draft, setField, regenerateField, regeneratingFields } =
+    useDmpStore();
 
   return (
     <div className="space-y-6">
@@ -43,6 +45,21 @@ export const EthicalSection: React.FC = () => {
             label="Ethical issues description"
             policy={dmpFieldPolicy.ethical_issues_description}
             required
+            hasText={Boolean(draft.ethical_issues_description?.trim())}
+            onRegenerate={(direction) =>
+              regenerateField(
+                "ethical_issues_description",
+                "Ethical issues description",
+                direction,
+              )
+            }
+            isRegenerating={regeneratingFields.ethical_issues_description}
+            suggestion={
+              <InlineSuggestion
+                match={{ path: "ethical_issues_description" }}
+                currentValue={draft.ethical_issues_description}
+              />
+            }
           >
             <Textarea
               id="ethical_issues_description"

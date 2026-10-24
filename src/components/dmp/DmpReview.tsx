@@ -13,7 +13,7 @@ import { useDmpStore } from "@/store/dmpStore";
 import { useProjectStore } from "@/store/projectStore";
 import type { DmpDraft } from "@/types/dmp";
 
-const EMPTY = "—";
+const EMPTY = "Not provided";
 
 const fmtDate = (d: Date | undefined) => (d ? format(d, "PP") : EMPTY);
 
@@ -93,7 +93,7 @@ export const DmpReview: React.FC<DmpReviewProps> = ({
         <dl className="grid grid-cols-1 gap-4">
           <Field label="Ethical issues">
             {draft.ethical_issues_exist
-              ? "Yes — issues apply"
+              ? "Yes, issues apply"
               : "No ethical issues"}
           </Field>
           {draft.ethical_issues_exist && (

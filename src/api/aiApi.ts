@@ -1,5 +1,14 @@
 import type { DmpDraft } from "@/types/dmp";
+import {
+  AiError,
+  totalTokens,
+  type AiCallOptions,
+  type AiUsage,
+  type ProvenanceMap,
+} from "@/api/aiContract";
+import { serve } from "@/api/mock/aiServer";
 import { MADMP_SCHEMA_VERSION } from "@/schemas/madmp/vocabularies";
+import type { RegenerateMode } from "@/config/field-policy";
 import {
   getDomainProfile,
   type DomainKey,
@@ -25,18 +34,33 @@ export const describeDirection = (direction: RegenerateDirection): string => {
 
 export type Coverage = "low" | "ok";
 
-export interface AnalyzeResult {
+/**
+ * Every AI result carries the provider's usage; `token_count` is its total,
+ * for display only. What the quota was charged is the server's business.
+ */
+interface Metered {
+  usage: AiUsage;
+  token_count: number;
+}
+
+const metered = (usage: AiUsage): Metered => ({
+  usage,
+  token_count: totalTokens(usage),
+});
+
+export interface AnalyzeResult extends Metered {
   draft: DmpDraft;
   coverage: Coverage;
-  token_count: number;
+  /**
+   * Where each drafted value came from. Absent when the analysis can't say —
+   * and then the UI makes no claim either way.
+   */
+  provenance?: ProvenanceMap;
 }
 
-export interface RegenerateResult {
+export interface RegenerateResult extends Metered {
   text: string;
-  token_count: number;
 }
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // ~4 characters per token is the usual rough rule for English prose.
 export const tokensIn = (text: string) => Math.ceil(text.length / 4);
@@ -75,9 +99,8 @@ export interface ChatContext {
   tokensLeft: number;
 }
 
-export interface ChatResult {
+export interface ChatResult extends Metered {
   reply: string;
-  token_count: number;
 }
 
 const list = (items: string[]) => items.map((i) => `• ${i}`).join("\n");
@@ -90,7 +113,7 @@ const composeReply = (message: string, ctx: ChatContext): string => {
 
   if (/missing|ready|submit|left to do|incomplete/.test(q)) {
     return ctx.unmet.length === 0
-      ? `${plan} looks complete — every required field is filled and confirmed. You can review and submit it whenever you're ready.`
+      ? `${plan} looks complete. Every required field is filled in and confirmed, so you can review and submit it whenever you're ready.`
       : `${ctx.unmet.length} thing${ctx.unmet.length === 1 ? "" : "s"} still needed before you can submit:\n${list(ctx.unmet)}`;
   }
 
@@ -104,14 +127,14 @@ const composeReply = (message: string, ctx: ChatContext): string => {
 
   if (/output|dataset|software|publication/.test(q)) {
     return ctx.outputs.length === 0
-      ? "There are no research outputs on this plan yet — you'll need at least one to submit."
+      ? "This plan has no research outputs yet. You'll need at least one to submit."
       : `Research outputs:\n${list(ctx.outputs.map((o) => `${o.title} (${o.type}, ${o.access} access)`))}`;
   }
 
   if (/contributor|who|team|contact|author/.test(q)) {
     return ctx.contributors.length === 0
       ? "No contributors have been added yet. Exactly one of them will need to be the primary contact."
-      : `Contributors:\n${list(ctx.contributors.map((c) => `${c.name} — ${c.role}${c.isContact ? " (primary contact)" : ""}`))}`;
+      : `Contributors:\n${list(ctx.contributors.map((c) => `${c.name}, ${c.role}${c.isContact ? " (primary contact)" : ""}`))}`;
   }
 
   if (/cost|budget|money|spend|currency/.test(q)) {
@@ -124,14 +147,14 @@ const composeReply = (message: string, ctx: ChatContext): string => {
   if (/ethic|consent|personal data|sensitive/.test(q)) {
     return ctx.ethicalIssues
       ? "This plan declares that ethical issues apply, so the description must be filled in and confirmed by a person before submitting."
-      : "This plan declares no ethical issues. If that changes, update the Ethical section — it needs a human confirmation either way.";
+      : "This plan declares no ethical issues. If that changes, update the Ethical section. Either way, a person has to confirm it.";
   }
 
   if (/token|quota|cost of ai|budget left/.test(q)) {
-    return `You have ${ctx.tokensLeft.toLocaleString()} AI tokens left this month. Analyzing a proposal is the expensive one; regenerating a single field is cheap.`;
+    return `You have ${ctx.tokensLeft.toLocaleString()} AI tokens left. Analyzing a proposal is the expensive one; regenerating a single field is cheap.`;
   }
 
-  return `I can only answer from what's in this plan. Try asking about: what's missing before submitting, a summary, the research outputs, contributors, cost, ethical issues, or your remaining tokens.\n\nI can suggest wording, but I can't change or approve anything — you confirm every edit, and your committee approves the plan.`;
+  return `I can only answer from what's in this plan. Try asking about: what's missing before submitting, a summary, the research outputs, contributors, cost, ethical issues, or your remaining tokens.\n\nI can suggest wording, but I can't change or approve anything. You confirm every edit, and your committee approves the plan.`;
 };
 
 /** One AI-proposed task, before it is written into the task store. */
@@ -176,9 +199,8 @@ export const TASK_DIRECTIONS = [
   },
 ] as const;
 
-export interface GenerateTasksResult {
+export interface GenerateTasksResult extends Metered {
   tasks: GeneratedTask[];
-  token_count: number;
 }
 
 // Each output gets a task per lifecycle stage it plausibly needs. Derived
@@ -529,12 +551,8 @@ export interface RedraftInput {
  */
 export const redraftFromProposal = async (
   input: RedraftInput,
-): Promise<{
-  fields: { path: string; value: unknown }[];
-  token_count: number;
-}> => {
-  await delay(1200);
-
+  opts: AiCallOptions = {},
+): Promise<Metered & { fields: { path: string; value: unknown }[] }> => {
   const steered = applyAnalysisDirection(CANNED_DRAFT, input.direction);
   const fields: { path: string; value: unknown }[] = [];
 
@@ -565,19 +583,19 @@ export const redraftFromProposal = async (
       });
   });
 
-  const token_count =
-    PROMPT_OVERHEAD.analyze_proposal / 2 +
-    tokensIn(input.direction) +
-    tokensIn(JSON.stringify(fields));
-
-  return { fields, token_count };
+  const usage = await serve({
+    input: PROMPT_OVERHEAD.analyze_proposal / 2 + tokensIn(input.direction),
+    output: tokensIn(JSON.stringify(fields)),
+    ms: 1200,
+    signal: opts.signal,
+  });
+  return { fields, ...metered(usage) };
 };
 
 export const generateTasks = async (
   input: GenerateTasksInput,
+  opts: AiCallOptions = {},
 ): Promise<GenerateTasksResult> => {
-  await delay(1300);
-
   const direction = input.direction?.trim() ?? "";
   const { plan, granular } = planForDirection(direction);
   const steer = direction ? ` Direction: ${direction}.` : "";
@@ -593,7 +611,7 @@ export const generateTasks = async (
             : [s.verb];
 
         return verbs.map((verb) => ({
-          title: `${verb} — ${o.title}`,
+          title: `${verb}: ${o.title}`,
           details: `${verb.toLowerCase()} the ${o.type} output “${o.title}” in line with the approved plan.${steer}`,
           lifecycle_stage: s.stage,
           priority: s.priority,
@@ -602,30 +620,81 @@ export const generateTasks = async (
       }),
   );
 
-  const token_count =
-    PROMPT_OVERHEAD.generate_tasks +
-    tokensIn(direction) +
-    tokensIn(JSON.stringify(tasks));
-  return { tasks, token_count };
+  const usage = await serve({
+    input: PROMPT_OVERHEAD.generate_tasks + tokensIn(direction),
+    output: tokensIn(JSON.stringify(tasks)),
+    ms: 1300,
+    signal: opts.signal,
+  });
+  return { tasks, ...metered(usage) };
 };
+
+/** The output a task is for, as the checklist needs to know it. */
+export interface ChecklistOutput {
+  dataset_id: string;
+  title: string;
+  type: string;
+  access: string;
+  personal_data?: string;
+  repository?: string;
+  duration?: string;
+}
 
 export interface GenerateChecklistInput {
   taskTitle: string;
   lifecycleStage: string;
-  /** The outputs the plan approved, so steps name real deliverables. */
-  outputs: { title: string; type: string; access: string }[];
+  /**
+   * The output this task is about, and the primary context: the steps are
+   * for this output. Absent for a task about the whole plan. Without it a
+   * model would have to guess which of the plan's outputs a task means.
+   */
+  taskOutput?: ChecklistOutput;
+  /** The plan's other outputs, by title. Context only, never the subject. */
+  otherOutputs?: string[];
   direction?: string;
 }
 
-/** The steps a list is drafted from, before the direction narrows them. */
-const CHECKLIST_TEMPLATE = [
-  "Agree the approach and record it",
-  "Do the work and note what changed",
-  "Produce the deliverable",
-  "Check it against the plan",
-  "Deposit it in the repository",
-  "Record the DOI or receipt",
-];
+/** Steps per lifecycle stage, before the output and direction shape them. */
+const CHECKLIST_BY_STAGE: Record<string, (o?: ChecklistOutput) => string[]> = {
+  collect: () => [
+    "Confirm permits and consent are in place",
+    "Collect the samples or data",
+    "Record where, when and how each item was collected",
+    "Store the raw data in the agreed location",
+    "Back up the raw data",
+  ],
+  process: () => [
+    "Agree the processing steps",
+    "Run the processing and keep the scripts",
+    "Check the processed data against the raw data",
+    "Record the software and versions used",
+    "Store the processed data",
+  ],
+  analyse: () => [
+    "Agree the analysis plan",
+    "Run the analysis and keep the code",
+    "Check the results can be reproduced",
+    "Record the results and where they are kept",
+  ],
+  preserve: (o) => [
+    "Convert the files to an archival format",
+    "Write the README and metadata",
+    `Deposit it in ${o?.repository || "the repository"}`,
+    "Record the DOI or receipt",
+    o?.duration
+      ? `Confirm it is kept for ${o.duration}`
+      : "Confirm how long it is kept",
+  ],
+  share: (o) => [
+    o?.access
+      ? `Check the access conditions (${o.access})`
+      : "Check the access conditions",
+    "Prepare the version to share",
+    "Publish or release it",
+    "Record the DOI or link",
+    "Tell collaborators where to find it",
+  ],
+};
 
 /**
  * Drafts the steps for one task from the approved plan. The direction has to
@@ -634,14 +703,26 @@ const CHECKLIST_TEMPLATE = [
  */
 export const generateTaskChecklist = async (
   input: GenerateChecklistInput,
-): Promise<{ steps: string[]; token_count: number }> => {
-  await delay(900);
-
+  opts: AiCallOptions = {},
+): Promise<Metered & { steps: string[] }> => {
   const d = (input.direction ?? "").trim().toLowerCase();
-  const output = input.outputs[0]?.title;
+  const output = input.taskOutput;
+  const template =
+    CHECKLIST_BY_STAGE[input.lifecycleStage] ??
+    (() => [
+      "Agree the approach and record it",
+      "Do the work and note what changed",
+      "Check it against the plan",
+    ]);
 
-  let steps = CHECKLIST_TEMPLATE.map((s) =>
-    output ? `${s} — ${output}` : `${s} (${input.lifecycleStage})`,
+  let steps = template(output);
+  if (
+    output?.personal_data === "yes" &&
+    (input.lifecycleStage === "collect" || input.lifecycleStage === "share")
+  )
+    steps.splice(1, 0, "Check the consent covers this use of personal data");
+  steps = steps.map((s) =>
+    output ? `${s} (${output.title})` : `${s} (${input.lifecycleStage})`,
   );
 
   if (/brief|fewer|short|minimal|simpl/.test(d))
@@ -652,29 +733,38 @@ export const generateTaskChecklist = async (
       "Log the decisions taken along the way",
       "Have a second person review it",
     ];
-  if (/preserv|archive|deposit|backup/.test(d))
-    steps = steps.filter((s) => /deposit|doi|receipt/i.test(s));
+  if (/preserv|archive|deposit|backup/.test(d)) {
+    const kept = steps.filter((s) => /deposit|doi|receipt|back up/i.test(s));
+    steps = kept.length ? kept : steps;
+  }
   if (/quality|check|valid|qa/.test(d))
     steps = [...steps, "Run the quality checks and keep the report"];
 
-  const token_count =
-    PROMPT_OVERHEAD.generate_tasks / 2 +
-    tokensIn(d) +
-    tokensIn(JSON.stringify(steps));
-
-  return { steps, token_count };
+  const usage = await serve({
+    input:
+      PROMPT_OVERHEAD.generate_tasks / 2 +
+      tokensIn(d) +
+      tokensIn(JSON.stringify(input.taskOutput ?? {})),
+    output: tokensIn(JSON.stringify(steps)),
+    ms: 900,
+    signal: opts.signal,
+  });
+  return { steps, ...metered(usage) };
 };
 
 export const aiChat = async (
   message: string,
   context: ChatContext,
+  opts: AiCallOptions = {},
 ): Promise<ChatResult> => {
-  await delay(700);
   const reply = composeReply(message, context);
-  return {
-    reply,
-    token_count: PROMPT_OVERHEAD.chat + tokensIn(message) + tokensIn(reply),
-  };
+  const usage = await serve({
+    input: PROMPT_OVERHEAD.chat + tokensIn(message),
+    output: tokensIn(reply),
+    ms: 700,
+    signal: opts.signal,
+  });
+  return { reply, ...metered(usage) };
 };
 
 // Canned draft returned for any uploaded proposal — stands in for a real
@@ -730,22 +820,99 @@ const CANNED_DRAFT: DmpDraft = {
   schema_version: MADMP_SCHEMA_VERSION,
 };
 
+// Stand-ins for a model's rewording. Each changes wording only and never
+// adds a claim the text didn't make; when there's nothing honest to change,
+// the text comes back as it was and the UI says there was nothing new.
+const swap = (text: string, words: [RegExp, string][]) =>
+  words.reduce((t, [pattern, plain]) => t.replace(pattern, plain), text);
+
+const CONTRACTIONS: [RegExp, string][] = [
+  [/\bcan't\b/gi, "cannot"],
+  [/\bwon't\b/gi, "will not"],
+  [/\b(\w+)n't\b/gi, "$1 not"],
+  [/\b(\w+)'re\b/gi, "$1 are"],
+  [/\b(\w+)'ll\b/gi, "$1 will"],
+  [/\bit's\b/gi, "it is"],
+];
+const FORMAL_WORDS: [RegExp, string][] = [
+  [/\blots of\b/gi, "many"],
+  [/\bget\b/gi, "obtain"],
+  [/\bbig\b/gi, "large"],
+  [/\bkids\b/gi, "children"],
+];
+const PLAIN_WORDS: [RegExp, string][] = [
+  [/\bin accordance with\b/gi, "under"],
+  [/\butili[sz]e\b/gi, "use"],
+  [/\bapproximately\b/gi, "about"],
+  [/\bcommence\b/gi, "start"],
+  [/\bfacilitate\b/gi, "help"],
+  [/\bprior to\b/gi, "before"],
+  [/\bin order to\b/gi, "to"],
+  [/\bsubsequently\b/gi, "then"],
+  [/\bassess\b/gi, "check"],
+  [/\bascertain\b/gi, "find out"],
+];
+
+/** Capital first letter; a closing full stop, except on a title. */
+const tidy = (text: string, fieldLabel: string) => {
+  const t = text.trim().replace(/\.+$/, "");
+  const capped = `${t.charAt(0).toUpperCase()}${t.slice(1)}`;
+  return /title/i.test(fieldLabel) ? capped : `${capped}.`;
+};
+
+/** The first sentence, or the main clause of a long single one. */
+const shorten = (text: string) => {
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  if (sentences.length > 1) return sentences[0];
+  const cut = text.lastIndexOf(", ");
+  return cut > 0 && text.slice(0, cut).split(/\s+/).length >= 6
+    ? text.slice(0, cut)
+    : text;
+};
+
+const reword = (
+  text: string,
+  direction: RegenerateDirection,
+  fieldLabel: string,
+) => {
+  const detail = "detail" in direction ? direction.detail : "";
+  if (direction.kind === "shorter" || /short|concise|brief/i.test(detail)) {
+    const short = shorten(text);
+    return short === text ? text : tidy(short, fieldLabel);
+  }
+  if (direction.kind === "formal" || /formal/i.test(detail))
+    return tidy(swap(swap(text, CONTRACTIONS), FORMAL_WORDS), fieldLabel);
+  if (/plain|simpl|clear/i.test(detail)) {
+    const plain = swap(text, PLAIN_WORDS);
+    return plain === text ? text : tidy(plain, fieldLabel);
+  }
+  // "Emphasise X", or an instruction the stand-in can't follow: no change,
+  // rather than pasting the instruction into the text.
+  return text;
+};
+
 export const aiApi = {
   analyzeProposal: async (
     file: File,
     direction?: string,
+    opts: AiCallOptions = {},
   ): Promise<AnalyzeResult> => {
-    await delay(1400);
-
+    // Refused before the model runs, so nothing is charged.
     if (!file.name.toLowerCase().endsWith(".docx")) {
-      throw new Error(
-        "Couldn't read this file — please upload a .docx proposal.",
-      );
+      throw new AiError({
+        code: "invalid_input",
+        retryable: false,
+        userMessage:
+          "We couldn't read this file. Please upload your proposal as a .docx.",
+      });
     }
     if (file.size === 0) {
-      throw new Error(
-        "This file looks empty or unreadable — try re-exporting it, or upload a different file.",
-      );
+      throw new AiError({
+        code: "invalid_input",
+        retryable: false,
+        userMessage:
+          "This file looks empty or unreadable. Try exporting it again, or upload a different file.",
+      });
     }
 
     // Deterministic stand-in for a real coverage/confidence score. A
@@ -771,53 +938,44 @@ export const aiApi = {
     const draft = applyAnalysisDirection(extracted, steer);
 
     // Input document + the direction + the whole drafted plan coming back.
-    const token_count =
-      PROMPT_OVERHEAD.analyze_proposal +
-      Math.ceil(file.size / 12) +
-      tokensIn(steer) +
-      tokensIn(JSON.stringify(draft));
+    const usage = await serve({
+      input:
+        PROMPT_OVERHEAD.analyze_proposal +
+        Math.ceil(file.size / 12) +
+        tokensIn(steer),
+      output: tokensIn(JSON.stringify(draft)),
+      ms: 1400,
+      signal: opts.signal,
+    });
 
-    return { draft, coverage, token_count };
+    // This stand-in reads nothing from the file, so it can't say where any
+    // value came from — and returns no provenance rather than a made-up one.
+    return { draft, coverage, ...metered(usage) };
   },
 
+  /**
+   * `polish` asks for the same meaning in better words, nothing added: the
+   * text is the researcher's. The real prompt has to carry that too.
+   */
   regenerateField: async (
     fieldLabel: string,
     currentValue: string,
     direction: RegenerateDirection,
+    mode: RegenerateMode = "rewrite",
+    opts: AiCallOptions = {},
   ): Promise<RegenerateResult> => {
-    await delay(900);
+    // The stand-in rewords for both modes; the real prompt must also hold
+    // `polish` to the researcher's meaning. It writes nothing from blank.
+    void mode;
+    const base = currentValue.trim();
+    const text = base ? reword(base, direction, fieldLabel) : currentValue;
 
-    const base = currentValue || `${fieldLabel} (AI draft)`;
-    let text: string;
-    switch (direction.kind) {
-      case "shorter": {
-        const firstSentence = base.split(". ")[0]?.trim() ?? "";
-        if (firstSentence && firstSentence.length < base.trim().length - 1) {
-          text = firstSentence.replace(/\.?$/, ".");
-        } else {
-          // Already a single sentence — trim it back instead of returning
-          // the input unchanged, which reads as a no-op to the user.
-          const words = base.replace(/\.\s*$/, "").split(/\s+/);
-          const kept = Math.max(6, Math.ceil(words.length * 0.6));
-          text = `${words.slice(0, kept).join(" ")}.`;
-        }
-        break;
-      }
-      case "formal":
-        text = `${base.replace(/\.$/, "")}, in accordance with institutional data governance standards.`;
-        break;
-      case "emphasize":
-        text = `${base.replace(/\.$/, "")}, with particular emphasis on ${direction.detail}.`;
-        break;
-      case "custom":
-        text = `${base.replace(/\.$/, "")} (${direction.detail}).`;
-        break;
-      default:
-        text = base;
-    }
-
-    const token_count =
-      PROMPT_OVERHEAD.regenerate_field + tokensIn(base) + tokensIn(text);
-    return { text, token_count };
+    const usage = await serve({
+      input: PROMPT_OVERHEAD.regenerate_field + tokensIn(base),
+      output: tokensIn(text),
+      ms: 900,
+      signal: opts.signal,
+    });
+    return { text, ...metered(usage) };
   },
 };

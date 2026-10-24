@@ -1,7 +1,7 @@
 import React from "react";
 import { Helmet } from "react-helmet-async";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Sparkles, ArrowRight, FolderKanban } from "lucide-react";
+import { Sparkles, ArrowRight, FolderKanban, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -15,6 +15,7 @@ import {
 import { CreateProjectDialog } from "@/components/project/CreateProjectDialog";
 import { coverageGaps, estimateCost } from "@/api/aiApi";
 import { useDmpStore } from "@/store/dmpStore";
+import { formatTokensLeft, useQuotaStore } from "@/store/quotaStore";
 import { useProjectStore } from "@/store/projectStore";
 
 const PROGRESS_STEPS = [
@@ -29,14 +30,9 @@ type Stage = "idle" | "confirming" | "analyzing" | "low-coverage";
 export const Upload: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const {
-    tokenUsed,
-    tokenLimit,
-    hasToken,
-    hasTokensFor,
-    analyzeProposal,
-    startManual,
-  } = useDmpStore();
+  const { analyzeProposal, startManual } = useDmpStore();
+  const tokensLeft = useQuotaStore((s) => s.tokensLeft());
+  const hasTokensFor = useQuotaStore((s) => s.hasTokensFor);
   const { projects, files, uploadFile, updateProject } = useProjectStore();
 
   const [projectId, setProjectId] = React.useState<string>(
@@ -47,6 +43,9 @@ export const Upload: React.FC = () => {
   const [fileError, setFileError] = React.useState<string | undefined>();
   const [stage, setStage] = React.useState<Stage>("idle");
   const [progressStep, setProgressStep] = React.useState(0);
+  // Lets the person stop waiting. The server has already read the file by
+  // then, so what it spent still counts.
+  const abortRef = React.useRef<AbortController | null>(null);
 
   const existingProposal = files.find(
     (f) =>
@@ -70,22 +69,31 @@ export const Upload: React.FC = () => {
       setProgressStep((s) => Math.min(s + 1, PROGRESS_STEPS.length - 1));
     }, 350);
 
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       // The proposal is stored against the project before AI reads it.
       await uploadFile({ file, projectId, purpose: "proposal" });
-      const { coverage } = await analyzeProposal(file, projectId);
+      const { coverage, opened } = await analyzeProposal(
+        file,
+        projectId,
+        undefined,
+        { signal: controller.signal },
+      );
       updateProject(projectId, { status: "active" });
 
       clearInterval(stepTimer);
       setProgressStep(PROGRESS_STEPS.length);
-      if (coverage === "low") {
-        setStage("low-coverage");
-      } else {
-        navigate("/dmp/create");
-      }
+      // Filed but not opened means the person went to another plan; the
+      // store already told them where the new one is.
+      if (!opened) setStage("idle");
+      else if (coverage === "low") setStage("low-coverage");
+      else navigate("/dmp/create");
     } catch {
       clearInterval(stepTimer);
       setStage("idle");
+    } finally {
+      abortRef.current = null;
     }
   };
 
@@ -99,7 +107,9 @@ export const Upload: React.FC = () => {
   };
 
   const analyzeCost = file ? estimateCost.analyzeProposal(file) : 0;
-  const canAffordAnalyze = file ? hasTokensFor(analyzeCost) : hasToken();
+  const canAffordAnalyze = file
+    ? hasTokensFor(analyzeCost)
+    : tokensLeft === null || tokensLeft > 0;
   const canAnalyze = Boolean(file) && Boolean(projectId) && canAffordAnalyze;
 
   return (
@@ -125,6 +135,19 @@ export const Upload: React.FC = () => {
               Analyzing your proposal…
             </div>
             <AiProgress steps={PROGRESS_STEPS} activeIndex={progressStep} />
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <p className="text-xs text-muted-foreground">
+                Stopping won't refund tokens the AI has already used.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => abortRef.current?.abort()}
+              >
+                <Square className="mr-1.5 h-3 w-3" />
+                Stop
+              </Button>
+            </div>
           </div>
         ) : stage === "low-coverage" ? (
           <LowCoverageFallback
@@ -135,12 +158,13 @@ export const Upload: React.FC = () => {
               if (!file) return;
               // Nothing has been edited by hand yet, so a second pass can
               // replace the draft outright.
-              const { coverage } = await analyzeProposal(
+              const { coverage, opened } = await analyzeProposal(
                 file,
                 projectId,
                 direction,
+                { replace: useDmpStore.getState().currentDmpId ?? undefined },
               );
-              if (coverage === "ok") navigate("/dmp/create");
+              if (opened && coverage === "ok") navigate("/dmp/create");
             }}
           />
         ) : (
@@ -190,8 +214,8 @@ export const Upload: React.FC = () => {
               {existingProposal && (
                 <p className="mt-2 text-xs text-warn">
                   This project already has a proposal (
-                  {existingProposal.filename}). Uploading another supersedes it
-                  — the old one is kept as a previous version.
+                  {existingProposal.filename}). Uploading another replaces it,
+                  and the old one is kept as a previous version.
                 </p>
               )}
             </div>
@@ -212,10 +236,10 @@ export const Upload: React.FC = () => {
                 <p className="text-xs text-muted-foreground">
                   {file
                     ? `Analyzing this file costs about ${analyzeCost.toLocaleString()} tokens`
-                    : "Resets monthly · spent on analyzing and regenerating"}
+                    : "Spent on analyzing and regenerating"}
                 </p>
               </div>
-              <QuotaIndicator used={tokenUsed} limit={tokenLimit} />
+              <QuotaIndicator />
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -234,14 +258,13 @@ export const Upload: React.FC = () => {
                 disabled={!projectId}
                 onClick={handleSkipAi}
               >
-                Skip AI — fill manually
+                Skip AI and fill it in myself
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             </div>
             {!canAffordAnalyze && (
               <p className="text-center text-xs text-warn">
-                Not enough tokens left this month — you can still fill the DMP
-                manually.
+                Not enough tokens left. You can still fill in the DMP manually.
               </p>
             )}
           </>
@@ -252,7 +275,7 @@ export const Upload: React.FC = () => {
         open={stage === "confirming"}
         onOpenChange={(open) => setStage(open ? "confirming" : "idle")}
         title="Analyze this proposal?"
-        description={`This will use about ${analyzeCost.toLocaleString()} of your ${(tokenLimit - tokenUsed).toLocaleString()} remaining tokens this month. AI will draft a DMP for you to review — nothing is submitted automatically.`}
+        description={`This will use about ${analyzeCost.toLocaleString()} of your ${formatTokensLeft(tokensLeft)} remaining tokens. AI drafts a DMP for you to review, and nothing is submitted automatically.`}
         confirmLabel="Analyze & generate"
         confirmVariant="ai"
         onConfirm={runAnalysis}
@@ -302,7 +325,7 @@ const LowCoverageFallback: React.FC<{
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {file?.name ?? "Your proposal"} was thin on detail. Rather than
-          guessing a whole plan, answer what you can — AI reads the proposal
+          guessing a whole plan, answer what you can. AI then reads the proposal
           again with your answers as direction.
         </p>
       </div>
@@ -337,6 +360,8 @@ const LowCoverageFallback: React.FC<{
             setRetrying(true);
             try {
               await onRetry(direction);
+            } catch {
+              // Already reported by the store, with a retry if one helps.
             } finally {
               setRetrying(false);
             }

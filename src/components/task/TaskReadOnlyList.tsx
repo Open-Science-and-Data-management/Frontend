@@ -84,10 +84,10 @@ export const TaskReadOnlyList: React.FC<{
                   </div>
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-xs text-muted-foreground">
-                  {task.end_date ? format(task.end_date, "PP") : "—"}
+                  {task.end_date ? format(task.end_date, "PP") : "No due date"}
                 </td>
                 <td className="max-w-[12rem] truncate px-3 py-2 text-xs text-muted-foreground">
-                  {evidence ?? "—"}
+                  {evidence ?? "None yet"}
                 </td>
               </tr>
             );

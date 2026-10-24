@@ -24,7 +24,7 @@ export const deleteProject = (projectId: string): DeleteProjectResult => {
     return {
       ok: false,
       plans,
-      reason: `This project still has ${plans} plan${plans === 1 ? "" : "s"}. Delete or move ${plans === 1 ? "it" : "them"} first — approvals and tasks belong to the project.`,
+      reason: `This project still has ${plans} plan${plans === 1 ? "" : "s"}. Delete or move ${plans === 1 ? "it" : "them"} first. Approvals and tasks belong to the project.`,
     };
 
   useProjectStore.getState().removeProject(projectId);

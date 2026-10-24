@@ -84,7 +84,7 @@ export const PlanChanges: React.FC = () => {
               ? `Nothing new since you submitted version ${pending.number}.`
               : `${changes.length} new since you submitted version ${pending.number}`
             : changes.length === 0
-              ? "Your edits match it — nothing outstanding."
+              ? "Your edits match it. Nothing outstanding."
               : `${minor} minor · ${major} needing a decision`}
         </p>
       </div>
@@ -151,8 +151,8 @@ export const PlanChanges: React.FC = () => {
           // One decision at a time.
           <p className="rounded-md border border-warn/40 bg-warn-subtle/40 p-2 text-xs text-warn">
             Version {pending.number} is still waiting on a decision. Changes
-            that need sign-off can be submitted once it's decided — or keep only
-            minor fixes here, and they can be saved now.
+            that need sign-off can be submitted once it's decided. Minor fixes
+            can be saved now.
           </p>
         ) : needsReview ? (
           <>

@@ -133,7 +133,7 @@ describe("the checklist never claims ready while submit is blocked", () => {
     const { canSubmit, unmetItems } = computeReadiness(draft);
     expect(canSubmit).toBe(false);
     expect(unmetItems.map((i) => i.label)).toContain(
-      "Contributor 1 — Role needs attention",
+      "Contributor 1: Role needs attention",
     );
     expect(unmetItems[0].section).toBe("people");
     assertHonest(draft);
@@ -148,7 +148,7 @@ describe("the checklist never claims ready while submit is blocked", () => {
 
     const { unmetItems } = computeReadiness(draft);
     const item = unmetItems.find((i) => i.label.includes("Research output 2"));
-    expect(item?.label).toBe("Research output 2 — Title needs attention");
+    expect(item?.label).toBe("Research output 2: Title needs attention");
     expect(item?.section).toBe("dataset");
     assertHonest(draft);
   });
@@ -190,7 +190,7 @@ describe("what maDMP v3.0 adds to a complete plan", () => {
     const { canSubmit, unmetItems } = computeReadiness(draft);
     expect(canSubmit).toBe(false);
     expect(unmetItems.map((i) => i.label)).toContain(
-      "Contributor 1 — Email needs attention",
+      "Contributor 1: Email needs attention",
     );
     expect(unmetItems.find((i) => /Email/.test(i.label))?.section).toBe(
       "people",
@@ -208,7 +208,7 @@ describe("what maDMP v3.0 adds to a complete plan", () => {
       },
     ];
     expect(computeReadiness(draft).unmetItems.map((i) => i.label)).toContain(
-      "Research output 1 — Distribution 1 — Licence needs attention",
+      "Research output 1, distribution 1: Licence needs attention",
     );
 
     draft.dataset[0].distribution[0].license =
@@ -245,7 +245,7 @@ describe("each problem points at its own field", () => {
     expect(items.map((i) => i.label)).toEqual(
       expect.arrayContaining([
         "Set protection & security on research output 2",
-        "Research output 1 — Distribution 1 — Licence needs attention",
+        "Research output 1, distribution 1: Licence needs attention",
       ]),
     );
   });
@@ -264,7 +264,7 @@ describe("each problem points at its own field", () => {
       /Licence/.test(i.label),
     );
     expect(item).toMatchObject({
-      label: "Research output 2 — Distribution 2 — Licence needs attention",
+      label: "Research output 2, distribution 2: Licence needs attention",
       section: "dataset",
       fieldId: "distribution-license-d2-1",
     });
@@ -291,7 +291,7 @@ describe("each problem points at its own field", () => {
     expect(
       computeReadiness(draft).unmetItems.find((i) => /Email/.test(i.label)),
     ).toMatchObject({
-      label: "Contributor 2 — Email needs attention",
+      label: "Contributor 2: Email needs attention",
       section: "people",
       fieldId: "contributor-email-c2",
     });
@@ -324,7 +324,7 @@ describe("each problem points at its own field", () => {
     ];
     expect(computeReadiness(draft).unmetItems).toEqual([
       {
-        label: "Contributor 2 — Linked account needs attention",
+        label: "Contributor 2: Linked account needs attention",
         done: false,
         section: "people",
         fieldId: "contributor-user_id-c2",

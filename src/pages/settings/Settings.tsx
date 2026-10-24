@@ -126,7 +126,7 @@ const ProfileSection: React.FC = () => {
               <>
                 <p className="mb-1 text-sm font-medium">{label}</p>
                 <p className="text-sm text-muted-foreground">
-                  {current[key] || "—"}
+                  {current[key] || "Not set"}
                 </p>
               </>
             )}

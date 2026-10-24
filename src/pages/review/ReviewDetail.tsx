@@ -153,8 +153,8 @@ export const ReviewDetail: React.FC = () => {
                   What changed since version {active?.number}
                 </h2>
                 <p className="mb-4 mt-0.5 text-xs text-muted-foreground">
-                  Version {active?.number} stays in force — and its tasks keep
-                  running — until you decide.
+                  Version {active?.number} stays in force, and its tasks keep
+                  running, until you decide.
                 </p>
                 <ChangeList changes={pending.changes} />
               </section>
@@ -164,7 +164,7 @@ export const ReviewDetail: React.FC = () => {
               <p className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
                 {active
                   ? `Showing version ${active.number}, the one in force.`
-                  : "Showing the researcher's current draft — it hasn't been submitted."}
+                  : "Showing the researcher's current draft. It hasn't been submitted."}
               </p>
             )}
 
@@ -180,7 +180,8 @@ export const ReviewDetail: React.FC = () => {
                     htmlFor="review-position"
                     className="mb-1 block text-xs font-medium text-muted-foreground"
                   >
-                    Recorded as {reviewer ? userFullName(reviewer) : "—"},
+                    Recorded as{" "}
+                    {reviewer ? userFullName(reviewer) : "an unknown reviewer"},
                     position
                   </label>
                   <Input
@@ -203,7 +204,7 @@ export const ReviewDetail: React.FC = () => {
                     rows={4}
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    placeholder="Required when sending it back — say what needs to change."
+                    placeholder="Required when sending it back. Say what needs to change."
                     className="text-sm"
                   />
                 </div>

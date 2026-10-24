@@ -18,7 +18,7 @@ const AUDIENCES = [
     icon: Users,
     title: "For researchers",
     description:
-      "Upload a proposal, let AI draft the plan, then check every field yourself and submit it — and track the tasks it turns into.",
+      "Upload a proposal and let AI draft the plan. Check every field yourself, submit it, then track the tasks it turns into.",
   },
   {
     icon: ShieldCheck,
@@ -43,7 +43,7 @@ export const Landing: React.FC = () => {
   return (
     <>
       <Helmet>
-        <title>DMP-Researcher — Data Management Plans, drafted with AI</title>
+        <title>DMP-Researcher | Data management plans, drafted with AI</title>
       </Helmet>
 
       <div className="flex min-h-dvh flex-col bg-background">
@@ -79,8 +79,8 @@ export const Landing: React.FC = () => {
             </h1>
             <p className="mx-auto max-w-xl text-muted-foreground">
               AI drafts a FAIRer maDMP-compliant plan from your proposal. You
-              review, edit, and confirm every field — AI never approves
-              anything; your committee does.
+              check and confirm every field, and your committee makes the
+              decision. AI never approves anything.
             </p>
             <Button size="lg" asChild>
               <Link to={start.to}>

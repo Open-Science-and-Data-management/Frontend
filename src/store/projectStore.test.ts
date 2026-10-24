@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useProjectStore } from "@/store/projectStore";
+import { MOCK_ACCOUNT_TOKEN_LIMIT } from "@/api/mock/accounts";
 import type { FileRecord } from "@/types/file";
 
 const docx = (name: string) =>
@@ -182,7 +183,7 @@ describe("updateUser", () => {
           surname: "B",
           email: "a@b.edu",
           role: "researcher",
-          ai_token_limit: 4500,
+          ai_token_limit: MOCK_ACCOUNT_TOKEN_LIMIT,
           ai_token_used: 0,
         },
         {
@@ -191,7 +192,7 @@ describe("updateUser", () => {
           surname: "D",
           email: "c@d.edu",
           role: "committee",
-          ai_token_limit: 4500,
+          ai_token_limit: MOCK_ACCOUNT_TOKEN_LIMIT,
           ai_token_used: 0,
         },
       ],

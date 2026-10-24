@@ -257,7 +257,7 @@ export const useTaskStore = create<TaskState>()(
           task_id: "3",
           dmp_id: SEED_DMP_ID,
           title: "Agree the weekly data review slot",
-          details: "General coordination — no output attached.",
+          details: "General coordination, not tied to an output.",
           status: "todo",
           priority: "low",
           lifecycle_stage: "collect",

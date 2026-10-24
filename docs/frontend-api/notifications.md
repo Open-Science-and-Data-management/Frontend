@@ -2,7 +2,19 @@
 
 The signed-in user's notifications. Committee members mostly receive
 `review_requested`, sent to every reviewer when a plan or revision is
-submitted. Each user only ever sees their own.
+submitted. Researchers receive what happens to their plans and tasks
+(`dmp_submitted`, `dmp_approved`, `dmp_returned`, `dmp_finalized`,
+`tasks_cancelled`, and the rest of `NotificationType`). Each user only ever
+sees their own.
+
+## Delivery
+
+Notifications are **polled**: the page calls
+[List notifications](#list-notifications) while it's open (every 60 seconds
+by default, and again when the tab regains focus) and reads `unread_count`
+for the sidebar badge. There is no push, WebSocket or server-sent events:
+the backend raises notifications on an in-process event bus with no Redis, so
+there is nothing to push from. The interval is a tunable default.
 
 ## Endpoints
 
@@ -72,7 +84,7 @@ submitted. Each user only ever sees their own.
 Lists the signed-in user's notifications, newest first, for the
 **Notifications** page and the sidebar's unread badge.
 
-**Who can call:** `committee`, `chief`
+**Who can call:** `researcher`, `committee`, `chief` (their own notifications)
 
 **Frontend today:** `useNotificationStore.notifications` filtered to the
 signed-in `user_id`.
@@ -81,7 +93,7 @@ signed-in `user_id`.
 
 ```bash
 curl "https://api.example.ac.th/v1/notifications?limit=50" \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **Response**
@@ -133,7 +145,7 @@ Only the common errors listed in [README](./README.md#errors).
 Marks one notification read. The page calls it when a notification is opened,
 then follows its `link`.
 
-**Who can call:** `committee`, `chief`
+**Who can call:** `researcher`, `committee`, `chief` (their own notifications)
 
 **Frontend today:** `useNotificationStore.markRead(id)`
 
@@ -141,7 +153,7 @@ then follows its `link`.
 
 ```bash
 curl -X POST https://api.example.ac.th/v1/notifications/ntf-review-soil/read \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **Response**
@@ -180,7 +192,7 @@ Already-read notifications are returned unchanged.
 
 Marks every unread notification of the signed-in user read (**Mark all read**).
 
-**Who can call:** `committee`, `chief`
+**Who can call:** `researcher`, `committee`, `chief` (their own notifications)
 
 **Frontend today:** `useNotificationStore.markAllRead(user_id)`
 
@@ -188,7 +200,7 @@ Marks every unread notification of the signed-in user read (**Mark all read**).
 
 ```bash
 curl -X POST https://api.example.ac.th/v1/notifications/read_all \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **Response**
@@ -211,7 +223,7 @@ Only the common errors listed in [README](./README.md#errors).
 
 Dismisses one notification (the **×** on a row).
 
-**Who can call:** `committee`, `chief`
+**Who can call:** `researcher`, `committee`, `chief` (their own notifications)
 
 **Frontend today:** `useNotificationStore.remove(id)`
 
@@ -219,7 +231,7 @@ Dismisses one notification (the **×** on a row).
 
 ```bash
 curl -X DELETE https://api.example.ac.th/v1/notifications/ntf-review-soil \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **Response**
@@ -245,7 +257,7 @@ curl -X DELETE https://api.example.ac.th/v1/notifications/ntf-review-soil \
 Removes all of the signed-in user's notifications (**Clear all**, after a
 confirmation). Other users' notifications are untouched.
 
-**Who can call:** `committee`, `chief`
+**Who can call:** `researcher`, `committee`, `chief` (their own notifications)
 
 **Frontend today:** `useNotificationStore.clearAll(user_id)`
 
@@ -253,7 +265,7 @@ confirmation). Other users' notifications are untouched.
 
 ```bash
 curl -X DELETE https://api.example.ac.th/v1/notifications \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **Response**

@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import type { FieldChange } from "@/config/plan-diff";
+import { NOT_SET, type FieldChange } from "@/config/plan-diff";
 import { userFullName } from "@/schemas/user";
 import { useProjectStore } from "@/store/projectStore";
 
@@ -14,7 +14,7 @@ export const useChangeText = () => {
       if (change.target?.field !== "user_id")
         return `${change.from} → ${change.to}`;
       const name = (id: string) => {
-        if (id === "—") return "No account";
+        if (id === NOT_SET) return "No account";
         const user = users.find((u) => u.user_id === id);
         return user ? userFullName(user) : "Unknown account";
       };

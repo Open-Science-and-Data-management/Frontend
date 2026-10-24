@@ -1,4 +1,6 @@
 import React from "react";
+import { formatTokensLeft, useQuotaStore } from "@/store/quotaStore";
+import { reportAiError, syncQuota } from "@/store/aiErrors";
 import { useChangeText } from "@/hooks/useChangeText";
 import { Helmet } from "react-helmet-async";
 import { Link, useNavigate } from "react-router-dom";
@@ -18,7 +20,7 @@ import { ReopenTasksPrompt } from "@/components/task/ReopenTasksPrompt";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AiProgress } from "@/components/ui/ai-progress";
 import { estimateCost, generateTasks } from "@/api/aiApi";
-import { useDmpStore } from "@/store/dmpStore";
+import { outputsInForce, useDmpStore } from "@/store/dmpStore";
 import { recordAiEvent } from "@/store/aiThread";
 import { useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
@@ -39,15 +41,10 @@ const GENERATE_STEPS = [
 export const Status: React.FC = () => {
   const changeText = useChangeText();
   const navigate = useNavigate();
-  const {
-    draft,
-    status,
-    tasksGenerated,
-    finalize,
-    markTasksGenerated,
-    hasTokensFor,
-    tokensLeft,
-  } = useDmpStore();
+  const { status, tasksGenerated, finalize, markTasksGenerated } =
+    useDmpStore();
+  const hasTokensFor = useQuotaStore((s) => s.hasTokensFor);
+  const tokensLeft = useQuotaStore((s) => s.tokensLeft);
   const currentDmpId = useDmpStore((s) => s.currentDmpId);
   const addGeneratedTasks = useTaskStore((s) => s.addGeneratedTasks);
   const toast = useToastStore((s) => s.toast);
@@ -74,7 +71,12 @@ export const Status: React.FC = () => {
   const [generating, setGenerating] = React.useState(false);
   const [step, setStep] = React.useState(0);
 
-  const outputs = draft.dataset ?? [];
+  // Tasks execute the approved plan: its outputs and dates, never edits
+  // still waiting to be saved or decided.
+  const inForce = record?.versions.find(
+    (v) => v.number === record.active_version,
+  )?.snapshot;
+  const outputs = outputsInForce(record);
   const cost = estimateCost.generateTasks(outputs.length);
   const mode = useOpenPlanMode();
   const route = activation(mode);
@@ -97,15 +99,15 @@ export const Status: React.FC = () => {
     );
 
     try {
-      const { tasks, token_count } = await generateTasks({
+      const { tasks, token_count, usage } = await generateTasks({
         outputs: outputs.map((d) => ({
           dataset_id: d.dataset_id,
           title: d.title || "Untitled output",
           type: d.type,
           access: d.access,
         })),
-        beginDate: draft.begin_date,
-        endDate: draft.end_date,
+        beginDate: inForce?.begin_date,
+        endDate: inForce?.end_date,
       });
 
       addGeneratedTasks(
@@ -124,7 +126,6 @@ export const Status: React.FC = () => {
         })),
       );
 
-      useDmpStore.setState((s) => ({ tokenUsed: s.tokenUsed + token_count }));
       recordAiEvent(currentDmpId, {
         action: "generate_tasks",
         summary: `Generated ${tasks.length} task${tasks.length === 1 ? "" : "s"} from the approved plan`,
@@ -133,19 +134,25 @@ export const Status: React.FC = () => {
           .slice(0, 3)
           .join(", "),
         token_count,
+        usage,
       });
-      markTasksGenerated();
+      markTasksGenerated(currentDmpId);
       clearInterval(timer);
       setGenerating(false);
       toast({
         title: `${tasks.length} tasks generated`,
         description: `Used ${token_count.toLocaleString()} tokens.`,
       });
-      navigate("/tasks");
-    } catch {
+      // The tasks belong to the plan they were made for, wherever the person
+      // is now; only take them to the board if they're still on that plan.
+      if (useDmpStore.getState().currentDmpId === currentDmpId)
+        navigate("/tasks");
+    } catch (err) {
       clearInterval(timer);
       setGenerating(false);
-      toast({ title: "Couldn't generate tasks", variant: "destructive" });
+      reportAiError(err, { what: "generate tasks", retry: runGeneration });
+    } finally {
+      syncQuota();
     }
   };
 
@@ -207,7 +214,7 @@ export const Status: React.FC = () => {
               ? `${route.by === "self" ? "You finalized this plan" : decider ? `${decider.name} (${decider.position}) approved this plan` : "Your committee approved this plan"}. You can now break it into tasks.`
               : route.reviewed
                 ? "We’ll notify you as soon as your committee makes a decision."
-                : "No committee reviews this plan — finalize it yourself when you're ready, and your evidence carries the weight."}
+                : "No committee reviews this plan. Finalize it yourself when you're ready; your evidence is what backs it up."}
           </p>
         </div>
 
@@ -217,7 +224,7 @@ export const Status: React.FC = () => {
               Version {revision.number} is waiting on a decision
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Version {record?.active_version} stays in force meanwhile — its
+              Version {record?.active_version} stays in force meanwhile, and its
               tasks keep running.
             </p>
 
@@ -362,7 +369,7 @@ export const Status: React.FC = () => {
                 {!hasTokensFor(cost) && (
                   <p className="mt-2 text-xs text-warn">
                     Needs about {cost.toLocaleString()} tokens; you have{" "}
-                    {tokensLeft().toLocaleString()} left.
+                    {formatTokensLeft(tokensLeft())} left.
                   </p>
                 )}
               </>
@@ -389,8 +396,8 @@ export const Status: React.FC = () => {
         ) : (
           <div className="rounded-lg border p-4 text-center">
             <p className="text-xs text-muted-foreground">
-              Nothing to do for now — your committee is reviewing the version
-              you submitted. You can keep editing; they'll see what you sent.
+              Nothing to do for now. Your committee is reviewing the version you
+              submitted. You can keep editing; they'll see what you sent.
             </p>
           </div>
         )}
@@ -419,7 +426,7 @@ export const Status: React.FC = () => {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="Generate tasks from this plan?"
-        description={`This will use about ${cost.toLocaleString()} of your ${tokensLeft().toLocaleString()} remaining tokens and add tasks for ${outputs.length} research output${outputs.length === 1 ? "" : "s"}. You can edit or delete them afterwards.`}
+        description={`This will use about ${cost.toLocaleString()} of your ${formatTokensLeft(tokensLeft())} remaining tokens and add tasks for ${outputs.length} research output${outputs.length === 1 ? "" : "s"}. You can edit or delete them afterwards.`}
         confirmLabel="Generate tasks"
         confirmVariant="ai"
         onConfirm={runGeneration}

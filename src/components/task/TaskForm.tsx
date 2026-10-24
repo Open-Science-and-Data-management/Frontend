@@ -203,7 +203,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
             disabled={task?.status === "done"}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <option value="">General work — not tied to an output</option>
+            <option value="">General work (not tied to an output)</option>
             {datasets.map((d) => (
               <option key={d.dataset_id} value={d.dataset_id}>
                 {d.title || "Untitled output"}
@@ -212,7 +212,7 @@ export const TaskForm: React.FC<TaskFormProps> = ({
           </select>
           <p className="mt-1 text-xs text-muted-foreground">
             {task?.status === "done"
-              ? "Fixed while the task is closed — it decided which evidence rule applied. Reopen the task to change it."
+              ? "Fixed while the task is closed, because it decided which evidence rule applied. Reopen the task to change it."
               : REQUIREMENT_COPY[
                   requirementFor({
                     dataset_id: watchedDataset || undefined,

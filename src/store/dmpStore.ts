@@ -16,11 +16,27 @@ import {
   type RegenerateDirection,
 } from "@/api/aiApi";
 import { useToastStore } from "@/store/toastStore";
-import { recordAiEvent, useAiThread, UNSCOPED } from "@/store/aiThread";
+import { sameValue } from "@/utils/sameValue";
+import { AiError, totalTokens, type ProvenanceMap } from "@/api/aiContract";
+import {
+  recordAiEvent,
+  scopeKey,
+  useAiThread,
+  UNSCOPED,
+} from "@/store/aiThread";
+import { useQuotaStore, formatTokensLeft } from "@/store/quotaStore";
+import { reportAiError, syncQuota } from "@/store/aiErrors";
+import { flagDrift, runToolCall } from "@/store/chatTools";
 import { notify } from "@/store/notificationStore";
 import type { CreateNotification } from "@/types/notification";
 import { actingUserId } from "@/config/current-user";
-import { dmpFieldPolicy, datasetFieldPolicy } from "@/config/field-policy";
+import {
+  isWordingOnly,
+  regenerateMode,
+  dmpFieldPolicy,
+  datasetFieldPolicy,
+  type FieldPolicy,
+} from "@/config/field-policy";
 import { getDomainProfile } from "@/schemas/dataset/domain-profiles";
 import {
   freezeSubmittedModes,
@@ -38,13 +54,12 @@ import {
   type FieldChange,
 } from "@/config/plan-diff";
 
-const TOKEN_LIMIT = 30000;
-
 export interface BatchTarget {
   id: string;
   scope: "dmp" | "dataset";
   datasetId?: string;
-  key: "title" | "description";
+  /** A free-text field the AI owns the wording of (`regenerateMode` "rewrite"). */
+  key: string;
   label: string;
   group: string;
   value: string;
@@ -143,6 +158,8 @@ export interface DmpRecord {
   contributor_count: number;
   tasks_generated: boolean;
   draft: DmpDraft;
+  /** Where the AI's drafted values came from, when the analysis said. */
+  provenance?: ProvenanceMap;
   versions: PlanVersion[];
   /** The version tasks and progress run against. */
   active_version?: number;
@@ -399,6 +416,16 @@ export const buildDmpList = (state: {
   return state.includeArchived ? list : list.filter((d) => !d.archived_at);
 };
 
+/**
+ * The research outputs the version in force approved: what tasks are drafted
+ * from. Tasks execute the approved plan, so an output added or changed in the
+ * working copy, or in a revision still waiting on a decision, isn't one yet.
+ * Empty when nothing is in force.
+ */
+export const outputsInForce = (record?: DmpRecord): Dataset[] =>
+  record?.versions.find((v) => v.number === record.active_version)?.snapshot
+    .dataset ?? [];
+
 export const createEmptyDataset = (type: Dataset["type"]): Dataset => {
   const base = {
     dataset_id: makeId(),
@@ -448,8 +475,11 @@ interface DmpDraftState {
   regeneratingFields: Record<string, boolean>;
   coverage: Coverage | null;
   aiGenerated: boolean;
-  tokenUsed: number;
-  tokenLimit: number;
+  /**
+   * Per-field provenance for the open plan, as the analysis returned it.
+   * Null when there is none — the form then claims nothing about sources.
+   */
+  provenance: ProvenanceMap | null;
   status: DmpStatus;
   tasksGenerated: boolean;
 
@@ -519,7 +549,8 @@ interface DmpDraftState {
   returnDmp: (dmpId: string, approver: Approver, note: string) => boolean;
   /** The independent route to the same active state — no committee, no approval record. */
   finalize: () => void;
-  markTasksGenerated: () => void;
+  /** Marks the plan the tasks were generated for — the open one by default. */
+  markTasksGenerated: (dmpId?: string | null) => void;
 
   setField: <K extends keyof DmpDraft>(key: K, value: DmpDraft[K]) => void;
 
@@ -550,18 +581,31 @@ interface DmpDraftState {
   /** Switching domain drops metadata the new profile has no field for. */
   changeDatasetDomain: (id: string, domain: Dataset["domain"]) => void;
 
-  hasToken: () => boolean;
-  tokensLeft: () => number;
-  hasTokensFor: (cost: number) => boolean;
+  /** A plan's working copy by thread scope — the open one, or its record. */
+  draftFor: (scope: string) => DmpDraft | undefined;
   analyzeProposal: (
     file: File,
     projectId?: string,
     /** A steer from the researcher, used when the document is thin. */
     direction?: string,
-  ) => Promise<{ coverage: Coverage }>;
+    opts?: {
+      signal?: AbortSignal;
+      /** Draft this plan again in place, if it's still the open one. */
+      replace?: string;
+    },
+  ) => Promise<{
+    coverage: Coverage;
+    dmpId: string;
+    /** False when the person had moved to another plan meanwhile. */
+    opened: boolean;
+  }>;
   startManual: (projectId?: string) => void;
+  /**
+   * Drafts a rewrite of one free-text field; anything else is refused. The
+   * result is always a suggestion to accept, shown under the field.
+   */
   regenerateField: (
-    key: keyof DmpDraft,
+    target: RegenerateTarget,
     label: string,
     direction: RegenerateDirection,
   ) => Promise<void>;
@@ -591,6 +635,71 @@ const notifyReviewers = (input: Omit<CreateNotification, "user_id">) =>
       notify({ ...input, user_id: reviewer.user_id as string }),
     );
 
+const batchLabel = (key: string) =>
+  key.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+
+/** A plan field, or a field of one research output (by id, not position). */
+export type RegenerateTarget =
+  | keyof DmpDraft
+  | { datasetId: string; field: keyof Dataset | "preservation.statement" };
+
+/** The key `regeneratingFields` uses, so a field can show it's busy. */
+export const regenerateFlag = (target: RegenerateTarget) =>
+  typeof target === "string"
+    ? target
+    : `dataset:${target.datasetId}:${String(target.field)}`;
+
+/** How to read, address and write one regenerable field. */
+const fieldAccess = (target: RegenerateTarget) => {
+  if (typeof target === "string")
+    return {
+      flag: regenerateFlag(target),
+      policy: dmpFieldPolicy[target],
+      read: (draft: DmpDraft) => draft[target],
+      path: (_draft: DmpDraft): string | null => target,
+      write: (store: DmpDraftState, value: unknown) =>
+        store.setField(target, value as never),
+    };
+  const { datasetId, field } = target;
+  const find = (draft: DmpDraft) =>
+    (draft.dataset ?? []).find((d) => d.dataset_id === datasetId);
+  const indexIn = (draft: DmpDraft) =>
+    (draft.dataset ?? []).findIndex((d) => d.dataset_id === datasetId);
+  const isStatement = field === "preservation.statement";
+  return {
+    flag: regenerateFlag(target),
+    policy: datasetFieldPolicy[field],
+    read: (draft: DmpDraft) =>
+      isStatement ? find(draft)?.preservation?.statement : find(draft)?.[field],
+    path: (draft: DmpDraft): string | null => {
+      const i = indexIn(draft);
+      return i < 0 ? null : `dataset[${i}].${field}`;
+    },
+    write: (store: DmpDraftState, value: unknown) =>
+      store.updateDataset(
+        datasetId,
+        (isStatement
+          ? {
+              preservation: {
+                ...find(store.draft)?.preservation,
+                statement: value,
+              },
+            }
+          : { [field]: value }) as Partial<Dataset>,
+      ),
+  };
+};
+
+const withoutProvenance = (
+  provenance: ProvenanceMap | null,
+  paths: string[],
+): ProvenanceMap | null => {
+  if (!provenance || !paths.some((p) => p in provenance)) return provenance;
+  const rest = { ...provenance };
+  paths.forEach((p) => delete rest[p]);
+  return rest;
+};
+
 /** Writes the open draft into the library, inserting it if it's new. */
 const commitDraft = (state: {
   dmps: DmpRecord[];
@@ -600,6 +709,7 @@ const commitDraft = (state: {
   draftCreatedAt: Date;
   draftUpdatedAt: Date;
   tasksGenerated: boolean;
+  provenance?: ProvenanceMap | null;
 }): DmpRecord[] => {
   if (!state.currentDmpId || !draftHasContent(state.draft)) return state.dmps;
 
@@ -612,6 +722,7 @@ const commitDraft = (state: {
     updated_at: state.draftUpdatedAt,
     tasks_generated: state.tasksGenerated,
     draft: state.draft,
+    provenance: state.provenance ?? undefined,
     // Version history belongs to the record, not to the open editor.
     versions: existing?.versions ?? [],
     active_version: existing?.active_version,
@@ -630,16 +741,37 @@ export const useDmpStore = create<DmpDraftState>()(
     (rawSet, get) => {
       // Every mutator already returns a new `draft`; stamping the edit time here
       // keeps "Last updated" honest without touching each one.
-      const set: typeof rawSet = ((partial, replace) =>
+      //
+      // A draft begun with no plan open gets its id the moment it has content,
+      // so it can be filed — and whatever was said to the assistant about it
+      // while it had none is adopted into its thread.
+      const set: typeof rawSet = ((partial, replace) => {
+        let minted: string | null = null;
         rawSet((state) => {
-          const next =
+          let next =
             typeof partial === "function"
               ? (partial as (s: DmpDraftState) => Partial<DmpDraftState>)(state)
               : partial;
-          return next && "draft" in next && !("draftUpdatedAt" in next)
-            ? { ...next, draftUpdatedAt: new Date() }
-            : next;
-        }, replace as false)) as typeof rawSet;
+          if (!next || !("draft" in next)) return next;
+          if (
+            !state.currentDmpId &&
+            !("currentDmpId" in next) &&
+            next.draft &&
+            draftHasContent(next.draft)
+          ) {
+            minted = makeId();
+            next = {
+              ...next,
+              currentDmpId: minted,
+              draftCreatedAt: new Date(),
+            };
+          }
+          return "draftUpdatedAt" in next
+            ? next
+            : { ...next, draftUpdatedAt: new Date() };
+        }, replace as false);
+        if (minted) useAiThread.getState().adopt(UNSCOPED, minted);
+      }) as typeof rawSet;
 
       /**
        * Moves whichever revision is waiting into force. With nothing waiting
@@ -755,6 +887,7 @@ export const useDmpStore = create<DmpDraftState>()(
           draftUpdatedAt: before.draftUpdatedAt,
           tasksGenerated: before.tasksGenerated,
           coverage: before.coverage,
+          provenance: before.provenance,
           aiGenerated: before.aiGenerated,
           restoredFrom: before.restoredFrom,
         };
@@ -785,9 +918,8 @@ export const useDmpStore = create<DmpDraftState>()(
         draft: emptyDraft,
         regeneratingFields: {},
         coverage: null,
+        provenance: null,
         aiGenerated: false,
-        tokenUsed: 0,
-        tokenLimit: TOKEN_LIMIT,
         status: "draft",
         tasksGenerated: false,
 
@@ -813,6 +945,7 @@ export const useDmpStore = create<DmpDraftState>()(
             draftCreatedAt: target.created_at,
             draftUpdatedAt: target.updated_at,
             coverage: null,
+            provenance: target.provenance ?? null,
             aiGenerated: false,
             // Carried on the record, so reopening an approved plan doesn't offer
             // to generate a second set of tasks.
@@ -845,6 +978,7 @@ export const useDmpStore = create<DmpDraftState>()(
                   status: "draft" as DmpStatus,
                   restoredFrom: null,
                   coverage: null,
+                  provenance: null,
                   aiGenerated: false,
                   tasksGenerated: false,
                 }
@@ -1177,16 +1311,27 @@ export const useDmpStore = create<DmpDraftState>()(
             user_id: researcherIdFor(draft.project_id),
             type: "dmp_finalized",
             title: "Plan finalized",
-            message: `${draft.title?.trim() || "Your plan"} is active — you can break it into tasks now.`,
+            message: `${draft.title?.trim() || "Your plan"} is active. You can break it into tasks now.`,
             link: "/dmp/status",
             dmp_id: currentDmpId ?? undefined,
             project_id: draft.project_id,
           });
         },
 
-        markTasksGenerated: () => {
-          set({ tasksGenerated: true });
-          const { draft, currentDmpId } = get();
+        markTasksGenerated: (dmpId = get().currentDmpId) => {
+          const open = get().currentDmpId === dmpId;
+          // Generation can finish after another plan was opened; the flag
+          // and the notice belong to the plan the tasks are for.
+          set((state) => ({
+            tasksGenerated: open ? true : state.tasksGenerated,
+            dmps: state.dmps.map((d) =>
+              d.dmp_id === dmpId ? { ...d, tasks_generated: true } : d,
+            ),
+          }));
+          const draft = open
+            ? get().draft
+            : (get().dmps.find((d) => d.dmp_id === dmpId)?.draft ?? {});
+          const currentDmpId = dmpId;
           notify({
             user_id: researcherIdFor(draft.project_id),
             type: "tasks_generated",
@@ -1198,8 +1343,12 @@ export const useDmpStore = create<DmpDraftState>()(
           });
         },
 
+        // Once a person has changed a value it's theirs, wherever it came from.
         setField: (key, value) =>
-          set((state) => ({ draft: { ...state.draft, [key]: value } })),
+          set((state) => ({
+            draft: { ...state.draft, [key]: value },
+            provenance: withoutProvenance(state.provenance, [String(key)]),
+          })),
 
         addContributor: () =>
           set((state) => {
@@ -1328,14 +1477,23 @@ export const useDmpStore = create<DmpDraftState>()(
         },
 
         updateDataset: (id, patch) =>
-          set((state) => ({
-            draft: {
-              ...state.draft,
-              dataset: (state.draft.dataset ?? []).map((d) =>
-                d.dataset_id === id ? ({ ...d, ...patch } as Dataset) : d,
+          set((state) => {
+            const index = (state.draft.dataset ?? []).findIndex(
+              (d) => d.dataset_id === id,
+            );
+            return {
+              draft: {
+                ...state.draft,
+                dataset: (state.draft.dataset ?? []).map((d) =>
+                  d.dataset_id === id ? ({ ...d, ...patch } as Dataset) : d,
+                ),
+              },
+              provenance: withoutProvenance(
+                state.provenance,
+                Object.keys(patch).map((k) => `dataset[${index}].${k}`),
               ),
-            },
-          })),
+            };
+          }),
 
         removeDataset: (id) =>
           set((state) => ({
@@ -1414,76 +1572,144 @@ export const useDmpStore = create<DmpDraftState>()(
             },
           })),
 
-        hasToken: () => get().tokenUsed < get().tokenLimit,
+        draftFor: (scope) => {
+          const state = get();
+          if (scope === scopeKey(state.currentDmpId)) return state.draft;
+          return state.dmps.find((d) => d.dmp_id === scope)?.draft;
+        },
 
-        tokensLeft: () => Math.max(0, get().tokenLimit - get().tokenUsed),
-
-        // Budget is spent per token, so an action is only allowed when the whole
-        // estimated cost fits in what's left.
-        hasTokensFor: (cost) => get().tokensLeft() >= cost,
-
-        analyzeProposal: async (file, projectId, direction) => {
+        analyzeProposal: async (file, projectId, direction, opts = {}) => {
           const estimated = estimateCost.analyzeProposal(file);
-          if (!get().hasTokensFor(estimated)) {
+          const quota = useQuotaStore.getState();
+          if (!quota.hasTokensFor(estimated)) {
+            const err = new AiError({
+              code: "quota_exceeded",
+              retryable: false,
+              userMessage: `This needs about ${estimated.toLocaleString()} tokens and you have ${formatTokensLeft(quota.tokensLeft())} left.`,
+            });
             useToastStore.getState().toast({
               title: "Not enough tokens left",
-              description: `This needs about ${estimated.toLocaleString()} tokens and you have ${get().tokensLeft().toLocaleString()} left this month.`,
+              description: err.userMessage,
               variant: "destructive",
             });
-            throw new Error("Token budget exhausted");
+            throw err;
           }
 
+          // Which plan was open when this was asked. A new plan only takes
+          // the editor over if the person is still where they started.
+          const openAtRequest = get().currentDmpId;
+          const ticket = useAiThread.getState().ticket(openAtRequest);
+
           try {
-            const { draft, coverage, token_count } =
-              await aiApi.analyzeProposal(file, direction);
+            const { draft, coverage, provenance, usage, token_count } =
+              await aiApi.analyzeProposal(file, direction, {
+                signal: opts.signal,
+              });
             const now = new Date();
-            const newDmpId = makeId();
-            set((state) => ({
-              // The plan that was open is filed before this one takes its place.
-              dmps: commitDraft(state),
+            const stillHere = get().currentDmpId === openAtRequest;
+            // A second pass over the same thin draft replaces it rather than
+            // filing a near-copy beside it.
+            const replacing =
+              stillHere &&
+              opts.replace !== undefined &&
+              opts.replace === openAtRequest;
+            const dmpId = replacing ? (opts.replace as string) : makeId();
+            const opened = {
+              dmps: [] as DmpRecord[],
               draft: { ...draft, project_id: projectId },
-              currentDmpId: newDmpId,
+              currentDmpId: dmpId,
               status: "draft" as DmpStatus,
               tasksGenerated: false,
               draftCreatedAt: now,
               draftUpdatedAt: now,
               coverage,
+              provenance: provenance ?? null,
               aiGenerated: true,
-              tokenUsed: state.tokenUsed + token_count,
-            }));
+            };
+
+            if (stillHere) {
+              set((state) => ({
+                ...opened,
+                // The plan that was open is filed before this one takes its
+                // place — unless this is that plan, drafted again.
+                dmps: replacing ? state.dmps : commitDraft(state),
+              }));
+            } else {
+              // Filed, not opened: the person has moved on to another plan,
+              // and having the editor switch under them would be worse.
+              set((state) => ({
+                dmps: commitDraft({ ...opened, dmps: state.dmps }),
+              }));
+            }
+
             // Anything said before a plan existed belongs to this plan now.
-            useAiThread.getState().adopt(UNSCOPED, newDmpId);
-            recordAiEvent(newDmpId, {
+            if (ticket.scope === UNSCOPED || !stillHere)
+              useAiThread.getState().adopt(UNSCOPED, dmpId);
+            recordAiEvent(dmpId, {
               action: "analyze_proposal",
               summary: `Read ${file.name} and drafted the plan${direction?.trim() ? ` (${direction.trim()})` : ""}`,
               detail: `${(draft.dataset ?? []).length} research output(s), ${(draft.contributor ?? []).length} contributor(s) proposed.`,
               token_count,
+              usage,
             });
 
-            return { coverage };
+            if (!stillHere)
+              useToastStore.getState().toast({
+                title: "Your new plan is ready",
+                description: `Drafted from ${file.name}. It's in My DMPs, and the plan you're on wasn't changed.`,
+                action: {
+                  label: "Open it",
+                  onClick: () => get().openDmp(dmpId),
+                },
+              });
+
+            return { coverage, dmpId, opened: stillHere };
           } catch (err) {
-            // Parse/analysis failures don't consume tokens.
-            useToastStore.getState().toast({
-              title: "Couldn't analyze this file",
-              description:
-                err instanceof Error ? err.message : "Please try again.",
-              variant: "destructive",
+            reportAiError(err, {
+              what: "analyze this file",
+              retry: () =>
+                void get()
+                  .analyzeProposal(file, projectId, direction, opts)
+                  .catch(() => {}),
             });
             throw err;
+          } finally {
+            syncQuota();
           }
         },
 
-        regenerateField: async (key, label, direction) => {
-          const fieldName = String(key);
-          const previousValue = get().draft[key];
+        regenerateField: async (target, label, direction) => {
+          const field = fieldAccess(target);
+          // Free text, and nothing else. The form only offers the control on
+          // such fields; this holds for every caller.
+          const mode = regenerateMode(field.policy);
+          if (!mode) return;
+          const fieldName = field.flag;
+          // The plan, and the plan as it was, that this rewrite was asked
+          // for. A reply can take seconds; by then the person may be on
+          // another plan or the field may have moved. Either way the rewrite
+          // is kept — as a suggestion on its own plan — never written over
+          // what's there now.
+          const ticket = useAiThread.getState().ticket(get().currentDmpId);
+          const snapshot = get().draft;
+          const previousValue = field.read(snapshot);
           const currentText =
             typeof previousValue === "string" ? previousValue : "";
+          // The researcher's own words get polished, never written for them:
+          // nothing to start from, or a direction that adds content, and
+          // there's no call at all.
+          if (
+            mode === "polish" &&
+            (!currentText.trim() || !isWordingOnly(direction))
+          )
+            return;
           const estimated = estimateCost.regenerateField(currentText);
 
-          if (!get().hasTokensFor(estimated)) {
+          const quota = useQuotaStore.getState();
+          if (!quota.hasTokensFor(estimated)) {
             useToastStore.getState().toast({
               title: "Not enough tokens left",
-              description: `This needs about ${estimated.toLocaleString()} tokens and you have ${get().tokensLeft().toLocaleString()} left this month.`,
+              description: `This needs about ${estimated.toLocaleString()} tokens and you have ${formatTokensLeft(quota.tokensLeft())} left.`,
               variant: "destructive",
             });
             return;
@@ -1497,51 +1723,101 @@ export const useDmpStore = create<DmpDraftState>()(
           }));
 
           try {
-            const { text, token_count } = await aiApi.regenerateField(
+            const { text, usage, token_count } = await aiApi.regenerateField(
               label,
               currentText,
               direction,
+              mode,
             );
 
-            set((state) => ({
-              draft: { ...state.draft, [key]: text },
-              tokenUsed: state.tokenUsed + token_count,
-              regeneratingFields: {
-                ...state.regeneratingFields,
-                [fieldName]: false,
-              },
-            }));
+            const scope = useAiThread.getState().resolve(ticket);
+            const stillOpen = scope === scopeKey(get().currentDmpId);
+            const unchanged =
+              stillOpen && sameValue(field.read(get().draft), previousValue);
+            const summary =
+              mode === "polish"
+                ? `Suggested a polish of ${label} (${describeDirection(direction)})`
+                : `Suggested a rewrite of ${label} (${describeDirection(direction)})`;
 
-            recordAiEvent(get().currentDmpId, {
+            // Nothing new: say so, rather than offer a no-op to accept.
+            if (unchanged && sameValue(text, previousValue)) {
+              recordAiEvent(scope, {
+                action: "regenerate_field",
+                summary: `${summary}: nothing to change`,
+                token_count,
+                usage,
+              });
+              useToastStore.getState().toast({
+                title: mode === "polish" ? "Nothing to polish" : "Nothing new",
+                description: `${label} already reads that way, so it's unchanged.`,
+              });
+              return;
+            }
+
+            // Never written straight in. The rewrite waits under the field,
+            // and in the thread, until the researcher accepts or rejects it.
+            // Built against the plan as it was asked about, then checked
+            // against the plan as it is: stale if the field moved meanwhile.
+            const path = field.path(snapshot);
+            const { proposals } = path
+              ? runToolCall(
+                  { tool: "proposeFieldChange", path, value: text },
+                  { draft: snapshot, planActive: false, unmet: [] },
+                )
+              : { proposals: [] };
+            const kept = flagDrift(proposals, get().draftFor(scope));
+            useAiThread.getState().append(scope, {
+              id: makeId(),
+              kind: "assistant",
+              text: unchanged
+                ? `${summary}. It's waiting under the field for you to accept or reject.`
+                : `${summary}. It wasn't applied. Review it here.`,
+              token_count,
+              at: new Date(),
+              proposals: kept.length ? kept : undefined,
+            });
+            recordAiEvent(scope, {
               action: "regenerate_field",
-              summary: `Rewrote ${label} (${describeDirection(direction)})`,
+              summary: `${summary} (kept as a suggestion)`,
               detail: text.slice(0, 120),
               token_count,
+              usage,
             });
-
-            useToastStore.getState().toast({
-              title: `${label} regenerated`,
-              description: `Used ${token_count.toLocaleString()} tokens.`,
-              action: {
-                label: "Undo",
-                onClick: () =>
-                  set((state) => ({
-                    draft: { ...state.draft, [key]: previousValue },
-                  })),
-              },
+            useToastStore.getState().toast(
+              unchanged
+                ? {
+                    title: `${label}: suggestion ready`,
+                    description:
+                      "Review it under the field. Nothing changes until you accept it.",
+                  }
+                : {
+                    title: `${label} wasn't changed`,
+                    description: stillOpen
+                      ? "It changed while the rewrite was being written, so your version was kept. The rewrite is in the assistant panel, marked out of date."
+                      : "You opened another plan before the rewrite was ready. It's saved as a suggestion on the plan it was for.",
+                  },
+            );
+          } catch (err) {
+            const e = reportAiError(err, {
+              what: `regenerate ${label}`,
+              retry: () => void get().regenerateField(target, label, direction),
             });
-          } catch {
+            // A call that failed part-way may still have cost something.
+            if (totalTokens(e.usage) > 0)
+              recordAiEvent(useAiThread.getState().resolve(ticket), {
+                action: "regenerate_field",
+                summary: `Rewrite of ${label} didn't finish`,
+                token_count: totalTokens(e.usage),
+                usage: e.usage,
+              });
+          } finally {
             set((state) => ({
               regeneratingFields: {
                 ...state.regeneratingFields,
                 [fieldName]: false,
               },
             }));
-            useToastStore.getState().toast({
-              title: "Regeneration failed",
-              description: "Please try again.",
-              variant: "destructive",
-            });
+            syncQuota();
           }
         },
 
@@ -1550,32 +1826,39 @@ export const useDmpStore = create<DmpDraftState>()(
         // a person signed off on, or a system-owned value.
         eligibleBatchTargets: () => {
           const { draft } = get();
-          const keys = ["title", "description"] as const;
           const targets: BatchTarget[] = [];
+          // The per-field rule, "rewrite" side only: the researcher's own text
+          // is polished one field at a time, where they can see it.
+          const prose = (policies: Record<string, FieldPolicy>) =>
+            Object.keys(policies).filter(
+              (key) =>
+                !key.includes(".") &&
+                regenerateMode(policies[key]) === "rewrite",
+            );
+          const text = (value: unknown) =>
+            typeof value === "string" ? value : "";
 
-          keys.forEach((key) => {
-            if (dmpFieldPolicy[key]?.permission !== "ai") return;
+          prose(dmpFieldPolicy).forEach((key) => {
             targets.push({
               id: `dmp:${key}`,
               scope: "dmp",
               key,
-              label: key === "title" ? "Plan title" : "Plan description",
+              label: `Plan ${batchLabel(key).toLowerCase()}`,
               group: "Plan details",
-              value: (draft[key] as string | undefined) ?? "",
+              value: text(draft[key as keyof DmpDraft]),
             });
           });
 
           (draft.dataset ?? []).forEach((d) => {
-            keys.forEach((key) => {
-              if (datasetFieldPolicy[key]?.permission !== "ai") return;
+            prose(datasetFieldPolicy).forEach((key) => {
               targets.push({
                 id: `dataset:${d.dataset_id}:${key}`,
                 scope: "dataset",
                 datasetId: d.dataset_id as string,
                 key,
-                label: key === "title" ? "Title" : "Description",
+                label: batchLabel(key),
                 group: d.title || "Untitled output",
-                value: (d[key] as string | undefined) ?? "",
+                value: text(d[key as keyof Dataset]),
               });
             });
           });
@@ -1595,6 +1878,7 @@ export const useDmpStore = create<DmpDraftState>()(
             draftCreatedAt: now,
             draftUpdatedAt: now,
             coverage: null,
+            provenance: null,
             aiGenerated: false,
           }));
         },
@@ -1613,6 +1897,7 @@ export const useDmpStore = create<DmpDraftState>()(
               status: "draft" as DmpStatus,
               restoredFrom: null,
               coverage: null,
+              provenance: null,
               aiGenerated: false,
               tasksGenerated: false,
             });
@@ -1659,7 +1944,7 @@ export const useDmpStore = create<DmpDraftState>()(
           );
         return state as never;
       },
-      // `tokenLimit` stays out so a change to the budget takes effect, and
+      // The AI budget isn't here at all — the server holds it. And
       // `regeneratingFields` is in-flight UI state that must not outlive the
       // request it belongs to.
       partialize: (state) => ({
@@ -1668,7 +1953,7 @@ export const useDmpStore = create<DmpDraftState>()(
         currentDmpId: state.currentDmpId,
         status: state.status,
         tasksGenerated: state.tasksGenerated,
-        tokenUsed: state.tokenUsed,
+        provenance: state.provenance,
         coverage: state.coverage,
         aiGenerated: state.aiGenerated,
         draftCreatedAt: state.draftCreatedAt,

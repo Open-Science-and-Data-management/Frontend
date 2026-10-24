@@ -31,6 +31,7 @@ erDiagram
     FILE_RECORD o|--o{ TASK : may_be_attached_to
     FILE_RECORD o|--o{ DISTRIBUTION : may_back
     DMP o|--o{ AI_THREAD_ENTRY : scopes
+    USER ||--o{ AI_THREAD_ENTRY : owns
 
     USER {
         string user_id PK "optional in schema"
@@ -39,8 +40,8 @@ erDiagram
         string surname
         string email "unique per account, ignoring case and spaces"
         UserRole role "admin | chief | committee | researcher"
-        int ai_token_limit
-        int ai_token_used
+        int ai_token_limit "set by the server; UI reads it via the quota endpoint"
+        int ai_token_used "charged by the server, never added up in the UI"
         string username "optional; set at sign-up, mirrors CREDENTIAL"
         AccountType account_type "optional; institutional | citizen, researchers only"
         string phone "optional"
@@ -221,12 +222,16 @@ erDiagram
 
     AI_THREAD_ENTRY {
         string id PK
+        string owner_id FK "the researcher; the only one who reads the row"
         string scope "dmp_id, or unscoped"
         string kind "event | user | assistant"
         string action "for events"
-        int token_count
-        json proposals "for assistant turns"
+        int token_count "input + output, for display"
+        json usage "optional; input_tokens, output_tokens, cached_input_tokens"
+        json proposals "for assistant turns; pending | accepted | rejected | stale"
+        json failed "optional; retryable + the request, when no reply came"
         date at
+        date hidden_at "set by Clear; the row is kept, never returned"
     }
 ```
 
@@ -299,10 +304,15 @@ single fields, `planListPolicy` for adding or removing list entries. The diff
 compares every field those policies name, and the "needs sign-off again" list
 shown to people is generated from the same flags. Tests enforce both.
 
-Currently major: begin date, end date, ethical issues, Indigenous
-considerations; a research output's access, personal data, personal data
-plan, protection level, and security classification; adding or removing a
-research output. Contributor (including contact) and cost changes are minor.
+Currently major, as anything that alters a data-management commitment:
+begin date, end date, ethical issues, Indigenous considerations; a research
+output's access, personal data, personal data plan, protection level,
+security classification, repository, retention period, and a distribution's
+licence; adding or removing a research output; any change to contributors,
+the contact included. Cost changes and wording fixes are minor. Preservation
+and distribution are judged by their parts, so rewording the preservation
+statement or renaming a distribution stays minor while a new repository or
+licence doesn't.
 
 **Removing a research output** from a plan in force is proposed, not applied:
 its tasks keep running until the version that drops it is put in force, and
@@ -405,6 +415,100 @@ and the active version's `approver`. Independent plans export as
 protection and security travel in `security_and_privacy`. Both exports carry
 `domain` and `domain_metadata` as extensions.
 
+## AI calls
+
+The frontend is built against the contract in `src/api/aiContract.ts`. A
+mock backend (`src/api/mock/aiServer.ts`) honours it until the real one
+exists, using the account record as its database.
+
+- **The quota belongs to the server.** It enforces the limit, charges each
+  call, and answers a quota request (`limit`, `used`, `resets_at`). The UI
+  never hardcodes a limit or adds up spend. It re-reads the quota on sign-in
+  and after every AI call, including calls that failed or were stopped. A
+  pre-flight "not enough tokens" check is only a hint. While the figure is
+  unknown the call goes through and the server decides.
+- **Usage is reported split** into input, output and cached input, so the
+  quota policy can be chosen with the numbers in hand. The mock charges
+  input + output.
+- **Failures are structured.** Each `AiError` has a `code`, a `retryable`
+  flag, a message written for the researcher, any usage already counted,
+  and, for `quota_exceeded`, `resets_at`. The UI offers "Try again" only
+  when the call is retryable. A chat failure stays in the thread with its
+  request.
+- **Stop** aborts the request on the client. The server has already
+  processed the prompt, so those tokens still count. The UI says so and
+  re-reads the quota.
+- **A reply belongs to the plan it was asked about.** Each request records
+  which plan's thread it was made from. A request made before any plan
+  existed follows `adopt(unscoped → id)` into the plan that adopted that
+  conversation. The reply is always recorded there. It is only applied to
+  the open draft if that plan is still open *and* the field hasn't changed:
+  - A field rewrite is never written in on its own. It comes back as a
+    suggestion shown under the field as a word diff (`InlineSuggestion`),
+    with Accept and Reject, and in the thread. If the field changes before
+    a decision, the suggestion says it's out of date and can only be
+    dismissed. Suggestions from the chat or Improve for the same field show
+    there too.
+  - Chat and batch suggestions are drafted against the plan as it was when
+    asked. Any whose field moved meanwhile are marked stale before they're
+    shown. Accepting re-checks again (`guardBeforeApply`).
+  - A plan drafted from a proposal opens only if the person is still on the
+    plan they started from. Otherwise it's filed in My DMPs with an "Open
+    it" toast. A second pass over a thin draft replaces it in place instead
+    of filing a copy.
+  - Generated tasks always belong to the plan they were made for.
+- **The thread lives on the server** (`AI_THREAD_ENTRY`, mocked by
+  `src/api/mock/threadServer.ts`; the client goes through
+  `src/api/aiThreadApi.ts`). The client keeps an in-memory cache, writes
+  every change through, and loads a plan's newest 50 entries when the
+  assistant opens, with "Show earlier" for older pages. There is no cap: the
+  server keeps every row. So the history follows the researcher to another
+  browser and survives a cleared one.
+  - `GET /dmps/:scope/ai-thread?before=:entryId&limit=50`
+  - `POST /dmps/:scope/ai-thread` and `PUT /dmps/:scope/ai-thread/:entryId`
+    (a proposal accepted or rejected)
+  - `POST /dmps/:scope/ai-thread/clear`
+  - `POST /ai-thread/adopt` (an unscoped conversation joins its new plan)
+- **Only the researcher who made a thread sees it.** Every row has an
+  `owner_id`; the server returns rows to their owner and nobody else, and
+  only researchers write. Committee members and admins review the plan, not
+  the researcher's conversation with the assistant, so it is never shown to
+  them. Signing out empties the client cache, so a shared tab never shows
+  one person's thread to the next.
+- **Clear drops the chat, not the record.** Questions, answers, refusals and
+  suggestions that weren't accepted are hidden (`hidden_at`). Every AI action
+  (the events) and every accepted change stay with the plan, so a field never
+  loses the trace of the AI having proposed it. Server and client apply the
+  same rule (`keptOnClear` in `src/store/threadRetention.ts`).
+- **The AI is never a gate.** "Is it ready?" and "what's missing?" are
+  answered from the same submission checklist the form shows, worded as
+  advice ("still needed before you submit"). An empty checklist is reported
+  as exactly that, with a reminder that the committee decides; the assistant
+  never says a plan is ready, approved or good to go.
+- **Rewrites asked in the chat** ("make the description shorter") run the
+  same call as the field's regenerate button, under the same rules
+  (`prepareRewrite`: free text only, nothing for fields marked
+  `noAiAssist`, the researcher's own words polished only), and come back as
+  a proposal like any other change.
+- **A task's checklist is drafted for that task's output.** The request
+  carries the output the task is about (`taskOutput`: id, title, type,
+  access, personal data, repository, duration) as the primary context, and
+  the plan's other outputs by title only. A plan-wide task sends no
+  `taskOutput`. The backend must draft for `taskOutput`, never for another
+  output in the plan.
+- **Open for the backend: grounded advice.** Questions like "which
+  repository should I use for sequencing reads?" have no tool yet: the
+  assistant can read, explain and propose, but not advise. Answering them
+  well needs retrieval over a repository and guidance source (re3data,
+  funder and institutional policy), which ties to the RAG decision. Until
+  then such questions get the fallback reply.
+- **Provenance gates the confidence note.** The analysis may return, per
+  field, where a value came from: the proposal (with section/quote), or
+  `none` (the proposal didn't cover it, so the value is a guess). The form
+  shows "From proposal" or "AI guessed" only from that. With no provenance
+  it claims nothing. A person's edit, or an AI rewrite, retires the field's
+  provenance. The mock reads nothing from the file, so it returns none.
+
 ## Open questions
 
 Edge cases found in review that need a decision on intended behaviour before
@@ -423,6 +527,10 @@ they're built.
    dataset ids and contributor identifiers collide between different DMPs.
    Real analysis must mint unique ids; should exports also namespace ids by
    plan (for example `dmp-id/dataset-id`) as a safeguard?
+5. **AI quota policy.** What counts against the limit (output only, input +
+   output, cached input discounted), and when it resets (monthly, rolling,
+   never). Until it's decided the UI shows no reset date. Once the server
+   sends `resets_at`, the meter and the "budget spent" message show it.
 
 ## Review of the proposed ERD
 
@@ -459,11 +567,11 @@ they're built.
   notification has title/message/link, optional DMP and project IDs, and
   optional `read_at`; it has no generic `related_entity` or `is_read` field.
 - **AI generation:** there is no `AI_GENERATION` record with inputs, outputs,
-  or token totals. AI activity is a separate persisted thread store of
-  user/assistant turns and lightweight events, scoped by DMP ID when available
-  (or stored as unscoped activity). Its actions are `analyze_proposal`,
+  or token totals. AI activity is the server-side `AI_THREAD_ENTRY` table of
+  user/assistant turns and lightweight events, owned by the researcher and
+  scoped by DMP ID when available (or stored as unscoped activity). Its actions are `analyze_proposal`,
   `regenerate_field`, `batch_regenerate`, `generate_tasks`, and
-  `redraft_steps`.
+  `redraft_steps`. See *AI calls* for how replies, quota and failures work.
 - **Contributors and users:** a contributor may be linked to an account
   through the optional `contributor.user_id`; collaborators without accounts
   stay unlinked. The contributor form offers the account whose email matches

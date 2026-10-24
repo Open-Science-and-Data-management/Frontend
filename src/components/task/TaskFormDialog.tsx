@@ -82,7 +82,7 @@ export const TaskFormDialog: React.FC<TaskFormDialogProps> = ({
               </DialogPrimitive.Title>
               <DialogPrimitive.Description className="mt-1 text-sm text-muted-foreground">
                 {task
-                  ? "Edit the details on the left. Progress on the right is earned by evidence — it can't be typed in."
+                  ? "Edit the details on the left. Progress on the right comes from evidence and can't be typed in."
                   : planName
                     ? `Filed under ${planName}. Evidence opens once the task exists.`
                     : "Evidence opens once the task exists."}
@@ -130,7 +130,7 @@ export const TaskFormDialog: React.FC<TaskFormDialogProps> = ({
                 <PaneHeading
                   icon={<Lock className="h-3.5 w-3.5" />}
                   title="Progress"
-                  note="Not editable — it follows the evidence below."
+                  note="Set by the evidence below."
                   accent="derived"
                 />
 

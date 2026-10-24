@@ -1,6 +1,7 @@
 import React from "react";
 import { ChevronDown, Trash2 } from "lucide-react";
 import { FormField } from "@/components/ui/form-field";
+import { InlineSuggestion } from "@/components/dmp/InlineSuggestion";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
@@ -31,7 +32,8 @@ import {
   DataAccess,
   YesNoUnknown,
 } from "@/schemas/shared";
-import { useDmpStore } from "@/store/dmpStore";
+import { regenerateFlag, useDmpStore } from "@/store/dmpStore";
+import type { RegenerateDirection } from "@/api/aiApi";
 import { useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
 import type { Dataset } from "@/types/dataset";
@@ -81,6 +83,8 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
     changeDatasetType,
     changeDatasetDomain,
     removeDataset,
+    regenerateField,
+    regeneratingFields,
   } = useDmpStore();
   const currentDmpId = useDmpStore((s) => s.currentDmpId);
   const cancelTasksForDataset = useTaskStore((s) => s.cancelTasksForDataset);
@@ -94,6 +98,32 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
       undefined,
   );
   const patch = (p: Partial<Dataset>) => updateDataset(id, p);
+  // The output's free text; FormField shows the control only where the
+  // policy allows a rewrite, and for the researcher's own text, only once
+  // there's something to polish.
+  const rewrite = (
+    field:
+      "title" | "description" | "personal_data_plan" | "preservation.statement",
+    label: string,
+  ) => {
+    const value =
+      field === "preservation.statement"
+        ? dataset.preservation?.statement
+        : dataset[field];
+    return {
+      onRegenerate: (direction: RegenerateDirection) =>
+        regenerateField({ datasetId: id, field }, label, direction),
+      isRegenerating:
+        regeneratingFields[regenerateFlag({ datasetId: id, field })],
+      hasText: Boolean(value?.trim()),
+      suggestion: (
+        <InlineSuggestion
+          match={{ datasetId: id, field }}
+          currentValue={value}
+        />
+      ),
+    };
+  };
 
   const profile = getDomainProfile(dataset.domain);
 
@@ -232,7 +262,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                   await confirm({
                     title: "Remove this research output?",
                     description: planInForce
-                      ? "Removing an output is a major change, so it goes for sign-off. Its tasks keep running until then, and are cancelled — not deleted — once the change is in force."
+                      ? "Removing an output is a major change, so it goes for sign-off. Its tasks keep running until then. Once the change is in force they're cancelled, not deleted."
                       : "Its distributions and preservation details go with it. Any open tasks for it are cancelled, not deleted, so the trail survives.",
                     confirmLabel: "Remove output",
                   })
@@ -265,6 +295,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
             label="Title"
             policy={datasetFieldPolicy.title}
             required
+            {...rewrite("title", "Output title")}
           >
             <Input
               id={`title-${id}`}
@@ -277,6 +308,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
             name={`description-${id}`}
             label="Description"
             policy={datasetFieldPolicy.description}
+            {...rewrite("description", "Output description")}
           >
             <Textarea
               id={`description-${id}`}
@@ -406,6 +438,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
             name={`personal-plan-${id}`}
             label="Personal data handling plan"
             policy={datasetFieldPolicy.personal_data_plan}
+            {...rewrite("personal_data_plan", "Personal data handling plan")}
           >
             <Textarea
               id={`personal-plan-${id}`}
@@ -638,6 +671,7 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
               name={`statement-${id}`}
               label="Preservation statement"
               policy={datasetFieldPolicy["preservation.statement"]}
+              {...rewrite("preservation.statement", "Preservation statement")}
             >
               <div className="space-y-2">
                 <Textarea

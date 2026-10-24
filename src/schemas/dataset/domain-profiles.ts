@@ -105,7 +105,7 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
   generic: profile(
     "generic",
     "Generic",
-    "Core fields only — nothing domain-specific to record.",
+    "Core fields only. Nothing domain-specific to record.",
     [],
   ),
 
@@ -138,7 +138,7 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
         key: "collection_site",
         label: "Collection site",
         type: "text",
-        help: "Where the material came from — field, plot, or facility.",
+        help: "Where the material came from: a field, plot or facility.",
       },
       {
         key: "collection_date",
@@ -208,7 +208,7 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
         label: "Ethics approval reference",
         type: "text",
         permission: "human",
-        help: "The IRB/EC number. Add it before submitting — a model can't vouch for approval.",
+        help: "The IRB/EC number. Add it before submitting, since AI can't vouch for an approval.",
       },
       {
         key: "deidentification",
@@ -367,7 +367,7 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
         label: "Rights holder",
         type: "text",
         permission: "human",
-        help: "Who owns copyright in the originals — not something to infer.",
+        help: "Who owns copyright in the originals. State it; don't infer it.",
       },
       {
         key: "cultural_sensitivity",
@@ -435,7 +435,7 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
         label: "Locations are sensitive",
         type: "toggle",
         permission: "human",
-        help: "Nest sites, private land, protected places — whether precise coordinates must be withheld.",
+        help: "Whether precise coordinates must be withheld, for example for nest sites, private land or protected places.",
       },
     ],
   ),
@@ -471,7 +471,7 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
         key: "measurement_conditions",
         label: "Measurement conditions",
         type: "textarea",
-        help: "Temperature, pressure, calibration — whatever the reading depends on.",
+        help: "Whatever the reading depends on, such as temperature, pressure or calibration.",
       },
       {
         key: "uncertainty",
@@ -498,7 +498,7 @@ export const domainProfiles: Record<DomainKey, DomainProfile> = {
         label: "Computing environment",
         type: "text",
         required: true,
-        help: "What it ran on — 4 × NVIDIA A100, a cloud instance, or just a standard laptop.",
+        help: "What it ran on: 4 × NVIDIA A100, a cloud instance or a standard laptop.",
       },
       {
         key: "model_or_algorithm",

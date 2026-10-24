@@ -37,8 +37,8 @@ export const ReopenTasksPrompt: React.FC = () => {
         Version {offer.version} brought back an output with cancelled tasks
       </h2>
       <p className="mt-0.5 text-xs text-muted-foreground">
-        They were cancelled when the output was removed. Choose any to reopen —
-        each returns to the status it had. The rest stay cancelled.
+        They were cancelled when the output was removed. Choose any to reopen.
+        Each goes back to the status it had; the rest stay cancelled.
       </p>
 
       <ul className="mt-3 space-y-2">
@@ -57,7 +57,7 @@ export const ReopenTasksPrompt: React.FC = () => {
                 <span className="block text-xs text-muted-foreground">
                   Back to {STATUS_LABELS[item.restore_to]} · {item.output_title}
                   {item.relinked &&
-                    " — relinked: the output returned under a new id"}
+                    " · Relinked, since the output came back under a new id"}
                 </span>
               </span>
             </label>

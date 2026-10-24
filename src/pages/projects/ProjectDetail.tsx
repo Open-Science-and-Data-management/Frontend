@@ -119,7 +119,7 @@ export const ProjectDetail: React.FC = () => {
                       } kept below for provenance.`
                     : reviewer
                       ? "The proposal this project's plan was drafted from."
-                      : "A project has one active proposal — uploading another keeps this as a previous version."}
+                      : "A project has one active proposal. Uploading another keeps this one as a previous version."}
                 </p>
                 {!reviewer && (
                   <Button
@@ -225,8 +225,8 @@ export const ProjectDetail: React.FC = () => {
             ) : (
               <>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  No DMP yet — generate one from the proposal, or fill it
-                  manually.
+                  No DMP yet. Generate one from the proposal, or fill it in by
+                  hand.
                 </p>
                 <Button
                   className="mt-3"

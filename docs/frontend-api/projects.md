@@ -1,7 +1,14 @@
 # Projects
 
-The projects the committee oversees: every **institutional** project. Read-only
-for committee members.
+Projects hold a researcher's proposal, plans, files and team. The committee
+oversees every **institutional** project, read-only; a researcher creates and
+works in their own. Being a member of a project lets someone follow its
+plans; only a plan's author edits it (see
+[Who works on a plan](./dmps.md#who-works-on-a-plan)).
+
+Admin manages users, project members and AI quotas. Those admin endpoints
+come with the admin screens and aren't in this contract yet; until then admin
+gets `403` here, since a project carries its plans' progress.
 
 ## Endpoints
 
@@ -10,6 +17,7 @@ for committee members.
 | [List projects](#list-projects) | `GET /v1/projects` |
 | [Retrieve a project](#retrieve-a-project) | `GET /v1/projects/:project_id` |
 | [List project members](#list-project-members) | `GET /v1/projects/:project_id/members` |
+| [Create a project](#create-a-project) | `POST /v1/projects` |
 
 ## The Project object
 
@@ -131,7 +139,7 @@ newest.
 Lists institutional projects for the **Projects** page and the dashboard's
 "Project progress" card and "Projects overseeing" stat.
 
-**Who can call:** `committee`, `chief`
+**Who can call:** `committee`, `chief`; `researcher` for projects they belong to (another project returns `404`)
 
 **Frontend today:** `useProjectStore.projects` filtered to
 `plan_mode === "institutional"`; progress from `projectProgressFor`.
@@ -140,7 +148,7 @@ Lists institutional projects for the **Projects** page and the dashboard's
 
 ```bash
 curl "https://api.example.ac.th/v1/projects?plan_mode=institutional&include=progress" \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **Response**
@@ -208,7 +216,7 @@ Only the common errors listed in [README](./README.md#errors).
 
 Returns one project for the **Project** page, including who its researcher is.
 
-**Who can call:** `committee`, `chief`
+**Who can call:** `committee`, `chief`; `researcher` for projects they belong to (another project returns `404`)
 
 **Frontend today:** `useProjectStore.projects.find(...)`, `getResearcherFor(id)`
 
@@ -216,7 +224,7 @@ Returns one project for the **Project** page, including who its researcher is.
 
 ```bash
 curl "https://api.example.ac.th/v1/projects/proj-3?include=progress,researcher" \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **Response**
@@ -274,7 +282,7 @@ curl "https://api.example.ac.th/v1/projects/proj-3?include=progress,researcher" 
 
 Lists the project's team for the **Team** section.
 
-**Who can call:** `committee`, `chief`
+**Who can call:** `committee`, `chief`; `researcher` for projects they belong to (another project returns `404`)
 
 **Frontend today:** `useProjectStore.members.filter(...)` with `getUser(...)`
 
@@ -282,7 +290,7 @@ Lists the project's team for the **Team** section.
 
 ```bash
 curl https://api.example.ac.th/v1/projects/proj-1/members \
-  -H "Authorization: Bearer <session_token>"
+  -H "Authorization: Bearer <access_token>"
 ```
 
 **Response**
@@ -318,3 +326,53 @@ curl https://api.example.ac.th/v1/projects/proj-1/members \
 **Error codes**
 
 Only the common errors listed in [README](./README.md#errors).
+
+### Create a project
+
+`POST /v1/projects`
+
+Creates a project from the **Projects** page or the Upload page's project
+picker.
+
+- The creator becomes the project's `researcher` member.
+- `plan_mode` comes from the creator's account type: `institutional` →
+  committee approval, `citizen` → `independent`. The server derives it and
+  doesn't take it from the client. A plan freezes its own mode at first
+  submission, so a project's mode never moves a submitted plan.
+- The project starts as `draft` and becomes `active` once a proposal has been
+  analysed for it (a side effect of
+  [Analyze a proposal](./ai.md#analyze-a-proposal)).
+
+Editing or deleting a project, and adding members, aren't in this contract:
+no page does either today (`updateProject` is only used for the status change
+above, and `deleteProject`, which refuses while plans remain, has no caller).
+
+**Who can call:** `researcher`
+
+**Frontend today:** `useProjectStore.createProject({ project_name,
+description, plan_mode })` from `CreateProjectDialog`, which sends the
+account type's default.
+
+**Request**
+
+```bash
+curl -X POST https://api.example.ac.th/v1/projects \
+  -H "Authorization: Bearer <access_token>" \
+  --json '{ "project_name": "Urban Pollinator Genomics", "description": "Bee populations across three districts." }'
+```
+
+The body is a project as
+[`project.schema.ts`](../../src/schemas/project/project.schema.ts) defines
+it, without `plan_mode` or `status`.
+
+**Response**
+
+The new [Project](#the-project-object).
+
+**Returns** the [Project](#the-project-object).
+
+**Error codes**
+
+| HTTP status code | Code | Description |
+| --- | --- | --- |
+| 400 | `project_name_required` | `project_name` is blank. |

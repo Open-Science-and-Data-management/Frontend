@@ -11,7 +11,9 @@ export const TOOL_NAMES = [
   "queryDmp",
   "explainField",
   "summarizeDmp",
+  "checkReadiness",
   "proposeFieldChange",
+  "proposeRewrite",
   "proposeAddTask",
   "proposeUpdateTask",
   "proposeAddDataset",
@@ -29,7 +31,9 @@ export const ENABLED_TOOLS: Record<ToolName, boolean> = {
   queryDmp: true,
   explainField: true,
   summarizeDmp: true,
+  checkReadiness: true,
   proposeFieldChange: true,
+  proposeRewrite: true,
   proposeAddTask: true,
   proposeUpdateTask: true,
   // A new research output changes what the committee approved; that belongs in
@@ -42,10 +46,24 @@ export const toolCallSchema = z.discriminatedUnion("tool", [
   z.object({ tool: z.literal("queryDmp"), path: z.string().min(1) }),
   z.object({ tool: z.literal("explainField"), path: z.string().min(1) }),
   z.object({ tool: z.literal("summarizeDmp") }),
+  z.object({ tool: z.literal("checkReadiness") }),
   z.object({
     tool: z.literal("proposeFieldChange"),
     path: z.string().min(1),
     value: z.unknown(),
+  }),
+  // "Make the description shorter": a rewrite of free text, drafted by the
+  // model and proposed like any other change.
+  z.object({
+    tool: z.literal("proposeRewrite"),
+    path: z.string().min(1),
+    direction: z.union([
+      z.object({ kind: z.enum(["shorter", "formal"]) }),
+      z.object({
+        kind: z.enum(["emphasize", "custom"]),
+        detail: z.string().min(1),
+      }),
+    ]),
   }),
   z.object({
     tool: z.literal("proposeAddTask"),
@@ -117,10 +135,36 @@ const FIELD_WORDS: [RegExp, string][] = [
   [/begin date|start date|วันเริ่ม/i, "begin_date"],
   [/end date|finish date|วันสิ้นสุด/i, "end_date"],
   [/schema.?version/i, "schema_version"],
+  [/indigenous|ชนพื้นเมือง/i, "indigenous_considerations"],
   [/ethical|จริยธรรม/i, "ethical_issues_exist"],
   [/\btitle\b|ชื่อแผน/i, "title"],
   [/description|คำอธิบาย/i, "description"],
   [/language|ภาษา/i, "language"],
+];
+
+/** Free text a person might ask to have reworded from the chat. */
+const PROSE_FIELDS = new Set([
+  "title",
+  "description",
+  "ethical_issues_description",
+  // Listed so a request is refused with its reason, not misheard.
+  "indigenous_considerations",
+]);
+
+/** How a rewrite request is phrased, mapped to the direction it asks for. */
+const REWRITE_DIRECTIONS: [
+  RegExp,
+  { kind: "shorter" | "formal" } | { kind: "custom"; detail: string },
+][] = [
+  [
+    /\b(?:shorter|shorten|concise|brief|tighten)\b|สั้นลง|กระชับ/i,
+    { kind: "shorter" },
+  ],
+  [/\bformal\b|ทางการ/i, { kind: "formal" }],
+  [
+    /\b(?:plainer|simpler|clearer|plain language)\b|เข้าใจง่าย/i,
+    { kind: "custom", detail: "plainer language" },
+  ],
 ];
 
 const DATASET_SCOPED = new Set([
@@ -146,6 +190,16 @@ export const planToolCalls = (
 
   if (/^\s*(summar|สรุป|overview)/i.test(text)) {
     return [{ tool: "summarizeDmp" }];
+  }
+
+  // "is it ready?", "what's missing?" — answered from the submission
+  // checklist, as advice. Never a verdict: the committee decides.
+  if (
+    /\b(?:ready|missing|left to (?:do|fill)|still need|before (?:i |we )?submit)\b|ครบ|ขาด|พร้อม/i.test(
+      text,
+    )
+  ) {
+    return [{ tool: "checkReadiness" }];
   }
 
   // "what have you done", "what did you change" — answered from the thread.
@@ -183,6 +237,14 @@ export const planToolCalls = (
           : fieldWord,
       },
     ];
+  }
+
+  // "make the description shorter" / "ทำคำอธิบายให้สั้นลง": reworded, not
+  // set. Checked before "change X to Y" so "change the title to be more
+  // formal" isn't taken as a new title reading "be more formal".
+  const rewrite = REWRITE_DIRECTIONS.find(([re]) => re.test(text))?.[1];
+  if (rewrite && fieldWord && PROSE_FIELDS.has(fieldWord)) {
+    return [{ tool: "proposeRewrite", path: fieldWord, direction: rewrite }];
   }
 
   // "change X to Y" / "เปลี่ยน X เป็น Y"
