@@ -102,7 +102,6 @@ export const Register: React.FC = () => {
   const [accountType, setAccountType] =
     React.useState<AccountType>("institutional");
   const [values, setValues] = React.useState(EMPTY);
-  const [accept, setAccept] = React.useState(false);
   const [errors, setErrors] = React.useState<Partial<Record<string, string>>>(
     {},
   );
@@ -129,7 +128,6 @@ export const Register: React.FC = () => {
     const parsed = registrationSchema.safeParse({
       ...values,
       account_type: accountType,
-      accept,
     });
 
     if (!parsed.success) {
@@ -434,29 +432,6 @@ export const Register: React.FC = () => {
               </AuthField>
             </div>
           </Step>
-
-          <div className="space-y-1">
-            <label className="flex items-start gap-2 text-sm">
-              <input
-                id="reg-accept"
-                type="checkbox"
-                checked={accept}
-                onChange={(e) => {
-                  setAccept(e.target.checked);
-                  setErrors((err) => ({ ...err, accept: undefined }));
-                }}
-                className="mt-0.5 h-4 w-4 rounded border-input accent-primary"
-                aria-invalid={Boolean(errors.accept)}
-              />
-              <span>
-                I understand this is a prototype: my account and plans are
-                stored only in this browser.
-              </span>
-            </label>
-            {errors.accept && (
-              <p className="pl-6 text-xs text-destructive">{errors.accept}</p>
-            )}
-          </div>
 
           <Button
             type="submit"
