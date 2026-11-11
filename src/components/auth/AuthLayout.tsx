@@ -4,6 +4,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { Input, type InputProps } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/utils/cn";
+import { Logo } from "@/components/ui/logo";
 
 /** The frame around Sign in and Sign up: no app shell before you're in. */
 export const AuthLayout: React.FC<{
@@ -13,8 +14,8 @@ export const AuthLayout: React.FC<{
 }> = ({ width = "sm", children }) => (
   <div className="flex min-h-dvh flex-col bg-background">
     <header className="flex h-16 items-center justify-between border-b px-6">
-      <Link to="/" className="text-xl font-bold">
-        Logo
+      <Link to="/" aria-label="Home">
+        <Logo />
       </Link>
       <ThemeToggle />
     </header>
