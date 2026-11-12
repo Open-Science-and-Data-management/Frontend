@@ -30,12 +30,18 @@ export const ReviewSubmit: React.FC = () => {
   const toast = useToastStore((s) => s.toast);
   const { checklistItems, canSubmit, unmetItems } = useDmpReadiness();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
-  // Once a version is in force or waiting, changes go through the editor.
-  const submitted = useDmpStore((s) =>
-    s.dmps
-      .find((d) => d.dmp_id === s.currentDmpId)
-      ?.versions.some((v) => v.status === "approved" || v.status === "pending"),
+  // The server takes a plan's first submission once. After that, changes
+  // go through revisions from the editor, which need a version in force.
+  const versions = useDmpStore(
+    (s) => s.dmps.find((d) => d.dmp_id === s.currentDmpId)?.versions,
   );
+  const submitted = (versions?.length ?? 0) > 0;
+  // Every version sent back and none in force: the server has no way to take
+  // the plan again yet (submit says already_submitted, revisions say
+  // plan_not_in_force), so nothing here offers to.
+  const stuck =
+    submitted &&
+    !versions?.some((v) => v.status === "approved" || v.status === "pending");
 
   const goToSection = (section: string, field?: string) =>
     navigate(
@@ -58,11 +64,14 @@ export const ReviewSubmit: React.FC = () => {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center gap-3 text-center">
         <p className="text-lg font-medium">
-          This plan has already been submitted
+          {stuck
+            ? "This plan can't be resubmitted yet"
+            : "This plan has already been submitted"}
         </p>
         <p className="max-w-md text-sm text-muted-foreground">
-          Changes to it are saved as minor edits or sent to your committee as a
-          new version from the editor.
+          {stuck
+            ? "Your committee sent it back, and the server doesn't accept a second submission of a plan that was never approved. You can keep editing the draft; ask your administrator to reopen the plan."
+            : "Changes to it are saved as minor edits or sent to your committee as a new version from the editor."}
         </p>
         <Button onClick={() => navigate("/dmp/create")}>
           Back to the editor

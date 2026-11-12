@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { ChatProposal, ChatRejection } from "@/store/chatTools";
 import { runToolCall } from "@/store/chatTools";
-import type { AiUsage } from "@/api/aiContract";
+import { totalTokens, type AiUsage } from "@/api/aiContract";
 import { aiThreadApi, type ServerThreadEntry } from "@/api/aiThreadApi";
 import { useToastStore } from "@/store/toastStore";
 import { onSessionChange } from "@/config/current-user";
@@ -141,10 +141,25 @@ const userText = (content: Record<string, unknown>) => {
   return `${SUMMARIES[action]}${direction}`;
 };
 
+/**
+ * What a run cost. The server writes the reply before the run's usage is
+ * known, so the reply's own token_count is 0 and the real figure sits on the
+ * event entry that follows it.
+ */
+const runTokens = (
+  entries: ServerThreadEntry[],
+  index: number,
+): number | undefined => {
+  const next = entries[index + 1];
+  const usage = next?.kind === "event" ? next.content?.usage : undefined;
+  return usage ? totalTokens(usage as AiUsage) : undefined;
+};
+
 const toEntry = (
   entry: ServerThreadEntry,
   draft: DmpDraft | undefined,
   decided: Record<string, ChatProposal["status"]>,
+  tokens?: number,
 ): ThreadEntry => {
   const content = entry.content ?? {};
   const at = new Date(entry.created_at);
@@ -155,7 +170,9 @@ const toEntry = (
       kind: "event",
       action,
       summary: SUMMARIES[action],
-      token_count: entry.token_count,
+      token_count:
+        entry.token_count ||
+        (content.usage ? totalTokens(content.usage as AiUsage) : 0),
       usage: content.usage as AiUsage | undefined,
       at,
     };
@@ -167,7 +184,7 @@ const toEntry = (
     id: entry.entry_id,
     kind: "assistant",
     text: typeof content.text === "string" ? content.text : "",
-    token_count: entry.token_count,
+    token_count: entry.token_count || (tokens ?? 0),
     at,
     proposals: proposals.length ? proposals : undefined,
   };
@@ -226,7 +243,9 @@ export const useAiThread = create<AiThreadState>()((set, get) => {
       threads: {
         ...s.threads,
         [key]: [
-          ...(s.raw[key] ?? []).map((e) => toEntry(e, draft, s.decided)),
+          ...(s.raw[key] ?? []).map((e, i, all) =>
+            toEntry(e, draft, s.decided, runTokens(all, i)),
+          ),
           ...local,
         ],
       },
@@ -261,7 +280,10 @@ export const useAiThread = create<AiThreadState>()((set, get) => {
           threads: {
             ...s.threads,
             [key]: (s.threads[key] ?? []).filter(
-              (e) => e.kind === "event" || !(e as ThreadTurn).local || (e as ThreadTurn).failed,
+              (e) =>
+                e.kind === "event" ||
+                !(e as ThreadTurn).local ||
+                (e as ThreadTurn).failed,
             ),
           },
         }));

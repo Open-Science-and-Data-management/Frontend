@@ -130,16 +130,6 @@ export interface SuggestResult {
   stale: number;
 }
 
-<<<<<<< Updated upstream
-const asRegenerateDirection = (text: string): RegenerateDirection => {
-  const trimmed = text.trim();
-  if (/^shorter$/i.test(trimmed)) return { kind: "shorter" };
-  if (/^(more formal|formal)$/i.test(trimmed)) return { kind: "formal" };
-  return { kind: "custom", detail: trimmed || "clearer" };
-};
-
-=======
->>>>>>> Stashed changes
 const thread = () => useAiThread.getState();
 const currentScope = () => useDmpStore.getState().currentDmpId;
 
@@ -181,84 +171,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const signal = begin();
 
     try {
-<<<<<<< Updated upstream
-      const calls = planToolCalls(trimmed, {
-        datasetCount: (snapshot.draft.dataset ?? []).length,
-        hasDraft: Boolean(snapshot.draft.title || snapshot.draft.description),
-        section: scope?.section,
-      });
-
-      const answers: string[] = [];
-      const proposals: ChatProposal[] = [];
-      const rejections: ChatRejection[] = [];
-      // What drafting rewrites cost, on top of the chat turn itself.
-      let rewriteUsage: AiUsage = NO_USAGE;
-      for (const call of calls) {
-        if (call.tool === "proposeRewrite") {
-          // Drafted like the field's own regenerate, under the same rules,
-          // then proposed like any other change: nothing is written in.
-          const check = prepareRewrite(call.path, call.direction, snapshot);
-          if (!check.ok) {
-            rejections.push(check.rejection);
-            continue;
-          }
-          const result = await aiApi.regenerateField(
-            check.label,
-            check.current,
-            call.direction,
-            check.mode,
-            { signal },
-          );
-          rewriteUsage = {
-            input_tokens: rewriteUsage.input_tokens + result.usage.input_tokens,
-            output_tokens:
-              rewriteUsage.output_tokens + result.usage.output_tokens,
-            cached_input_tokens:
-              rewriteUsage.cached_input_tokens +
-              result.usage.cached_input_tokens,
-          };
-          if (sameValue(result.text, check.current)) {
-            answers.push(
-              `${check.label} already reads that way, so there's nothing to change.`,
-            );
-            continue;
-          }
-          const run = runToolCall(
-            { tool: "proposeFieldChange", path: call.path, value: result.text },
-            snapshot,
-          );
-          proposals.push(...run.proposals);
-          rejections.push(...run.rejections);
-          continue;
-        }
-        const run = runToolCall(call, snapshot);
-        answers.push(...run.answers);
-        proposals.push(...run.proposals);
-        rejections.push(...run.rejections);
-      }
-
-      const reply =
-        answers.join("\n\n") ||
-        (proposals.length
-          ? `I've drafted ${proposals.length} change${proposals.length === 1 ? "" : "s"} below. Nothing is applied until you accept it.`
-          : rejections.length
-            ? "I couldn't do that. The reason is below."
-            : "I can answer questions about this plan, explain a field, or suggest changes for you to review. Try “what’s still needed before I submit?”, “make the description shorter” or “change retention to 15 years for every output”.");
-
-      const usage = await serve({
-        input: PROMPT_OVERHEAD.chat + tokensIn(trimmed),
-        output: tokensIn(reply) + calls.length * TOOL_CALL_COST,
-        ms: 600,
-        signal,
-      });
-
-      // Recorded on its own plan even if another is open now; suggestions
-      // that no longer match that plan are shown as out of date.
-      const target = thread().resolve(ticket);
-      const checked = flagDrift(
-        proposals,
-        useDmpStore.getState().draftFor(target),
-=======
       // Pending edits first, so the assistant reads the plan as it is.
       await useDmpStore.getState().flushDraft();
       await runAiAction(
@@ -266,7 +178,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         "chat",
         { message: trimmed, ...(scope?.section ? { section: scope.section } : {}) },
         { signal },
->>>>>>> Stashed changes
       );
       // The server wrote both turns; show its copy.
       await thread().reload(thread().resolve(ticket));

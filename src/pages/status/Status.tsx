@@ -19,16 +19,10 @@ import { VersionHistory } from "@/components/dmp/VersionHistory";
 import { ReopenTasksPrompt } from "@/components/task/ReopenTasksPrompt";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AiProgress } from "@/components/ui/ai-progress";
-<<<<<<< Updated upstream
-import { estimateCost, generateTasks } from "@/api/aiApi";
-import { useDmpStore } from "@/store/dmpStore";
-import { recordAiEvent } from "@/store/aiThread";
-=======
 import { estimateCost } from "@/api/aiApi";
 import { draftTasks } from "@/api/aiResults";
 import { totalTokens } from "@/api/aiContract";
 import { outputsInForce, useDmpStore } from "@/store/dmpStore";
->>>>>>> Stashed changes
 import { useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
 import { cn } from "@/utils/cn";
@@ -45,7 +39,7 @@ const GENERATE_STEPS = ["Drafting tasks with AI", "Saving them to the plan"];
 export const Status: React.FC = () => {
   const changeText = useChangeText();
   const navigate = useNavigate();
-  const { draft, status, tasksGenerated, finalize, markTasksGenerated } =
+  const { status, tasksGenerated, finalize, markTasksGenerated } =
     useDmpStore();
   const hasTokensFor = useQuotaStore((s) => s.hasTokensFor);
   const tokensLeft = useQuotaStore((s) => s.tokensLeft);
@@ -75,13 +69,9 @@ export const Status: React.FC = () => {
   const [generating, setGenerating] = React.useState(false);
   const [step, setStep] = React.useState(0);
 
-<<<<<<< Updated upstream
-  const outputs = draft.dataset ?? [];
-=======
   // Tasks execute the approved plan: its outputs, never edits still
   // waiting to be saved or decided. The server drafts from that version.
   const outputs = outputsInForce(record);
->>>>>>> Stashed changes
   const cost = estimateCost.generateTasks(outputs.length);
   const mode = useOpenPlanMode();
   const route = activation(mode);
@@ -98,48 +88,9 @@ export const Status: React.FC = () => {
     setGenerating(true);
     setStep(0);
     try {
-<<<<<<< Updated upstream
-      const { tasks, token_count, usage } = await generateTasks({
-        outputs: outputs.map((d) => ({
-          dataset_id: d.dataset_id,
-          title: d.title || "Untitled output",
-          type: d.type,
-          access: d.access,
-        })),
-        beginDate: draft.begin_date,
-        endDate: draft.end_date,
-      });
-
-      addGeneratedTasks(
-        tasks.map((t) => ({
-          // The plan these tasks came from, so the board can scope to it.
-          dmp_id: currentDmpId,
-          dataset_id: t.dataset_id,
-          title: t.title,
-          details: t.details,
-          lifecycle_stage: t.lifecycle_stage,
-          priority: t.priority,
-          status: "todo" as const,
-          progress_percent: 0,
-          // Per the data model, AI-created tasks are marked as such.
-          generated_by: "ai" as const,
-        })),
-      );
-
-      recordAiEvent(currentDmpId, {
-        action: "generate_tasks",
-        summary: `Generated ${tasks.length} task${tasks.length === 1 ? "" : "s"} from the approved plan`,
-        detail: tasks
-          .map((t) => t.title)
-          .slice(0, 3)
-          .join(", "),
-        token_count,
-        usage,
-=======
       // Drafted by the server from the version in force, then saved.
       const { tasks, result } = await draftTasks(currentDmpId, {
         datasetIds: outputs.map((d) => d.dataset_id as string),
->>>>>>> Stashed changes
       });
       if (tasks.length === 0) {
         toast({
@@ -175,7 +126,8 @@ export const Status: React.FC = () => {
     s.tasks.some((t) => t.dmp_id === currentDmpId),
   );
   React.useEffect(() => {
-    if (currentDmpId && isApproved) void loadTasks([currentDmpId]).catch(() => undefined);
+    if (currentDmpId && isApproved)
+      void loadTasks([currentDmpId]).catch(() => undefined);
   }, [currentDmpId, isApproved, loadTasks]);
   React.useEffect(() => {
     if (planHasTasks && currentDmpId) markTasksGenerated(currentDmpId);
@@ -197,8 +149,9 @@ export const Status: React.FC = () => {
               {returned.approver
                 ? `${returned.approver.name} (${returned.approver.position})`
                 : "Your committee"}{" "}
-              returned version {returned.number}. Revise the plan and submit it
-              again.
+              returned version {returned.number}. You can keep editing the
+              draft, but the server doesn't accept a second submission of a plan
+              that was never approved yet. Ask your administrator to reopen it.
             </p>
           </div>
           {returned.note && (
@@ -208,7 +161,7 @@ export const Status: React.FC = () => {
           )}
           <div className="flex justify-center gap-2">
             <Button asChild>
-              <Link to="/dmp/create">Revise the plan</Link>
+              <Link to="/dmp/create">Open the draft</Link>
             </Button>
             <Button variant="outline" asChild>
               <Link to="/">Back to home</Link>
@@ -340,7 +293,6 @@ export const Status: React.FC = () => {
               );
             })}
           </ol>
-
         </div>
 
         {isApproved ? (

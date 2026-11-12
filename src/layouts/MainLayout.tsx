@@ -8,14 +8,10 @@ import { QuotaBar } from "@/components/ui/quota-indicator";
 import { useCurrentUser } from "@/store/authStore";
 import { useQuotaStore } from "@/store/quotaStore";
 import { useAssistantStore } from "@/store/assistantStore";
-<<<<<<< Updated upstream
 import { isReviewer } from "@/config/roles";
-=======
-import { isResearcher } from "@/config/roles";
 import { loadAccountData } from "@/store/serverSync";
 import { startPolling } from "@/store/notificationStore";
 import { useToastStore } from "@/store/toastStore";
->>>>>>> Stashed changes
 
 const SIDEBAR_KEY = "sidebar-collapsed";
 

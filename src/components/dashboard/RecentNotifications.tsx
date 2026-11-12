@@ -49,7 +49,7 @@ export const RecentNotifications: React.FC<{ description?: string }> = ({
           size="sm"
           className="-mr-2 shrink-0"
           disabled={unread === 0}
-          onClick={() => markAllRead(userId)}
+          onClick={() => markAllRead()}
         >
           Mark all read
         </Button>

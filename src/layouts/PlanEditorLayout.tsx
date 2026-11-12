@@ -3,6 +3,7 @@ import { MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCurrentUser } from "@/store/authStore";
 import { useAssistantStore } from "@/store/assistantStore";
+import { cn } from "@/utils/cn";
 
 // Hidden until it's opened, so its tool layer shouldn't be in the first load.
 const AiChatPanel = React.lazy(() =>
@@ -40,11 +41,23 @@ export const PlanEditorLayout: React.FC<PlanEditorLayoutProps> = ({
 
   return (
     <>
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[200px_minmax(0,1fr)_280px]">
+      {/* The open panel takes the page's width, so the editor drops to one
+          column: tabs instead of the rail, the side rail under the form. */}
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-6",
+          !open && "lg:grid-cols-[200px_minmax(0,1fr)_280px]",
+        )}
+      >
         {sectionNav && (
           // Sticky like the readiness rail: finishing a section at the bottom
           // of a long form shouldn't mean scrolling back up to leave it.
-          <aside className="hidden lg:sticky lg:top-20 lg:block lg:self-start">
+          <aside
+            className={cn(
+              "hidden",
+              !open && "lg:sticky lg:top-20 lg:block lg:self-start",
+            )}
+          >
             {sectionNav}
           </aside>
         )}
@@ -56,7 +69,6 @@ export const PlanEditorLayout: React.FC<PlanEditorLayoutProps> = ({
                 variant={open ? "outline" : "ai"}
                 size="sm"
                 aria-expanded={open}
-                aria-label={open ? "Close AI assistant" : "Open AI assistant"}
                 onClick={() => setOpen(!open)}
               >
                 <MessageSquare className="mr-1.5 h-4 w-4" />
@@ -65,12 +77,19 @@ export const PlanEditorLayout: React.FC<PlanEditorLayoutProps> = ({
             </div>
           )}
           {sectionTabs && (
-            <div className="border-b pb-2 lg:hidden">{sectionTabs}</div>
+            <div className={cn("border-b pb-2", !open && "lg:hidden")}>
+              {sectionTabs}
+            </div>
           )}
           {children}
         </div>
         {rail && (
-          <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
+          <aside
+            className={cn(
+              "space-y-4",
+              !open && "lg:sticky lg:top-20 lg:self-start",
+            )}
+          >
             {rail}
           </aside>
         )}

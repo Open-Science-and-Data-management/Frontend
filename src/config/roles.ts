@@ -5,6 +5,9 @@ import type { User } from "@/types/user";
  * else reads them and decides on them. Admin has no screens of its own yet,
  * so it lands on the reviewing side rather than in someone else's editor.
  */
+export const isResearcher = (role: User["role"] | undefined): boolean =>
+  role === "researcher";
+
 export const isReviewer = (role: User["role"] | undefined): boolean =>
   role !== undefined && role !== "researcher";
 

@@ -6,12 +6,7 @@ import { X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useTaskStore } from "@/store/taskStore";
-<<<<<<< Updated upstream
-import type { DmpRecord } from "@/store/dmpStore";
-import { recordAiEvent } from "@/store/aiThread";
-=======
 import { outputsInForce, type DmpRecord } from "@/store/dmpStore";
->>>>>>> Stashed changes
 import { useToastStore } from "@/store/toastStore";
 import { estimateCost, TASK_DIRECTIONS } from "@/api/aiApi";
 import { draftTasks } from "@/api/aiResults";
@@ -39,7 +34,7 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
   const [direction, setDirection] = React.useState("");
   const [running, setRunning] = React.useState(false);
 
-  const allOutputs = plan.draft.dataset ?? [];
+  const allOutputs = outputsInForce(plan);
   // A new output added to an approved plan usually wants tasks of its own,
   // without disturbing the ones already running.
   const untouchedOutputs = allOutputs.filter(
@@ -75,7 +70,8 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
       if (rows.length === 0) {
         toast({
           title: "No tasks came back",
-          description: "The AI didn't draft any usable tasks. Try a different direction.",
+          description:
+            "The AI didn't draft any usable tasks. Try a different direction.",
           variant: "destructive",
         });
         return;

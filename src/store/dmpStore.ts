@@ -247,8 +247,6 @@ export const buildDmpList = (state: {
   return state.includeArchived ? list : list.filter((d) => !d.archived_at);
 };
 
-<<<<<<< Updated upstream
-=======
 /**
  * The research outputs of the version in force: what tasks are drafted from.
  * Empty when nothing is in force, or when the server doesn't share that
@@ -258,7 +256,6 @@ export const outputsInForce = (record?: DmpRecord): Dataset[] =>
   record?.versions.find((v) => v.number === record.active_version)?.snapshot
     .dataset ?? [];
 
->>>>>>> Stashed changes
 export const createEmptyDataset = (type: Dataset["type"]): Dataset => {
   const base = {
     dataset_id: makeId(),
