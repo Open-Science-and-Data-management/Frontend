@@ -5,6 +5,7 @@ import { cn } from "@/utils/cn";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { UserMenu } from "@/components/ui/user-menu";
 import { Helmet } from "react-helmet-async";
+import { Logo } from "@/components/ui/logo";
 
 interface NavbarProps {
   children?: React.ReactNode;
@@ -34,8 +35,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           )}
         >
           {!sidebarCollapsed && (
-            <Link to="/" className="flex items-center">
-              <span className="text-xl font-bold">Logo</span>
+            <Link to="/" className="flex items-center" aria-label="Home">
+              <Logo />
             </Link>
           )}
           <Helmet>
@@ -72,8 +73,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           )}
           {sidebarCollapsed && (
-            <Link to="/" className="md:hidden">
-              <span className="text-xl font-bold">Logo</span>
+            <Link to="/" className="md:hidden" aria-label="Home">
+              <Logo />
             </Link>
           )}
         </div>

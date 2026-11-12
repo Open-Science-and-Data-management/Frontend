@@ -1,18 +1,28 @@
 import React from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useCurrentUser } from "@/store/authStore";
-import { homePathFor, isReviewer } from "@/config/roles";
+import {
+  homePathFor,
+  isReviewer,
+  isResearcher,
+  seesPlans,
+} from "@/config/roles";
 
 /**
  * Keeps each side to its own screens. Landing on the other side's page — an
  * old bookmark, a notification link — goes to your own start page instead.
  */
 const ForSide: React.FC<{
-  side: "researcher" | "reviewer";
+  side: "researcher" | "reviewer" | "plans";
   children: React.ReactElement;
 }> = ({ side, children }) => {
   const role = useCurrentUser()?.role;
-  const onSide = side === "reviewer" ? isReviewer(role) : !isReviewer(role);
+  const onSide =
+    side === "reviewer"
+      ? isReviewer(role)
+      : side === "researcher"
+        ? isResearcher(role)
+        : seesPlans(role);
   return onSide ? children : <Navigate to={homePathFor(role)} replace />;
 };
 
@@ -21,6 +31,10 @@ const researcher = (element: React.ReactElement) => (
 );
 const reviewer = (element: React.ReactElement) => (
   <ForSide side="reviewer">{element}</ForSide>
+);
+/** Screens about plans and their projects: not for admin. */
+const plans = (element: React.ReactElement) => (
+  <ForSide side="plans">{element}</ForSide>
 );
 
 /**
@@ -55,8 +69,27 @@ const ReviewDetail = page(() => import("@/pages/review"), "ReviewDetail");
 const CommitteeHome = page(() => import("@/pages/review"), "CommitteeHome");
 
 /** "/" is each side's own dashboard. */
-const DashboardHome: React.FC = () =>
-  isReviewer(useCurrentUser()?.role) ? <CommitteeHome /> : <Home />;
+const DashboardHome: React.FC = () => {
+  const role = useCurrentUser()?.role;
+  if (isReviewer(role)) return <CommitteeHome />;
+  if (isResearcher(role)) return <Home />;
+  return <AdminHome />;
+};
+
+/**
+ * Admin has no screens yet. It lands here rather than on either side: it has
+ * no access to plans, so neither the editor nor the review queue is its own.
+ */
+const AdminHome: React.FC = () => (
+  <div className="flex h-[60vh] flex-col items-center justify-center gap-2 text-center">
+    <p className="text-lg font-medium">Admin</p>
+    <p className="max-w-md text-sm text-muted-foreground">
+      Managing users, project members and AI quotas is coming in a later phase.
+      Admin accounts don&rsquo;t open plans: those are for their researchers and
+      the committee.
+    </p>
+  </div>
+);
 
 const ComingSoon: React.FC<{ label: string }> = ({ label }) => (
   <div className="flex h-[60vh] flex-col items-center justify-center gap-2 text-center">
@@ -99,8 +132,8 @@ const AppRoutes: React.FC = () => {
         {/* The dashboard has always lived at "/". */}
         <Route path="/home" element={<Navigate to="/" replace />} />
         <Route path="/drafts" element={<Navigate to="/dmps" replace />} />
-        <Route path="/projects" element={<Projects />} />
-        <Route path="/projects/:projectId" element={<ProjectDetail />} />
+        <Route path="/projects" element={plans(<Projects />)} />
+        <Route path="/projects/:projectId" element={plans(<ProjectDetail />)} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/help" element={<HelpGuide />} />
 

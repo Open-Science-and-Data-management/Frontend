@@ -176,7 +176,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await runAiAction(
         ticket.scope,
         "chat",
-        { message: trimmed, ...(scope?.section ? { section: scope.section } : {}) },
+        {
+          message: trimmed,
+          ...(scope?.section ? { section: scope.section } : {}),
+        },
         { signal },
       );
       // The server wrote both turns; show its copy.

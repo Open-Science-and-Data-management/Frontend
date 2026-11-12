@@ -11,6 +11,7 @@ import {
 } from "@/components/onboarding/HowItWorks";
 import { useCurrentUser } from "@/store/authStore";
 import { homePathFor } from "@/config/roles";
+import { Logo } from "@/components/ui/logo";
 
 /** Who the app is for — the two sides a visitor might be on. */
 const AUDIENCES = [
@@ -49,8 +50,8 @@ export const Landing: React.FC = () => {
       <div className="flex min-h-dvh flex-col bg-background">
         <header className="sticky top-0 z-40 border-b bg-background">
           <div className="mx-auto flex h-16 w-full max-w-5xl items-center justify-between px-6">
-            <Link to="/" className="text-xl font-bold">
-              Logo
+            <Link to="/" aria-label="Home">
+              <Logo />
             </Link>
             <div className="flex items-center gap-2">
               <ThemeToggle />

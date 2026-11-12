@@ -106,6 +106,25 @@ export const datasetFieldPolicy: Record<string, FieldPolicy> = {
     isMajorTrigger: true,
   },
   "preservation.statement": { permission: "human", kind: "prose" },
+  // Where the output is kept, for how long, and on what terms it's shared
+  // are commitments, so changing one goes back for sign-off. The diff judges
+  // preservation and distribution by these parts, so rewording the statement
+  // above stays minor.
+  "preservation.repository": {
+    permission: "human",
+    kind: "identifier",
+    isMajorTrigger: true,
+  },
+  "preservation.duration": {
+    permission: "human",
+    kind: "choice",
+    isMajorTrigger: true,
+  },
+  "distribution.license": {
+    permission: "human",
+    kind: "identifier",
+    isMajorTrigger: true,
+  },
 };
 
 /**
@@ -122,7 +141,8 @@ export const planListPolicy: Record<
   FieldPolicy
 > = {
   dataset: { permission: "human", kind: "list", isMajorTrigger: true },
-  // Includes the contact: changing who answers questions isn't re-reviewed.
-  contributor: { permission: "human", kind: "list" },
+  // Who is responsible for the data is a commitment: adding, removing or
+  // changing a contributor, the contact included, goes back for sign-off.
+  contributor: { permission: "human", kind: "list", isMajorTrigger: true },
   cost: { permission: "human", kind: "list" },
 };

@@ -34,6 +34,8 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
   const [direction, setDirection] = React.useState("");
   const [running, setRunning] = React.useState(false);
 
+  // From the version in force: an output in a revision still waiting on a
+  // decision isn't approved, so it gets no tasks yet.
   const allOutputs = outputsInForce(plan);
   // A new output added to an approved plan usually wants tasks of its own,
   // without disturbing the ones already running.
