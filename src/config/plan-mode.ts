@@ -66,3 +66,22 @@ export const planModeOf = (
 ): PlanMode =>
   plan?.plan_mode ?? resolvePlanMode(projects, plan?.project_id ?? projectId);
 
+/**
+ * The authoring stepper. It names stages every plan goes through, however it
+ * was started (from a proposal or by hand): the server doesn't record which,
+ * so the stepper doesn't claim an upload that may never have happened. The
+ * last stage is called what this plan's mode calls it.
+ */
+export const planSteps = (mode: PlanMode) => [
+  { label: "Start" },
+  { label: "Review" },
+  { label: activation(mode).reviewed ? "Submit" : "Finalize" },
+  { label: activation(mode).activeLabel },
+];
+
+/**
+ * Where a plan stands on the stepper. A plan in force has every stage done,
+ * even while a revision of it is being written.
+ */
+export const planStepIndex = (status: Status, submitting = false): number =>
+  isActive(status) ? 4 : isAwaitingDecision(status) ? 3 : submitting ? 2 : 1;

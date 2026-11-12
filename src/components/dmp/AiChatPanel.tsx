@@ -30,6 +30,7 @@ import { describeOutcome } from "@/store/chatTools";
 import { useDmpStore } from "@/store/dmpStore";
 import { formatTokensLeft, useQuotaStore } from "@/store/quotaStore";
 import { cn } from "@/utils/cn";
+import { Markdown } from "@/components/ui/markdown";
 
 // Kept in step with what the assistant can actually answer, so a suggestion
 // never leads to the "I can only answer from this plan" fallback.
@@ -281,7 +282,10 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
                   >
                     <div
                       className={cn(
-                        "max-w-[85%] whitespace-pre-line rounded-lg px-3 py-2 text-sm",
+                        "max-w-[85%] rounded-lg px-3 py-2 text-sm",
+                        // Replies are markdown; everything else is as typed.
+                        !(m.kind === "assistant" && !m.failed) &&
+                          "whitespace-pre-line",
                         m.kind === "user"
                           ? "bg-primary text-primary-foreground"
                           : m.failed
@@ -293,7 +297,11 @@ export const AiChatPanel: React.FC<AiChatPanelProps> = ({ open, onClose }) => {
                                 : "bg-muted",
                       )}
                     >
-                      {m.text}
+                      {m.kind === "assistant" && !m.failed ? (
+                        <Markdown>{m.text}</Markdown>
+                      ) : (
+                        m.text
+                      )}
                       {m.failed?.retryable && (
                         <Button
                           size="sm"

@@ -1,0 +1,38 @@
+{
+  "description": "A plan used by the end-to-end tests.",
+  "language": "eng",
+  "begin_date": "2026-01-01T00:00:00.000Z",
+  "end_date": "2026-12-31T00:00:00.000Z",
+  "ethical_issues_exist": false,
+  "contributor": [
+    {
+      "contributor_id": "c1",
+      "name": "Test",
+      "surname": "Researcher",
+      "role": "Principal Investigator",
+      "email": "researcher@example.org",
+      "is_contact": true
+    }
+  ],
+  "cost": [],
+  "dataset": [
+    {
+      "dataset_id": "ds-1",
+      "type": "raw",
+      "title": "Sequence reads",
+      "status": "planned",
+      "access": "shared",
+      "personal_data": "no",
+      "sensitive_data": "no",
+      "protection_level": "Protected A",
+      "security_classification_level": "restricted",
+      "keyword": ["rice"],
+      "domain": "life_sciences",
+      "domain_metadata": { "organism": "Oryza sativa" },
+      "preservation": { "doi_requested": false },
+      "distribution": [],
+      "schema_fields": []
+    }
+  ],
+  "schema_version": "v3.0"
+}

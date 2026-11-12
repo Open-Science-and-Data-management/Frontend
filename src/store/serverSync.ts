@@ -100,12 +100,31 @@ export const archiveFileOnServer = async (fileId: string) => {
   }));
 };
 
+let inflight: { user: string | null; load: Promise<void> } | null = null;
+
 /**
  * Everything a signed-in person sees, from the server: their account, their
  * projects, the plans they write or review, and the tasks of plans in force.
  * Run on sign-in and after a reload; each screen then reads the stores.
  */
-export const loadAccountData = async (): Promise<void> => {
+export const loadAccountData = (): Promise<void> => {
+  // One load at a time: a second mount (StrictMode in dev, a quick re-render
+  // on sign-in) waits on the load already running instead of starting another.
+  // Keyed by who is signed in, so a different account never gets the
+  // previous one's load.
+  const user = useAuthStore.getState().userId ?? null;
+  if (inflight?.user === user) return inflight.load;
+  const entry = {
+    user,
+    load: loadAll().finally(() => {
+      if (inflight === entry) inflight = null;
+    }),
+  };
+  inflight = entry;
+  return entry.load;
+};
+
+const loadAll = async (): Promise<void> => {
   await useAuthStore.getState().restore();
   const user = useAuthStore.getState().user;
   if (!user || !(isResearcher(user.role) || isReviewer(user.role))) return;

@@ -20,7 +20,11 @@ export const Stepper: React.FC<StepperProps> = ({
   return (
     <ol
       className={cn("flex flex-wrap items-center gap-y-2", className)}
-      aria-label={`Step ${activeIndex + 1} of ${steps.length}`}
+      aria-label={
+        activeIndex >= steps.length
+          ? `All ${steps.length} steps done`
+          : `Step ${activeIndex + 1} of ${steps.length}`
+      }
     >
       {steps.map((step, i) => {
         const state =

@@ -34,7 +34,7 @@ export default defineConfig(({ mode }) => {
     test: {
       // The stores persist through localStorage, which only exists in a DOM.
       environment: "jsdom",
-      include: ["src/**/*.test.ts"],
+      include: ["src/**/*.test.{ts,tsx}"],
       restoreMocks: true,
     },
   };

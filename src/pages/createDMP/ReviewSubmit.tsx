@@ -10,23 +10,17 @@ import { ReadyChecklist } from "@/components/dmp/ReadyChecklist";
 import { useDmpReadiness } from "@/hooks/useDmpReadiness";
 import { useDmpStore } from "@/store/dmpStore";
 import { useToastStore } from "@/store/toastStore";
-import { activation } from "@/config/plan-mode";
+import { activation, planStepIndex, planSteps } from "@/config/plan-mode";
 import { useOpenPlanMode } from "@/hooks/usePlanMode";
-
-const STEPPER_STEPS = [
-  { label: "Upload" },
-  { label: "Analyze" },
-  { label: "Review" },
-  { label: "Submit" },
-  { label: "Approved" },
-];
 
 export const ReviewSubmit: React.FC = () => {
   const navigate = useNavigate();
   const draft = useDmpStore((s) => s.draft);
   const submitForApproval = useDmpStore((s) => s.submitForApproval);
   const finalize = useDmpStore((s) => s.finalize);
-  const route = activation(useOpenPlanMode());
+  const mode = useOpenPlanMode();
+  const route = activation(mode);
+  const status = useDmpStore((s) => s.status);
   const toast = useToastStore((s) => s.toast);
   const { checklistItems, canSubmit, unmetItems } = useDmpReadiness();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
@@ -107,7 +101,10 @@ export const ReviewSubmit: React.FC = () => {
 
       <div className="space-y-6 py-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <Stepper steps={STEPPER_STEPS} activeIndex={3} />
+          <Stepper
+            steps={planSteps(mode)}
+            activeIndex={planStepIndex(status, true)}
+          />
           <Button
             variant="ghost"
             size="sm"

@@ -24,15 +24,8 @@ import {
 } from "@/hooks/useDmpReadiness";
 import { useDmpStore } from "@/store/dmpStore";
 import { useToastStore } from "@/store/toastStore";
-import { isActive } from "@/config/plan-mode";
-
-const STEPPER_STEPS = [
-  { label: "Upload" },
-  { label: "Analyze" },
-  { label: "Review" },
-  { label: "Submit" },
-  { label: "Approved" },
-];
+import { isActive, planStepIndex, planSteps } from "@/config/plan-mode";
+import { useOpenPlanMode } from "@/hooks/usePlanMode";
 
 // One list of sections, shared with the readiness checklist.
 const SECTIONS = DMP_SECTIONS;
@@ -49,6 +42,7 @@ export const CreateDmp: React.FC = () => {
   const { draft, closeDraft } = useDmpStore();
   const toast = useToastStore((s) => s.toast);
   const status = useDmpStore((s) => s.status);
+  const mode = useOpenPlanMode();
   const [discardOpen, setDiscardOpen] = React.useState(false);
 
   // The URL owns the active section so Review's per-section Edit links work
@@ -117,7 +111,10 @@ export const CreateDmp: React.FC = () => {
 
       <div className="space-y-6 py-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <Stepper steps={STEPPER_STEPS} activeIndex={2} />
+          <Stepper
+            steps={planSteps(mode)}
+            activeIndex={planStepIndex(status)}
+          />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <AutosaveIndicator value={draft} />
             <Button
