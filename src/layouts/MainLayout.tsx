@@ -8,7 +8,14 @@ import { QuotaBar } from "@/components/ui/quota-indicator";
 import { useCurrentUser } from "@/store/authStore";
 import { useQuotaStore } from "@/store/quotaStore";
 import { useAssistantStore } from "@/store/assistantStore";
+<<<<<<< Updated upstream
 import { isReviewer } from "@/config/roles";
+=======
+import { isResearcher } from "@/config/roles";
+import { loadAccountData } from "@/store/serverSync";
+import { startPolling } from "@/store/notificationStore";
+import { useToastStore } from "@/store/toastStore";
+>>>>>>> Stashed changes
 
 const SIDEBAR_KEY = "sidebar-collapsed";
 
@@ -30,6 +37,31 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
     useQuotaStore.setState({ quota: null, status: "idle" });
     if (user?.user_id) void useQuotaStore.getState().refresh();
   }, [user?.user_id]);
+  // Everything on screen comes from the server: loaded for whoever signs
+  // in, so one account never sees the last one's, and kept fresh by polling
+  // notifications while they're here.
+  const toast = useToastStore((s) => s.toast);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
+  const load = React.useCallback(() => {
+    setLoadError(null);
+    loadAccountData().catch((err) =>
+      setLoadError(err instanceof Error ? err.message : "Please try again."),
+    );
+  }, []);
+  React.useEffect(() => {
+    if (!user?.user_id) return;
+    load();
+    return startPolling();
+  }, [user?.user_id, load]);
+  React.useEffect(() => {
+    if (loadError)
+      toast({
+        title: "Couldn't load your data",
+        description: loadError,
+        variant: "destructive",
+        action: { label: "Try again", onClick: load },
+      });
+  }, [loadError, load, toast]);
   const [sidebarCollapsed, setSidebarCollapsed] = React.useState(
     () => localStorage.getItem(SIDEBAR_KEY) === "true",
   );

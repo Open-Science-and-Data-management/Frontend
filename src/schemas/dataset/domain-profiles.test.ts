@@ -7,7 +7,6 @@ import {
   getDomainProfile,
   validateDomainMetadata,
 } from "@/schemas/dataset/domain-profiles";
-import { suggestDomain } from "@/api/aiApi";
 
 const dataset = (patch: Record<string, unknown> = {}) => ({
   dataset_id: "d1",
@@ -179,62 +178,5 @@ describe("a dataset is judged by its own domain", () => {
       }),
     );
     expect(result.success).toBe(false);
-  });
-});
-
-describe("AI suggests a domain but not a compliance claim", () => {
-  it("reads the domain out of the text", () => {
-    expect(suggestDomain("rice genome sequencing").domain).toBe(
-      "life_sciences",
-    );
-    expect(suggestDomain("household survey of farmers").domain).toBe(
-      "social_science",
-    );
-    expect(suggestDomain("satellite remote sensing").domain).toBe("geospatial");
-    expect(suggestDomain("a study").domain).toBe("generic");
-  });
-
-  it("fills what the text answers", () => {
-    const { domain_metadata } = suggestDomain(
-      "rice whole genome sequencing on illumina",
-    );
-    expect(domain_metadata).toMatchObject({
-      organism: "Oryza sativa",
-      sequencing_platform: "Illumina",
-      assay_type: "WGS",
-    });
-  });
-
-  it("never fills a field the profile reserves for a person", () => {
-    // Both of these are assertions a researcher makes, not a model.
-    expect(suggestDomain("rice sequencing")).not.toHaveProperty(
-      "domain_metadata.biosafety_reviewed",
-    );
-    expect(
-      suggestDomain("household survey").domain_metadata,
-    ).not.toHaveProperty("consent_obtained");
-  });
-
-  it("only ever suggests keys the chosen profile declares", () => {
-    // It may leave a required field for the researcher — that's the point, it
-    // then shows up on the readiness list. What it must never do is invent a
-    // key, which the strict profile would reject forever.
-    [
-      "rice sequencing",
-      "household survey",
-      "gis coordinate",
-      "a study",
-    ].forEach((text) => {
-      const { domain, domain_metadata } = suggestDomain(text);
-      expect(foreignDomainKeys(domain, domain_metadata)).toEqual([]);
-    });
-  });
-
-  it("leaves a required field it cannot answer for the researcher", () => {
-    const { domain_metadata } = suggestDomain("satellite mapping study");
-    expect(validateDomainMetadata("geospatial", domain_metadata).success).toBe(
-      false,
-    );
-    expect(domain_metadata).not.toHaveProperty("coordinate_system");
   });
 });

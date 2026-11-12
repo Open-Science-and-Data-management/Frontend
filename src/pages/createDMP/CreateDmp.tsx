@@ -252,8 +252,9 @@ export const CreateDmp: React.FC = () => {
         }
         cancelLabel="Keep editing"
         confirmVariant="destructive"
-        onConfirm={() => {
-          const outcome = closeDraft();
+        onConfirm={async () => {
+          const outcome = await closeDraft();
+          if (outcome === "kept") return;
           if (outcome === "archived")
             toast({
               title: "Draft archived",

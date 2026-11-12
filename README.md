@@ -1,16 +1,11 @@
 # DMP Researcher
 
-DMP Researcher is a frontend prototype for helping researchers create and
-manage data management plans (DMPs). It supports a proposal-to-plan workflow,
-structured research-output metadata, review-oriented version history, and
-follow-up tasks. Plan authoring follows a FAIR-oriented maDMP data model.
-
-> **Prototype notice:** The app currently uses seeded demo records and
-> browser-local state. Proposal analysis and AI assistance are deterministic
-> mock implementations, file uploads are held in memory for the current page
-> session, and committee decisions are simulated in the UI. There is no
-> authentication service, backend API, database, durable file storage, or
-> external AI integration wired up.
+DMP Researcher is the web frontend for creating and managing data management
+plans (DMPs). Researchers turn a proposal into a FAIR-oriented maDMP draft,
+submit it to their committee, and then work through the follow-up tasks.
+Everything is stored by the backend,
+[uni-backend](https://github.com/Open-Science-and-Data-management/Backend);
+the browser holds only a session cache.
 
 ## Features
 
@@ -18,7 +13,8 @@ follow-up tasks. Plan authoring follows a FAIR-oriented maDMP data model.
 - Upload `.docx` proposals (up to 20 MB) and walk through a draft plan.
 - Author DMP details, contributors, costs, datasets, distributions, ethics,
   preservation, and research-domain metadata.
-- Review DMP readiness and submit the plan for a simulated review workflow.
+- Check DMP readiness, submit the plan, and have the committee approve or
+  return it.
 - Track plan revisions, pending/approved/rejected states, and minor versus major
   changes.
 - Generate and manage research tasks with lifecycle stages, priorities,
@@ -32,7 +28,7 @@ follow-up tasks. Plan authoring follows a FAIR-oriented maDMP data model.
 - React 18 and TypeScript
 - Vite 6
 - React Router (browser history routing)
-- Zustand for client state and browser persistence
+- Zustand for the session cache of server data
 - Zod and React Hook Form for validation and forms
 - Tailwind CSS 4 and Radix UI primitives
 - Vitest and jsdom for tests
@@ -53,12 +49,36 @@ npm ci
 npm run dev
 ```
 
-Vite prints the local development URL in the terminal (normally
-`http://localhost:5173`). The router uses clean browser-history URLs such as
-`/settings`. A production host must serve `index.html` for every path (an SPA
-fallback), otherwise refreshing or opening a deep link returns a 404.
+The app needs the backend running. Start it first (see its README: Postgres,
+a `.env` with `DATABASE_URL` and `JWT_SECRET`, `pnpm db:migrate`, then
+`pnpm dev`; AI features also need `OPENROUTER_KEY`). It listens on port 3000.
 
-No environment variables are required by the current frontend.
+Vite prints the local development URL (normally `http://localhost:5173`) and
+proxies `/api` to the backend, so the browser sees one origin and the backend
+needs no CORS. The proxy also rewrites the refresh cookie's path from `/auth`
+to `/api/auth` so the browser sends it back.
+
+### Configuration
+
+Copy `.env.example` to `.env` if the defaults don't fit:
+
+| Variable | Used by | Default | Meaning |
+| --- | --- | --- | --- |
+| `VITE_API_URL` | browser | `/api` | Base URL for API requests |
+| `BACKEND_URL` | dev server | `http://localhost:3000` | Where the `/api` proxy forwards |
+
+A production host must serve `index.html` for every path (an SPA fallback)
+and serve the API on the same origin as the app, because the refresh token is
+a `SameSite=Strict` httpOnly cookie.
+
+### Accounts and sessions
+
+Sign-in returns a short-lived access token, kept in memory only, and sets the
+refresh token as an httpOnly cookie. After a reload the app gets a new access
+token from that cookie; a request that hits an expired token refreshes once
+and retries. The backend has no seed accounts: register a researcher first.
+Committee, chief and admin accounts are created by the institution and can't
+sign up.
 
 ## Application routes
 
@@ -68,13 +88,14 @@ No environment variables are required by the current frontend.
 | `/upload` | Upload a proposal and associate it with a project |
 | `/dmp/create` | Create or edit a DMP draft |
 | `/dmp/review` | Review and submit the draft |
-| `/dmp/status` | View status and simulate a review decision |
+| `/dmp/status` | Plan status, versions and task generation |
 | `/dmps` | Browse saved DMPs |
 | `/tasks` | View and manage DMP tasks |
 | `/projects` | Browse projects |
 | `/projects/:projectId` | View a project and its files |
 | `/notifications` | View and manage notifications |
-| `/settings` | Theme and demo-data settings |
+| `/settings` | Profile and theme |
+| `/review`, `/review/:dmpId` | Committee queue and decision page |
 | `/help` | In-app workflow guide |
 
 Editing a saved DMP at `/dmp/:id/edit` is currently a coming-soon screen.
@@ -83,15 +104,15 @@ Editing a saved DMP at `/dmp/:id/edit` is currently a coming-soon screen.
 
 ```text
 src/
-├── api/          Demo AI and file API adapters
+├── api/          HTTP client, one module per backend resource, AI streaming
 ├── components/   Shared UI and feature components
-├── config/       Current-user demo config, plan rules, and field policies
+├── config/       Roles, plan rules, and field policies
 ├── hooks/        Shared React hooks
 ├── layouts/      Application shell
 ├── pages/        Route-level screens
 ├── routes/       Route definitions and router configuration
 ├── schemas/      Zod schemas for DMP, project, task, file, and related data
-├── store/        Persisted Zustand stores and demo seed data
+├── store/        Zustand stores holding what the server returned
 ├── styles/       Global styles
 └── types/        Types inferred from schemas
 ```
@@ -100,32 +121,20 @@ The [project ERD](./docs/project-erd.md) describes how the frontend schemas and
 stores relate. It is a logical model of the current client code, not a schema
 for a deployed database.
 
-## Local data and demo behavior
+## What the backend doesn't support yet
 
-Zustand stores persist records in the browser's `localStorage`. Reset the
-sample state from **Settings → Local data → Reset data**. Clearing site data
-for the browser also removes locally saved records.
+These show as unavailable in the UI rather than being simulated:
 
-The current adapters intentionally do not connect to production services:
-
-- `src/api/aiApi.ts` returns canned proposal-analysis content and uses
-  deterministic rules for regeneration, chat, and task suggestions.
-- `src/api/fileApi.ts` stores uploaded file blobs in memory. Blobs are not
-  durable and do not survive a page reload.
-- `src/config/current-user.ts` supplies a fixed demo user ID; there is no login
-  or authorization boundary.
-- The status screen provides demo-only committee decisions. Decisions are not
-  persisted as separate approval records or attributed to authenticated
-  reviewers.
-
-Do not use this prototype to store confidential research data or treat its
-demo AI output, review decisions, quota counters, or local persistence as
-production-grade.
+- Email notifications and notification preferences.
+- Editing a saved DMP at `/dmp/:id/edit` (a coming-soon screen).
+- A sample DMP walkthrough.
+- The content of past plan versions: the server shares only the version
+  under review or in force, so older versions show their change lists only.
 
 ## Development commands
 
 ```bash
-npm run dev       # Start the Vite development server
+npm run dev       # Start the Vite dev server (needs the backend)
 npm run build     # Run TypeScript checking and create a production build
 npm run preview   # Preview the built app locally
 npm test          # Run the Vitest suite once

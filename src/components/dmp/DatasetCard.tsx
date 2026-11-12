@@ -34,8 +34,6 @@ import {
 } from "@/schemas/shared";
 import { regenerateFlag, useDmpStore } from "@/store/dmpStore";
 import type { RegenerateDirection } from "@/api/aiApi";
-import { useTaskStore } from "@/store/taskStore";
-import { useToastStore } from "@/store/toastStore";
 import type { Dataset } from "@/types/dataset";
 import { cn } from "@/utils/cn";
 
@@ -86,9 +84,6 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
     regenerateField,
     regeneratingFields,
   } = useDmpStore();
-  const currentDmpId = useDmpStore((s) => s.currentDmpId);
-  const cancelTasksForDataset = useTaskStore((s) => s.cancelTasksForDataset);
-  const toast = useToastStore((s) => s.toast);
   const confirm = useConfirm();
 
   const id = dataset.dataset_id as string;
@@ -263,25 +258,14 @@ export const DatasetCard: React.FC<DatasetCardProps> = ({ dataset }) => {
                     title: "Remove this research output?",
                     description: planInForce
                       ? "Removing an output is a major change, so it goes for sign-off. Its tasks keep running until then. Once the change is in force they're cancelled, not deleted."
-                      : "Its distributions and preservation details go with it. Any open tasks for it are cancelled, not deleted, so the trail survives.",
+                      : "Its distributions and preservation details go with it.",
                     confirmLabel: "Remove output",
                   })
                 ) {
-                  // In a plan in force the removal is only proposed; the tasks
-                  // are cancelled when the version that drops it takes effect
-                  // (store/planEffects). Otherwise it takes effect now.
-                  const cancelled =
-                    currentDmpId && !planInForce
-                      ? cancelTasksForDataset(currentDmpId, id, dataset.title)
-                      : 0;
+                  // In a plan in force the removal is only proposed: the
+                  // server cancels its tasks when the version that drops it
+                  // takes effect. A plan not in force has no tasks yet.
                   removeDataset(id);
-                  if (cancelled > 0) {
-                    toast({
-                      title: `${cancelled} task${cancelled === 1 ? "" : "s"} cancelled`,
-                      description:
-                        "They stay on the board for the record, marked cancelled.",
-                    });
-                  }
                 }
               }}
             >

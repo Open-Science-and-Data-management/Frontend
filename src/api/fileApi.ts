@@ -1,60 +1,33 @@
 import type { FileRecord } from "@/types/file";
+import { projectsApi } from "@/api/projectsApi";
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-const makeId = () => Math.random().toString(36).substring(2, 10);
-
-// Stand-in for object storage. Real blobs live only for this session — a
-// backend would return a durable URL instead. Keyed by file_id.
-const blobStore = new Map<string, File>();
-
-const detectFileType = (filename: string): FileRecord["file_type"] => {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith(".docx")) return "docx";
-  if (lower.endsWith(".pdf")) return "pdf";
-  return "other";
-};
-
+/** Project files on the server: upload, download, archive, delete. */
 export interface UploadFileInput {
   file: File;
   projectId: string;
-  uploadedBy: string;
   purpose: FileRecord["purpose"];
+  signal?: AbortSignal;
 }
 
 export const fileApi = {
-  upload: async ({
+  /** The server checks size and type, and supersedes an earlier proposal. */
+  upload: ({
     file,
     projectId,
-    uploadedBy,
     purpose,
-  }: UploadFileInput): Promise<FileRecord> => {
-    await delay(700);
+    signal,
+  }: UploadFileInput): Promise<FileRecord> =>
+    projectsApi.upload(projectId, file, purpose, signal),
 
-    const file_id = makeId();
-    blobStore.set(file_id, file);
-
-    return {
-      file_id,
-      project_id: projectId,
-      uploaded_by: uploadedBy,
-      filename: file.name,
-      file_type: detectFileType(file.name),
-      purpose,
-      metadata: { byte_size: file.size, mime_type: file.type || undefined },
-      uploaded_at: new Date(),
-    };
-  },
-
+  /** Refused (409 file_in_use) for a file a task uses as evidence. */
   remove: async (fileId: string): Promise<void> => {
-    await delay(300);
-    blobStore.delete(fileId);
+    await projectsApi.remove(fileId);
   },
 
-  // Returns a blob URL for files uploaded in this session, or null for
-  // seeded/server-side records that have no local blob.
-  getDownloadUrl: (fileId: string): string | null => {
-    const blob = blobStore.get(fileId);
-    return blob ? URL.createObjectURL(blob) : null;
-  },
+  /** Takes a file out of the list but keeps it with any task that uses it. */
+  archive: (fileId: string) => projectsApi.archive(fileId),
+
+  /** A blob URL for the file's contents; the caller revokes it. */
+  download: async (fileId: string): Promise<string> =>
+    URL.createObjectURL(await projectsApi.download(fileId)),
 };

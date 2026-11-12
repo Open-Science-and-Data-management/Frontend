@@ -5,7 +5,7 @@ import addFormats from "ajv-formats";
 import madmpStandard from "@/schemas/madmp/vendor/GCWG-RDA-maDMP-schema_v3.0.json";
 import rdaStandard from "@/schemas/rda/vendor/RDA-DMP-Common-Standard_v1.3.json";
 import { buildExport } from "@/api/exportDmp";
-import { useDmpStore } from "@/store/dmpStore";
+import { useDmpStore, type DmpRecord, type PlanVersion } from "@/store/dmpStore";
 import type { DmpDraft } from "@/types/dmp";
 
 const madmp = addFormats(new Ajv({ strict: false, allErrors: true })).compile(
@@ -59,29 +59,62 @@ const plan = (): DmpDraft => ({
 const state = () => useDmpStore.getState();
 const record = () => state().dmps.find((d) => d.dmp_id === "dmp-rice");
 
-beforeEach(() => {
-  localStorage.clear();
+const mali = {
+  user_id: "user-2",
+  name: "Prof. Mali Chaiyasit",
+  position: "Committee chair",
+  mbox: "mali@example.edu",
+};
+
+/** A version as the server reports it once decided. */
+const version = (
+  number: number,
+  status: PlanVersion["status"],
+  snapshot: DmpDraft,
+  approver?: PlanVersion["approver"],
+): PlanVersion => ({
+  number,
+  status,
+  edit_type: "major",
+  changes: [],
+  snapshot,
+  created_at: new Date("2026-01-07T00:00:00.000Z"),
+  decided_at: status === "pending" ? undefined : new Date("2026-01-08T00:00:00.000Z"),
+  approver,
+  minor_edits: [],
+});
+
+/** The plan in the library, as loaded from the server. */
+const load = (
+  status: DmpRecord["status"],
+  versions: PlanVersion[] = [],
+  draft: DmpDraft = plan(),
+) => {
+  const active = versions.find((v) => v.status === "approved")?.number;
   useDmpStore.setState({
-    draft: plan(),
-    status: "draft",
+    draft,
+    status,
     currentDmpId: "dmp-rice",
     dmps: [
       {
         dmp_id: "dmp-rice",
         title: "Rice Genomics DMP",
         description: "",
-        status: "draft",
+        status,
         created_at: new Date("2026-01-05T00:00:00.000Z"),
         updated_at: new Date("2026-01-06T00:00:00.000Z"),
         dataset_count: 1,
         contributor_count: 1,
         tasks_generated: false,
-        draft: plan(),
-        versions: [],
+        draft,
+        versions,
+        active_version: active,
       },
     ],
   });
-});
+};
+
+beforeEach(() => load("draft"));
 
 const exportAs = (format: "madmp" | "rda") =>
   buildExport(format, {
@@ -94,24 +127,7 @@ const exportAs = (format: "madmp" | "rda") =>
   });
 
 describe("an approved plan, exported", () => {
-  beforeEach(() => {
-    state().submitForApproval();
-    state().approve({
-      user_id: "user-2",
-      name: "Prof. Mali Chaiyasit",
-      position: "Committee chair",
-      mbox: "mali@example.edu",
-    });
-  });
-
-  it("stores who approved, on the version they approved", () => {
-    expect(record()?.versions[0].approver).toEqual({
-      user_id: "user-2",
-      name: "Prof. Mali Chaiyasit",
-      position: "Committee chair",
-      mbox: "mali@example.edu",
-    });
-  });
+  beforeEach(() => load("approved", [version(1, "approved", plan(), mali)]));
 
   it("names them in the maDMP approval block, and validates", () => {
     const result = exportAs("madmp");
@@ -135,44 +151,10 @@ describe("an approved plan, exported", () => {
   });
 });
 
-describe("the decision trail", () => {
-  it("records who sent a revision back", () => {
-    state().submitForApproval();
-    state().approve({ name: "Prof. Mali Chaiyasit", position: "Chair" });
-    useDmpStore.setState({
-      draft: {
-        ...state().draft,
-        dataset: [{ ...state().draft.dataset![0], access: "open" }],
-      },
-    });
-    state().submitRevision();
-    state().rejectRevision("Needs a sharing agreement.", {
-      name: "Dr. Somchai Rattana",
-      position: "Committee member",
-    });
-
-    const v2 = record()?.versions.find((v) => v.number === 2);
-    expect(v2?.status).toBe("rejected");
-    expect(v2?.approver?.name).toBe("Dr. Somchai Rattana");
-    // The version in force keeps its own approver.
-    expect(record()?.versions[0].approver?.name).toBe("Prof. Mali Chaiyasit");
-  });
-});
-
 it("refuses an incomplete plan rather than export it half-valid", () => {
   useDmpStore.setState({ draft: { title: "Half a plan" } });
   const result = exportAs("madmp");
   expect(result.ok).toBe(false);
-});
-
-it("keeps the history of a plan not yet filed in the library", () => {
-  // A plan fresh from analysis is open in the editor but absent from `dmps`.
-  useDmpStore.setState({ dmps: [] });
-  state().submitForApproval();
-  state().approve({ name: "Prof. Mali Chaiyasit", position: "Chair" });
-
-  expect(record()?.active_version).toBe(1);
-  expect(record()?.versions[0].approver?.name).toBe("Prof. Mali Chaiyasit");
 });
 
 it("exports a plan approved before versions were kept", () => {
@@ -186,21 +168,11 @@ it("exports a plan approved before versions were kept", () => {
 });
 
 describe("what an export describes", () => {
-  beforeEach(() => {
-    state().submitForApproval();
-    state().approve({ name: "Prof. Mali Chaiyasit", position: "Chair" });
-  });
-
   it("is the version in force, not unapproved edits in the draft", () => {
     // A major edit nobody has approved yet.
-    useDmpStore.setState({
-      draft: {
-        ...state().draft,
-        dataset: [
-          { ...state().draft.dataset![0], protection_level: "Protected C" },
-        ],
-      },
-    });
+    const edited = plan();
+    edited.dataset = [{ ...edited.dataset![0], protection_level: "Protected C" }];
+    load("approved", [version(1, "approved", plan(), mali)], edited);
     const result = exportAs("madmp");
     if (!result.ok) throw new Error(result.reason);
     const doc = JSON.parse(result.json);
@@ -209,29 +181,19 @@ describe("what an export describes", () => {
   });
 
   it("still excludes a revision while it waits on the committee", () => {
-    useDmpStore.setState({
-      draft: { ...state().draft, title: "Rice Genomics DMP, revised" },
-    });
-    state().submitRevision();
+    const revised = { ...plan(), title: "Rice Genomics DMP, revised" };
+    load(
+      "approved",
+      [version(1, "approved", plan(), mali), version(2, "pending", revised)],
+      revised,
+    );
     const result = exportAs("rda");
     if (!result.ok) throw new Error(result.reason);
     expect(JSON.parse(result.json).dmp.title).toBe("Rice Genomics DMP");
   });
 
-  it("includes minor edits once saved, since they're applied to the version", () => {
-    useDmpStore.setState({
-      draft: { ...state().draft, title: "Rice Genomics DMP (wording)" },
-    });
-    state().saveMinorEdits();
-    const result = exportAs("rda");
-    if (!result.ok) throw new Error(result.reason);
-    expect(JSON.parse(result.json).dmp.title).toBe(
-      "Rice Genomics DMP (wording)",
-    );
-  });
-
   it("exports an incomplete working draft fine while the version in force is complete", () => {
-    useDmpStore.setState({ draft: { ...state().draft, title: "" } });
+    load("approved", [version(1, "approved", plan(), mali)], { ...plan(), title: "" });
     expect(exportAs("madmp").ok).toBe(true);
   });
 });

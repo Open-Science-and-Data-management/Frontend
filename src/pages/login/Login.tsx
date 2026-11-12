@@ -10,9 +10,6 @@ import {
   PasswordInput,
 } from "@/components/auth/AuthLayout";
 import {
-  DEMO_ACCOUNTS,
-  DEMO_PASSWORD,
-  ROLE_LABELS,
   useAuthStore,
 } from "@/store/authStore";
 
@@ -124,30 +121,6 @@ export const Login: React.FC = () => {
             Sign up
           </Link>
         </p>
-
-        {/* Prototype only: lets a reviewer try both sides without signing up. */}
-        <div className="rounded-lg border border-dashed p-4">
-          <p className="text-xs font-medium text-muted-foreground">
-            Demo accounts · password “{DEMO_PASSWORD}”
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {DEMO_ACCOUNTS.map((account) => (
-              <Button
-                key={account.username}
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setUsername(account.username);
-                  setPassword(DEMO_PASSWORD);
-                  setError(undefined);
-                }}
-              >
-                {account.username} · {ROLE_LABELS[account.role]}
-              </Button>
-            ))}
-          </div>
-        </div>
 
         <p className="text-center text-xs">
           <Link

@@ -15,6 +15,7 @@ import { registrationSchema } from "@/schemas/user";
 import { useAuthStore } from "@/store/authStore";
 import { useToastStore } from "@/store/toastStore";
 import { cn } from "@/utils/cn";
+import { authApi } from "@/api/authApi";
 
 type AccountType = "institutional" | "citizen";
 
@@ -96,7 +97,6 @@ const Step: React.FC<{
 export const Register: React.FC = () => {
   const navigate = useNavigate();
   const register = useAuthStore((s) => s.register);
-  const isUsernameTaken = useAuthStore((s) => s.isUsernameTaken);
   const toast = useToastStore((s) => s.toast);
 
   const [accountType, setAccountType] =
@@ -391,11 +391,14 @@ export const Register: React.FC = () => {
                   {...bind("username")}
                   autoComplete="username"
                   autoCapitalize="none"
-                  onBlur={() => {
-                    if (
-                      values.username.trim() &&
-                      isUsernameTaken(values.username)
-                    )
+                  onBlur={async () => {
+                    const wanted = values.username.trim();
+                    if (!wanted) return;
+                    // A hint only; the server checks again on sign-up.
+                    const available = await authApi
+                      .isUsernameAvailable(wanted)
+                      .catch(() => true);
+                    if (!available)
                       setErrors((err) => ({
                         ...err,
                         username: "That username is already taken.",

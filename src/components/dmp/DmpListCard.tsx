@@ -56,15 +56,20 @@ export const DmpListCard: React.FC<DmpListCardProps> = ({
     </div>
 
     <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-      <span className="inline-flex items-center gap-1">
-        <Database className="h-3.5 w-3.5" />
-        {dmp.dataset_count} dataset{dmp.dataset_count === 1 ? "" : "s"}
-      </span>
-      <span className="inline-flex items-center gap-1">
-        <Users className="h-3.5 w-3.5" />
-        {dmp.contributor_count} contributor
-        {dmp.contributor_count === 1 ? "" : "s"}
-      </span>
+      {/* Counts show once the plan's content has been loaded. */}
+      {dmp.dataset_count !== undefined && (
+        <span className="inline-flex items-center gap-1">
+          <Database className="h-3.5 w-3.5" />
+          {dmp.dataset_count} dataset{dmp.dataset_count === 1 ? "" : "s"}
+        </span>
+      )}
+      {dmp.contributor_count !== undefined && (
+        <span className="inline-flex items-center gap-1">
+          <Users className="h-3.5 w-3.5" />
+          {dmp.contributor_count} contributor
+          {dmp.contributor_count === 1 ? "" : "s"}
+        </span>
+      )}
       <span className="inline-flex items-center gap-1">
         <Calendar className="h-3.5 w-3.5" />
         Updated {formatDistanceToNow(dmp.updated_at, { addSuffix: true })}

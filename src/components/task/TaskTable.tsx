@@ -241,14 +241,14 @@ const TaskRow: React.FC<TaskRowProps> = ({
   const doneSteps = checklist.filter((i) => i.done).length;
   const EvidenceIcon = EVIDENCE_ICON[task.evidence?.type ?? "none"];
 
-  const toggle = () => {
+  const toggle = async () => {
     if (isDone) {
       reopenTask(id);
       return;
     }
     // Closing still runs the evidence rule — a table cell is not a shortcut
     // past the gate the tick box and the board both answer to.
-    if (completeTask(id))
+    if (await completeTask(id))
       toast({ title: "Task closed", description: task.title });
   };
 

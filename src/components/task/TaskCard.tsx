@@ -57,12 +57,12 @@ export const TaskCard: React.FC<TaskCardProps> = ({
     planModeFor(task.dmp_id),
   );
 
-  const toggle = () => {
+  const toggle = async () => {
     if (isDone) {
-      reopenTask(taskId);
+      await reopenTask(taskId);
       return;
     }
-    if (completeTask(taskId)) {
+    if (await completeTask(taskId)) {
       toast({ title: "Task closed", description: task.title });
     }
   };

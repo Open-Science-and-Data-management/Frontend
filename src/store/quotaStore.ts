@@ -1,6 +1,21 @@
 import { create } from "zustand";
 import type { AiQuota } from "@/api/aiContract";
-import { fetchQuota } from "@/api/mock/aiServer";
+import { http } from "@/api/http";
+import { onSessionChange } from "@/config/current-user";
+
+/** `GET /ai/quota`. A limit of 0 means no limit. */
+const fetchQuota = async (): Promise<AiQuota> => {
+  const q = await http.get<{
+    limit: number;
+    used: number;
+    resets_at: string | null;
+  }>("/ai/quota");
+  return {
+    limit: q.limit,
+    used: q.used,
+    resets_at: q.resets_at ? new Date(q.resets_at) : null,
+  };
+};
 
 /**
  * The AI budget as the server last reported it. The server is the source of
@@ -44,7 +59,11 @@ export const useQuotaStore = create<QuotaState>()((set, get) => ({
 
   tokensLeft: () => {
     const q = get().quota;
-    return q ? Math.max(0, q.limit - q.used) : null;
+    if (!q) return null;
+    // No limit: nothing to count down from.
+    return q.limit === 0
+      ? Number.POSITIVE_INFINITY
+      : Math.max(0, q.limit - q.used);
   },
 
   hasTokensFor: (cost) => {
@@ -55,4 +74,6 @@ export const useQuotaStore = create<QuotaState>()((set, get) => ({
 
 /** "1,200 left" while known; nothing to claim while it isn't. */
 export const formatTokensLeft = (left: number | null) =>
-  left === null ? "…" : left.toLocaleString();
+  left === null ? "…" : left === Number.POSITIVE_INFINITY ? "Unlimited" : left.toLocaleString();
+
+onSessionChange(() => useQuotaStore.setState({ quota: null, status: "idle" }));

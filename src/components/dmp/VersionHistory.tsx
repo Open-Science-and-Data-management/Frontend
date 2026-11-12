@@ -60,7 +60,7 @@ export const VersionHistory: React.FC = () => {
         : `Its content replaces your working draft. If that differs from version ${active} in a way that needs sign-off, it goes back for approval like any other change. Unsubmitted edits are replaced.`,
       confirmLabel: `Restore version ${v.number}`,
     });
-    if (!ok || !restoreVersion(v.number)) return;
+    if (!ok || !(await restoreVersion(v.number))) return;
     toast({
       title: `Version ${v.number} loaded into the editor`,
       description: "Review the changes, then save or submit them.",

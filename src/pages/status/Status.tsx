@@ -19,9 +19,16 @@ import { VersionHistory } from "@/components/dmp/VersionHistory";
 import { ReopenTasksPrompt } from "@/components/task/ReopenTasksPrompt";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { AiProgress } from "@/components/ui/ai-progress";
+<<<<<<< Updated upstream
 import { estimateCost, generateTasks } from "@/api/aiApi";
 import { useDmpStore } from "@/store/dmpStore";
 import { recordAiEvent } from "@/store/aiThread";
+=======
+import { estimateCost } from "@/api/aiApi";
+import { draftTasks } from "@/api/aiResults";
+import { totalTokens } from "@/api/aiContract";
+import { outputsInForce, useDmpStore } from "@/store/dmpStore";
+>>>>>>> Stashed changes
 import { useTaskStore } from "@/store/taskStore";
 import { useToastStore } from "@/store/toastStore";
 import { cn } from "@/utils/cn";
@@ -32,11 +39,8 @@ const TRACKER_STAGES = ["Submitted", "Under review", "Decision"];
 /** Independent plans never queue for anyone, so they have no review step. */
 const SELF_STAGES = ["Drafted", "Finalized"];
 
-const GENERATE_STEPS = [
-  "Reading the approved plan",
-  "Mapping outputs to lifecycle stages",
-  "Drafting tasks",
-];
+// Real phases, each advanced when its request finishes.
+const GENERATE_STEPS = ["Drafting tasks with AI", "Saving them to the plan"];
 
 export const Status: React.FC = () => {
   const changeText = useChangeText();
@@ -71,7 +75,13 @@ export const Status: React.FC = () => {
   const [generating, setGenerating] = React.useState(false);
   const [step, setStep] = React.useState(0);
 
+<<<<<<< Updated upstream
   const outputs = draft.dataset ?? [];
+=======
+  // Tasks execute the approved plan: its outputs, never edits still
+  // waiting to be saved or decided. The server drafts from that version.
+  const outputs = outputsInForce(record);
+>>>>>>> Stashed changes
   const cost = estimateCost.generateTasks(outputs.length);
   const mode = useOpenPlanMode();
   const route = activation(mode);
@@ -85,15 +95,10 @@ export const Status: React.FC = () => {
       toast({ title: "Open a plan first", variant: "destructive" });
       return;
     }
-
     setGenerating(true);
     setStep(0);
-    const timer = setInterval(
-      () => setStep((s) => Math.min(s + 1, GENERATE_STEPS.length - 1)),
-      380,
-    );
-
     try {
+<<<<<<< Updated upstream
       const { tasks, token_count, usage } = await generateTasks({
         outputs: outputs.map((d) => ({
           dataset_id: d.dataset_id,
@@ -130,26 +135,51 @@ export const Status: React.FC = () => {
           .join(", "),
         token_count,
         usage,
+=======
+      // Drafted by the server from the version in force, then saved.
+      const { tasks, result } = await draftTasks(currentDmpId, {
+        datasetIds: outputs.map((d) => d.dataset_id as string),
+>>>>>>> Stashed changes
       });
+      if (tasks.length === 0) {
+        toast({
+          title: "No tasks came back",
+          description: "The AI didn't draft any usable tasks. Try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      setStep(1);
+      if (!(await addGeneratedTasks(currentDmpId, tasks))) return;
       markTasksGenerated(currentDmpId);
-      clearInterval(timer);
-      setGenerating(false);
       toast({
         title: `${tasks.length} tasks generated`,
-        description: `Used ${token_count.toLocaleString()} tokens.`,
+        description: `Used ${totalTokens(result.usage).toLocaleString()} tokens.`,
       });
       // The tasks belong to the plan they were made for, wherever the person
       // is now; only take them to the board if they're still on that plan.
       if (useDmpStore.getState().currentDmpId === currentDmpId)
         navigate("/tasks");
     } catch (err) {
-      clearInterval(timer);
-      setGenerating(false);
       reportAiError(err, { what: "generate tasks", retry: runGeneration });
     } finally {
+      setGenerating(false);
       syncQuota();
     }
   };
+
+  // The server creates a plan's first tasks when it comes into force; ask it
+  // whether this plan has any rather than remembering it here.
+  const loadTasks = useTaskStore((s) => s.loadForPlans);
+  const planHasTasks = useTaskStore((s) =>
+    s.tasks.some((t) => t.dmp_id === currentDmpId),
+  );
+  React.useEffect(() => {
+    if (currentDmpId && isApproved) void loadTasks([currentDmpId]).catch(() => undefined);
+  }, [currentDmpId, isApproved, loadTasks]);
+  React.useEffect(() => {
+    if (planHasTasks && currentDmpId) markTasksGenerated(currentDmpId);
+  }, [planHasTasks, currentDmpId, markTasksGenerated]);
 
   if (returned) {
     return (
@@ -239,11 +269,11 @@ export const Status: React.FC = () => {
               <Button
                 className="mt-4"
                 size="sm"
-                onClick={() => {
-                  finalize();
-                  toast({
-                    title: `Version ${revision.number} is now in force`,
-                  });
+                onClick={async () => {
+                  if (await finalize())
+                    toast({
+                      title: `Version ${revision.number} is now in force`,
+                    });
                 }}
               >
                 Finalize version {revision.number}
@@ -311,12 +341,6 @@ export const Status: React.FC = () => {
             })}
           </ol>
 
-          {/* There's no queue to wait in when you sign your own plan off. */}
-          {!isApproved && route.reviewed && (
-            <p className="mt-6 text-center text-sm text-muted-foreground">
-              Estimated decision: within 5 business days
-            </p>
-          )}
         </div>
 
         {isApproved ? (
@@ -380,9 +404,8 @@ export const Status: React.FC = () => {
             <Button
               className="mt-2"
               size="sm"
-              onClick={() => {
-                finalize();
-                toast({ title: "Plan finalized" });
+              onClick={async () => {
+                if (await finalize()) toast({ title: "Plan finalized" });
               }}
             >
               {route.action}

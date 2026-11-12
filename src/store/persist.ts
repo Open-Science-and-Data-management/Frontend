@@ -23,13 +23,3 @@ const PREFIX = "dmp-researcher";
 
 export const storageKey = (name: string) => `${PREFIX}/${name}`;
 
-/**
- * Drops every persisted store. Used by "Reset demo data" — seeds only apply to
- * a browser that has nothing saved, so stale data would otherwise outlive a
- * change to the seeds themselves.
- */
-export const clearPersistedState = () => {
-  Object.keys(localStorage)
-    .filter((key) => key.startsWith(`${PREFIX}/`))
-    .forEach((key) => localStorage.removeItem(key));
-};

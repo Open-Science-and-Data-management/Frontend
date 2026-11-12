@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useNotificationStore } from "@/store/notificationStore";
-import { useAuthStore, useCurrentUser } from "@/store/authStore";
+import { useCurrentUser } from "@/store/authStore";
 import { usePendingReviewCount } from "@/hooks/useDmpLibrary";
 import { isReviewer } from "@/config/roles";
 import { cn } from "@/utils/cn";
@@ -106,11 +106,7 @@ const SidebarNav: React.FC<{ onNavigate: () => void; collapsed?: boolean }> = ({
 }) => {
   const { pathname } = useLocation();
   const user = useCurrentUser();
-  const userId = useAuthStore((s) => s.userId);
-  const unread = useNotificationStore(
-    (s) =>
-      s.notifications.filter((n) => !n.read_at && n.user_id === userId).length,
-  );
+  const unread = useNotificationStore((s) => s.unread);
   const waiting = usePendingReviewCount();
   const counts: Record<BadgeKind, number> = {
     notifications: unread,

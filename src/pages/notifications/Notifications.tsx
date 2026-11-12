@@ -7,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useConfirm } from "@/components/ui/confirm-provider";
 import { useNotificationStore } from "@/store/notificationStore";
-import { useAuthStore } from "@/store/authStore";
+import { useCurrentUser } from "@/store/authStore";
+import { useDmpStore } from "@/store/dmpStore";
+import { useToastStore } from "@/store/toastStore";
+import { isReviewer } from "@/config/roles";
 import type { Notification } from "@/types/notification";
 import { cn } from "@/utils/cn";
 import {
@@ -21,19 +24,32 @@ const TONES = NOTIFICATION_TONES;
 export const Notifications: React.FC = () => {
   const navigate = useNavigate();
   const confirm = useConfirm();
-  const userId = useAuthStore((s) => s.userId) ?? undefined;
-  const all = useNotificationStore((s) => s.notifications);
-  // Every demo account shares this browser; each sees only its own.
-  const notifications = React.useMemo(
-    () => all.filter((n) => n.user_id === userId),
-    [all, userId],
-  );
+  const user = useCurrentUser();
+  // The server only ever lists the signed-in person's own.
+  const notifications = useNotificationStore((s) => s.notifications);
+  const status = useNotificationStore((s) => s.status);
+  const unread = useNotificationStore((s) => s.unread);
+  const load = useNotificationStore((s) => s.load);
   const markRead = useNotificationStore((s) => s.markRead);
-  const markAllRead = useNotificationStore((s) => s.markAllRead);
-  const remove = useNotificationStore((s) => s.remove);
+  const markAll = useNotificationStore((s) => s.markAllRead);
+  const removeOne = useNotificationStore((s) => s.remove);
   const clearAll = useNotificationStore((s) => s.clearAll);
+  const toast = useToastStore((s) => s.toast);
 
-  const unread = notifications.filter((n) => !n.read_at).length;
+  React.useEffect(() => {
+    void load().catch(() => undefined);
+  }, [load]);
+
+  const failed = (title: string) => (err: unknown) =>
+    toast({
+      title,
+      description: err instanceof Error ? err.message : undefined,
+      variant: "destructive",
+    });
+  const markAllRead = () =>
+    void markAll().catch(failed("Couldn't mark them read"));
+  const remove = (id: string) =>
+    void removeOne(id).catch(failed("Couldn't delete it"));
 
   // Newest first, whatever order the store happens to hold them in.
   const ordered = React.useMemo(
@@ -44,18 +60,30 @@ export const Notifications: React.FC = () => {
     [notifications],
   );
 
+  // The server links to a plan (`/dmps/:id`); each side has its own page
+  // for one: reviewers review it, its author follows its status.
   const open = (notification: Notification) => {
-    markRead(notification.notification_id as string);
-    if (notification.link) navigate(notification.link);
+    void markRead(notification.notification_id as string);
+    const dmpId =
+      notification.dmp_id ?? notification.link?.match(/^\/dmps\/([^/]+)/)?.[1];
+    if (dmpId) {
+      if (isReviewer(user?.role)) navigate(`/review/${dmpId}`);
+      else {
+        useDmpStore.getState().openDmp(dmpId);
+        navigate("/dmp/status");
+      }
+      return;
+    }
+    if (notification.project_id) navigate(`/projects/${notification.project_id}`);
   };
 
   const handleClearAll = async () => {
     const ok = await confirm({
       title: "Clear all notifications?",
-      description: "They're removed from this device and can't be restored.",
+      description: "They're deleted and can't be restored.",
       confirmLabel: "Clear all",
     });
-    if (ok) clearAll(userId);
+    if (ok) void clearAll().catch(failed("Couldn't clear them"));
   };
 
   return (
@@ -79,7 +107,7 @@ export const Notifications: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => markAllRead(userId)}
+                onClick={markAllRead}
                 disabled={unread === 0}
               >
                 Mark all read
@@ -91,7 +119,22 @@ export const Notifications: React.FC = () => {
           )}
         </div>
 
-        {notifications.length === 0 ? (
+        {status === "loading" ? (
+          <p className="py-10 text-center text-sm text-muted-foreground" role="status">
+            Loading notifications…
+          </p>
+        ) : status === "error" && notifications.length === 0 ? (
+          <EmptyState
+            icon={Bell}
+            title="Couldn't load notifications"
+            description="Check your connection, then try again."
+            action={
+              <Button variant="outline" size="sm" onClick={() => void load().catch(() => undefined)}>
+                Try again
+              </Button>
+            }
+          />
+        ) : notifications.length === 0 ? (
           <EmptyState
             icon={Bell}
             title="No notifications yet"

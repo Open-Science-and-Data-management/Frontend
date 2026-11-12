@@ -66,19 +66,3 @@ export const planModeOf = (
 ): PlanMode =>
   plan?.plan_mode ?? resolvePlanMode(projects, plan?.project_id ?? projectId);
 
-/**
- * Freezes the mode on every plan that's past draft but was submitted before
- * modes were frozen — using its project's mode as it stands now, the closest
- * true value there is. Plans already frozen, and drafts, are left alone.
- */
-export const freezeSubmittedModes = <
-  T extends { status: string; plan_mode?: PlanMode; project_id?: string },
->(
-  records: T[],
-  projects: Project[],
-): T[] =>
-  records.map((r) =>
-    r.status === "draft" || r.plan_mode
-      ? r
-      : { ...r, plan_mode: resolvePlanMode(projects, r.project_id) },
-  );

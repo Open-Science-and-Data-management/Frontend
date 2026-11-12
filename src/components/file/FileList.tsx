@@ -11,6 +11,8 @@ import { fileApi } from "@/api/fileApi";
 import { useProjectStore } from "@/store/projectStore";
 import { useToastStore } from "@/store/toastStore";
 import { cn } from "@/utils/cn";
+import { ApiError } from "@/api/http";
+import { archiveFileOnServer } from "@/store/serverSync";
 import type { FileRecord } from "@/types/file";
 
 const PURPOSE_LABELS: Record<FileRecord["purpose"], string> = {
@@ -48,9 +50,14 @@ export const FileList: React.FC<FileListProps> = ({ projectId, readOnly }) => {
   const [purpose, setPurpose] =
     React.useState<FileRecord["purpose"]>("evidence");
 
-  // Superseded files sink below the current ones.
+  // Superseded files sink below the current ones. Archived files stay in
+  // the cache (a task's evidence still points at them) but leave the list.
   const projectFiles = files
-    .filter((f) => f.project_id === projectId)
+    .filter(
+      (f) =>
+        f.project_id === projectId &&
+        !(f as FileRecord & { archived_at?: Date }).archived_at,
+    )
     .sort(
       (a, b) =>
         Number(Boolean(a.superseded_at)) - Number(Boolean(b.superseded_at)),
@@ -72,13 +79,28 @@ export const FileList: React.FC<FileListProps> = ({ projectId, readOnly }) => {
   const handleFiles = async (fileList: FileList | null) => {
     const picked = fileList?.[0];
     if (!picked) return;
-    await uploadFile({ file: picked, projectId, purpose: effectivePurpose });
-    toast({ title: `${picked.name} uploaded` });
-    if (inputRef.current) inputRef.current.value = "";
+    try {
+      await uploadFile({ file: picked, projectId, purpose: effectivePurpose });
+      toast({ title: `${picked.name} uploaded` });
+    } catch {
+      // The store has already said why ("Upload failed").
+    } finally {
+      if (inputRef.current) inputRef.current.value = "";
+    }
   };
 
-  const handleDownload = (record: FileRecord) => {
-    const url = fileApi.getDownloadUrl(record.file_id as string);
+  const handleDownload = async (record: FileRecord) => {
+    let url: string | null;
+    try {
+      url = await fileApi.download(record.file_id as string);
+    } catch (err) {
+      toast({
+        title: `Couldn't download ${record.filename}`,
+        description: err instanceof Error ? err.message : undefined,
+        variant: "destructive",
+      });
+      return;
+    }
     if (!url) {
       toast({
         title: "No local copy available",
@@ -209,8 +231,41 @@ export const FileList: React.FC<FileListProps> = ({ projectId, readOnly }) => {
                         }))
                       )
                         return;
-                      await removeFile(record.file_id as string);
-                      toast({ title: `${record.filename} removed` });
+                      try {
+                        await removeFile(record.file_id as string);
+                        toast({ title: `${record.filename} removed` });
+                      } catch (err) {
+                        // Evidence is the record of work done: it can be
+                        // archived (kept, out of the list), never deleted.
+                        const inUse =
+                          err instanceof ApiError && err.code === "file_in_use";
+                        toast({
+                          title: inUse
+                            ? `${record.filename} is a task's evidence`
+                            : `${record.filename} wasn't removed`,
+                          description: inUse
+                            ? "It can't be deleted. Archive it to take it out of this list and keep it with the task."
+                            : err instanceof Error
+                              ? err.message
+                              : undefined,
+                          variant: "destructive",
+                          ...(inUse
+                            ? {
+                                action: {
+                                  label: "Archive",
+                                  onClick: () =>
+                                    void archiveFileOnServer(
+                                      record.file_id as string,
+                                    ).then(() =>
+                                      toast({
+                                        title: `${record.filename} archived`,
+                                      }),
+                                    ),
+                                },
+                              }
+                            : {}),
+                        });
+                      }
                     }}
                   >
                     <Trash2 className="h-4 w-4" />

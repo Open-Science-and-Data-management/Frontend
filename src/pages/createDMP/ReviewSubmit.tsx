@@ -30,6 +30,12 @@ export const ReviewSubmit: React.FC = () => {
   const toast = useToastStore((s) => s.toast);
   const { checklistItems, canSubmit, unmetItems } = useDmpReadiness();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  // Once a version is in force or waiting, changes go through the editor.
+  const submitted = useDmpStore((s) =>
+    s.dmps
+      .find((d) => d.dmp_id === s.currentDmpId)
+      ?.versions.some((v) => v.status === "approved" || v.status === "pending"),
+  );
 
   const goToSection = (section: string, field?: string) =>
     navigate(
@@ -48,19 +54,39 @@ export const ReviewSubmit: React.FC = () => {
     );
   }
 
+  if (submitted) {
+    return (
+      <div className="flex h-[60vh] flex-col items-center justify-center gap-3 text-center">
+        <p className="text-lg font-medium">
+          This plan has already been submitted
+        </p>
+        <p className="max-w-md text-sm text-muted-foreground">
+          Changes to it are saved as minor edits or sent to your committee as a
+          new version from the editor.
+        </p>
+        <Button onClick={() => navigate("/dmp/create")}>
+          Back to the editor
+        </Button>
+      </div>
+    );
+  }
+
   // The only confirmation in the whole authoring flow — fields are edited
   // freely, and the plan is confirmed once here. Which transition it runs is
   // the project's mode; where it lands — an active plan — is the same either way.
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!canSubmit) return;
-    if (route.by === "self") {
-      finalize();
-      toast({ title: "Plan finalized" });
-    } else {
-      submitForApproval();
-      toast({ title: "Submitted for committee review" });
-    }
     setConfirmOpen(false);
+    // The server checks the plan again and may refuse; the store says why.
+    const ok =
+      route.by === "self" ? await finalize() : await submitForApproval();
+    if (!ok) return;
+    toast({
+      title:
+        route.by === "self"
+          ? "Plan finalized"
+          : "Submitted for committee review",
+    });
     navigate("/dmp/status");
   };
 

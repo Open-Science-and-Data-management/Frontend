@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearPersistedState, jsonStorage, storageKey } from "@/store/persist";
+import { jsonStorage, storageKey } from "@/store/persist";
 
 beforeEach(() => localStorage.clear());
 
@@ -29,65 +29,6 @@ describe("persisted storage", () => {
     };
     expect(read.state.plain).toBe("2025-05-20");
     expect(read.state.notADate).toBe("hello");
-  });
-
-  it("clears only its own namespace", () => {
-    localStorage.setItem(storageKey("tasks"), "1");
-    localStorage.setItem("theme", "dark");
-
-    clearPersistedState();
-
-    expect(localStorage.getItem(storageKey("tasks"))).toBeNull();
-    expect(localStorage.getItem("theme")).toBe("dark");
-  });
-});
-
-describe("stored tasks migrate forward", () => {
-  const migrateFn = async () => {
-    const { useTaskStore } = await import("@/store/taskStore");
-    return (
-      useTaskStore.persist.getOptions() as {
-        migrate?: (s: unknown, v: number) => unknown;
-      }
-    ).migrate!;
-  };
-
-  it("turns the old level checklist into plain steps and keeps evidence", async () => {
-    const migrate = await migrateFn();
-
-    const older = {
-      tasks: [
-        {
-          task_id: "t1",
-          checklist: [
-            { level: "basic", title: "Describe what was done", done: true },
-            { level: "output", title: "Attach the deliverable", done: false },
-          ],
-        },
-      ],
-    };
-
-    const out = migrate(older, 3) as {
-      tasks: {
-        checklist: { item_id: string; label: string; done: boolean }[];
-        evidence: { type: string };
-      }[];
-    };
-
-    expect(out.tasks[0].checklist.map((s) => s.label)).toEqual([
-      "Describe what was done",
-      "Attach the deliverable",
-    ]);
-    expect(out.tasks[0].checklist[0].done).toBe(true);
-    expect(out.tasks[0].checklist[0].item_id).toBeTruthy();
-    // Evidence moved onto the task itself; nothing to carry over yet.
-    expect(out.tasks[0].evidence).toEqual({ type: "none" });
-  });
-
-  it("leaves current data alone", async () => {
-    const migrate = await migrateFn();
-    const current = { tasks: [{ task_id: "t1", checklist: [] }] };
-    expect(migrate(current, 4)).toBe(current);
   });
 });
 

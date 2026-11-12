@@ -55,7 +55,7 @@ export const TaskKanban: React.FC<TaskKanbanProps> = ({
       ]
     : COLUMNS;
 
-  const drop = (status: Task["status"]) => {
+  const drop = async (status: Task["status"]) => {
     const task = tasks.find((t) => t.task_id === dragging);
     setDragging(null);
     setOver(null);
@@ -64,7 +64,7 @@ export const TaskKanban: React.FC<TaskKanbanProps> = ({
     const id = task.task_id as string;
 
     if (status === "done") {
-      if (!completeTask(id)) {
+      if (!(await completeTask(id))) {
         toast({
           title: "Evidence needed first",
           description: requirementHint(

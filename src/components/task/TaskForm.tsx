@@ -96,10 +96,8 @@ export const TaskForm: React.FC<TaskFormProps> = ({
         addTask({
           ...payload,
           dmp_id: dmpId,
-          generated_by: "user",
-          // A new task starts with no evidence, so it starts at zero.
+          // A new task starts as todo; the server records who made it.
           status: "todo",
-          progress_percent: 0,
         });
       }
 

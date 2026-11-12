@@ -34,7 +34,7 @@ export const ReopenTasksPrompt: React.FC = () => {
       className="rounded-lg border bg-card p-5 text-left"
     >
       <h2 className="text-sm font-semibold">
-        Version {offer.version} brought back an output with cancelled tasks
+        An output came back with cancelled tasks
       </h2>
       <p className="mt-0.5 text-xs text-muted-foreground">
         They were cancelled when the output was removed. Choose any to reopen.
@@ -69,9 +69,10 @@ export const ReopenTasksPrompt: React.FC = () => {
         <Button
           size="sm"
           disabled={chosen.length === 0}
-          onClick={() => {
-            const n = reopenFromOffer(offer.offer_id, chosen);
+          onClick={async () => {
+            const n = await reopenFromOffer(offer.offer_id, chosen);
             setChosen([]);
+            if (n === 0) return;
             toast({
               title: `${n} task${n === 1 ? "" : "s"} reopened`,
               description: "Each is back to the status it had before.",

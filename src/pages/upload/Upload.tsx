@@ -17,12 +17,14 @@ import { coverageGaps, estimateCost } from "@/api/aiApi";
 import { useDmpStore } from "@/store/dmpStore";
 import { formatTokensLeft, useQuotaStore } from "@/store/quotaStore";
 import { useProjectStore } from "@/store/projectStore";
+import { ApiError } from "@/api/http";
+import { reportAiError } from "@/store/aiErrors";
 
+// Real phases, each advanced when its request finishes.
 const PROGRESS_STEPS = [
-  "Reading proposal",
-  "Extracting datasets",
-  "Filling fields",
-  "Suggesting task outline",
+  "Uploading the proposal",
+  "Analyzing it with AI",
+  "Opening the draft",
 ];
 
 type Stage = "idle" | "confirming" | "analyzing" | "low-coverage";
@@ -65,33 +67,36 @@ export const Upload: React.FC = () => {
     setStage("analyzing");
     setProgressStep(0);
 
-    const stepTimer = setInterval(() => {
-      setProgressStep((s) => Math.min(s + 1, PROGRESS_STEPS.length - 1));
-    }, 350);
-
     const controller = new AbortController();
     abortRef.current = controller;
     try {
       // The proposal is stored against the project before AI reads it.
-      await uploadFile({ file, projectId, purpose: "proposal" });
-      const { coverage, opened } = await analyzeProposal(
+      const record = await uploadFile({
         file,
         projectId,
-        undefined,
-        { signal: controller.signal },
-      );
+        purpose: "proposal",
+        signal: controller.signal,
+      });
+      setProgressStep(1);
+      const { coverage, opened } = await analyzeProposal({
+        projectId,
+        fileId: record.file_id as string,
+        signal: controller.signal,
+      });
+      // The server marked the project active; show it.
       updateProject(projectId, { status: "active" });
-
-      clearInterval(stepTimer);
       setProgressStep(PROGRESS_STEPS.length);
       // Filed but not opened means the person went to another plan; the
       // store already told them where the new one is.
       if (!opened) setStage("idle");
       else if (coverage === "low") setStage("low-coverage");
       else navigate("/dmp/create");
-    } catch {
-      clearInterval(stepTimer);
+    } catch (err) {
       setStage("idle");
+      // Stopped by the person, or an upload failure the store reported.
+      if (controller.signal.aborted) return;
+      if (!(err instanceof ApiError && err.code.startsWith("file_")))
+        reportAiError(err, { what: "analyze the proposal" });
     } finally {
       abortRef.current = null;
     }
@@ -100,10 +105,13 @@ export const Upload: React.FC = () => {
   const handleSkipAi = async () => {
     if (!projectId) return;
     if (file) {
-      await uploadFile({ file, projectId, purpose: "proposal" });
+      try {
+        await uploadFile({ file, projectId, purpose: "proposal" });
+      } catch {
+        return; // reported by the store
+      }
     }
-    startManual(projectId);
-    navigate("/dmp/create");
+    if (await startManual(projectId)) navigate("/dmp/create");
   };
 
   const analyzeCost = file ? estimateCost.analyzeProposal(file) : 0;
@@ -155,16 +163,23 @@ export const Upload: React.FC = () => {
             projectId={projectId}
             onContinue={() => navigate("/dmp/create")}
             onRetry={async (direction) => {
-              if (!file) return;
+              const fileId = projects.find(
+                (p) => p.project_id === projectId,
+              )?.proposal_file_id;
+              if (!fileId || !projectId) return;
               // Nothing has been edited by hand yet, so a second pass can
               // replace the draft outright.
-              const { coverage, opened } = await analyzeProposal(
-                file,
-                projectId,
-                direction,
-                { replace: useDmpStore.getState().currentDmpId ?? undefined },
-              );
-              if (opened && coverage === "ok") navigate("/dmp/create");
+              try {
+                const { coverage, opened } = await analyzeProposal({
+                  projectId,
+                  fileId,
+                  direction,
+                  replace: useDmpStore.getState().currentDmpId ?? undefined,
+                });
+                if (opened && coverage === "ok") navigate("/dmp/create");
+              } catch (err) {
+                reportAiError(err, { what: "analyze the proposal" });
+              }
             }}
           />
         ) : (

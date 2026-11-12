@@ -19,9 +19,11 @@ import { ProgressBar } from "@/components/ui/progress-bar";
 import { useTaskStore } from "@/store/taskStore";
 import { useProjectStore } from "@/store/projectStore";
 import { useDmpStore } from "@/store/dmpStore";
-import { recordAiEvent } from "@/store/aiThread";
+import { useCurrentUser } from "@/store/authStore";
+import { userFullName } from "@/schemas/user";
 import { useToastStore } from "@/store/toastStore";
-import { generateTaskChecklist } from "@/api/aiApi";
+import { draftChecklist } from "@/api/aiResults";
+import { totalTokens } from "@/api/aiContract";
 import {
   awaitingVerification,
   classifyPastedEvidence,
@@ -60,7 +62,16 @@ export const TaskEvidence: React.FC<TaskEvidenceProps> = ({ task }) => {
     completeTask,
     reopenTask,
   } = useTaskStore();
-  const { projects, uploadFile } = useProjectStore();
+  const { projects, uploadFile, getUser } = useProjectStore();
+  const me = useCurrentUser();
+  // The server records who closed it by id; name them when we know them.
+  const closer = task.completed_by ? getUser(task.completed_by) : undefined;
+  const closedBy =
+    task.completed_by && task.completed_by === me?.user_id
+      ? "you"
+      : closer
+        ? userFullName(closer)
+        : undefined;
   const draftProjectId = useDmpStore((s) => s.draft.project_id);
   const dmps = useDmpStore((s) => s.dmps);
   const currentDmpId = useDmpStore((s) => s.currentDmpId);
@@ -126,8 +137,8 @@ export const TaskEvidence: React.FC<TaskEvidenceProps> = ({ task }) => {
     setLinkValue("");
   };
 
-  const close = () => {
-    if (completeTask(taskId)) {
+  const close = async () => {
+    if (await completeTask(taskId)) {
       toast({ title: "Task closed", description: task.title });
     } else {
       toast({
@@ -140,44 +151,25 @@ export const TaskEvidence: React.FC<TaskEvidenceProps> = ({ task }) => {
 
   const redraft = async () => {
     setRedrafting(true);
-    // The task's own output is what the steps are for; the rest is context.
-    const outputs = plan?.draft.dataset ?? [];
-    const own = task.dataset_id
-      ? outputs.find((d) => d.dataset_id === task.dataset_id)
-      : undefined;
     try {
-      const { steps, token_count, usage } = await generateTaskChecklist({
-        taskTitle: task.title,
-        lifecycleStage: task.lifecycle_stage,
-        taskOutput: own && {
-          dataset_id: own.dataset_id as string,
-          title: own.title || "Untitled output",
-          type: own.type,
-          access: own.access,
-          personal_data: own.personal_data,
-          repository: own.preservation?.repository,
-          duration: own.preservation?.duration,
-        },
-        otherOutputs: outputs
-          .filter((d) => d !== own)
-          .map((d) => d.title || "Untitled output"),
+      // The server drafts for this task's own output, found from the task.
+      const { steps, result } = await draftChecklist(
+        task.dmp_id,
+        taskId,
         direction,
-      });
-
-      replaceChecklist(taskId, steps);
-      recordAiEvent(task.dmp_id, {
-        action: "redraft_steps",
-        summary: `Redrafted the steps for "${task.title}"`,
-        detail: [
-          direction.trim() || "no direction given",
-          `${steps.length} steps`,
-        ].join(" · "),
-        token_count,
-        usage,
-      });
+      );
+      if (steps.length === 0) {
+        toast({
+          title: "No steps came back",
+          description: "Try a different direction.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!(await replaceChecklist(taskId, steps))) return;
       toast({
         title: `${steps.length} steps drafted`,
-        description: `Steps already ticked were kept · ${token_count.toLocaleString()} tokens.`,
+        description: `Steps already ticked were kept · ${totalTokens(result.usage).toLocaleString()} tokens.`,
       });
       setDirection("");
     } catch (err) {
@@ -383,11 +375,15 @@ export const TaskEvidence: React.FC<TaskEvidenceProps> = ({ task }) => {
       {isDone ? (
         <div className="space-y-2">
           <p className="text-xs text-muted-foreground">
-            Closed{" "}
-            {task.completed_at
-              ? new Date(task.completed_at).toLocaleDateString()
-              : ""}{" "}
-            by {task.completed_by ?? "you"}.
+            {[
+              "Closed",
+              task.completed_at &&
+                new Date(task.completed_at).toLocaleDateString(),
+              closedBy && `by ${closedBy}`,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            .
           </p>
           <Button
             variant="outline"

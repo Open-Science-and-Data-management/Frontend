@@ -25,7 +25,6 @@ import { useResearcherDashboard } from "@/hooks/useResearcherDashboard";
 import { draftHasContent, useDmpStore } from "@/store/dmpStore";
 import { formatTokensLeft, useQuotaStore } from "@/store/quotaStore";
 import { useCurrentUser } from "@/store/authStore";
-import { useToastStore } from "@/store/toastStore";
 import { toLocalDay } from "@/utils/calendarDate";
 
 const greeting = (hour: number) =>
@@ -47,7 +46,6 @@ const joinCounts = (parts: [number, string][]) =>
  */
 const Welcome: React.FC = () => {
   const navigate = useNavigate();
-  const toast = useToastStore((s) => s.toast);
 
   return (
     <div className="mx-auto max-w-3xl space-y-10 py-8">
@@ -66,18 +64,10 @@ const Welcome: React.FC = () => {
         <Button size="lg" onClick={() => navigate("/upload")}>
           Create your first DMP
         </Button>
-        <button
-          type="button"
-          onClick={() =>
-            toast({
-              title: "Sample DMP coming soon",
-              description: "We're preparing a walkthrough example.",
-            })
-          }
-          className="rounded text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          View a sample DMP
-        </button>
+        {/* No sample plan exists on the server yet. */}
+        <p className="text-sm text-muted-foreground">
+          A sample DMP walkthrough isn't available yet.
+        </p>
       </div>
 
       <HowItWorksSteps />
@@ -96,7 +86,7 @@ const Dashboard: React.FC<{
   const draft = useDmpStore((s) => s.draft);
   const status = useDmpStore((s) => s.status);
   const quota = useQuotaStore((s) => s.quota);
-  const tokensLeft = quota ? Math.max(0, quota.limit - quota.used) : null;
+  const tokensLeft = useQuotaStore((s) => s.tokensLeft());
 
   const now = new Date();
   // A draft still in the editor is the most likely thing to pick back up.
@@ -202,7 +192,11 @@ const Dashboard: React.FC<{
           iconClassName="border-ai/30 bg-ai-subtle text-ai"
           to="/upload"
           footer={
-            quota ? `left of ${quota.limit.toLocaleString()}` : "Loading…"
+            !quota
+              ? "Loading…"
+              : quota.limit === 0
+                ? `${quota.used.toLocaleString()} used, no limit`
+                : `left of ${quota.limit.toLocaleString()}`
           }
         />
       </div>

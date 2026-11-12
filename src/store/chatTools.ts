@@ -8,11 +8,6 @@ import { ENABLED_TOOLS, toolCallSchema, type ToolCall } from "@/api/aiTools";
 import type { DmpDraft } from "@/types/dmp";
 import type { Task } from "@/types/task";
 import { sameValue } from "@/utils/sameValue";
-import {
-  isWordingOnly,
-  regenerateMode,
-  type RegenerateMode,
-} from "@/config/field-policy";
 
 export interface ChatProposal {
   id: string;
@@ -180,8 +175,8 @@ export const runToolCall = (call: unknown, ctx: ToolContext): ToolRun => {
     case "checkReadiness":
       return { ...empty, answers: [readiness(ctx)] };
 
-    // Needs a model call, so the chat runs it through `prepareRewrite` and
-    // proposes the result. Reaching here means nothing drafted it.
+    // Rewrites are drafted by the server; this check only ever receives the
+    // field changes they produce.
     case "proposeRewrite":
       return {
         ...empty,
@@ -387,51 +382,6 @@ const currentPath = (proposal: ChatProposal, draft: DmpDraft) => {
     (d) => d.dataset_id === proposal.datasetId,
   );
   return index < 0 ? null : `dataset[${index}].${proposal.datasetField}`;
-};
-
-type RewriteDirection = Extract<
-  ToolCall,
-  { tool: "proposeRewrite" }
->["direction"];
-
-/**
- * Checks a rewrite asked for in the chat against the same rules as the
- * field's own regenerate button, before any model is called: free text
- * only, never a field the AI stays out of, and the researcher's own words
- * only polished, never written for them.
- */
-export const prepareRewrite = (
-  path: string,
-  direction: RewriteDirection,
-  ctx: ToolContext,
-):
-  | { ok: true; label: string; current: string; mode: RegenerateMode }
-  | { ok: false; rejection: ChatRejection } => {
-  const target = resolveFieldPath(ctx.draft, path);
-  if ("error" in target)
-    return { ok: false, rejection: { label: path, reason: target.error } };
-  const refuse = (reason: string) => ({
-    ok: false as const,
-    rejection: { label: target.label, reason },
-  });
-  if (target.policy.noAiAssist)
-    return refuse("Only you write this field, so I won't suggest text for it.");
-  const mode = regenerateMode(target.policy);
-  if (!mode)
-    return refuse(
-      "I can only reword free text. For this field, ask me to change it to a specific value.",
-    );
-  const raw = target.read(ctx.draft);
-  const current = typeof raw === "string" ? raw : "";
-  if (mode === "polish" && !current.trim())
-    return refuse(
-      "This one is yours to write. Once you have, I can suggest a polish.",
-    );
-  if (mode === "polish" && !isWordingOnly(direction))
-    return refuse(
-      "This is your own text, so I only change the wording: shorter or more formal.",
-    );
-  return { ok: true, label: target.label, current, mode };
 };
 
 /**

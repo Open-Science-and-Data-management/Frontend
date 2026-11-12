@@ -5,12 +5,12 @@ import { Select } from "@/components/ui/select";
 import { Toggle } from "@/components/ui/toggle";
 import { useTheme } from "@/components/ui/ThemeProvider";
 import { Button } from "@/components/ui/button";
-import { useConfirm } from "@/components/ui/confirm-provider";
-import { clearPersistedState } from "@/store/persist";
 import { useProjectStore } from "@/store/projectStore";
-import { useCurrentUser } from "@/store/authStore";
+import { useAuthStore, useCurrentUser } from "@/store/authStore";
 import { useToastStore } from "@/store/toastStore";
 import { userProfileSchema } from "@/schemas/user";
+import { authApi } from "@/api/authApi";
+import { ApiError } from "@/api/http";
 
 type ProfileField = "title" | "name" | "surname" | "email";
 
@@ -51,7 +51,7 @@ const ProfileSection: React.FC = () => {
     setEditing(false);
   };
 
-  const save = (e: React.FormEvent) => {
+  const save = async (e: React.FormEvent) => {
     e.preventDefault();
     const result = userProfileSchema.safeParse(values);
     if (!result.success) {
@@ -64,16 +64,24 @@ const ProfileSection: React.FC = () => {
       return;
     }
     if (!user?.user_id) return;
-    if (
-      useProjectStore.getState().isEmailTaken(result.data.email, user.user_id)
-    ) {
-      setErrors({ email: "Another account already uses this email." });
+    const patch = { ...result.data, title: result.data.title || undefined };
+
+    // The server checks the email is free and answers with the saved user.
+    try {
+      const saved = await authApi.updateMe(patch);
+      updateUser(user.user_id, saved);
+      useAuthStore.getState().setUser(saved);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === "email_taken")
+        setErrors({ email: "Another account already uses this email." });
+      else
+        toast({
+          title: "Profile not saved",
+          description: err instanceof Error ? err.message : undefined,
+          variant: "destructive",
+        });
       return;
     }
-    updateUser(user.user_id, {
-      ...result.data,
-      title: result.data.title || undefined,
-    });
     setErrors({});
     setEditing(false);
     toast({ title: "Profile saved" });
@@ -148,24 +156,7 @@ const ProfileSection: React.FC = () => {
 
 export const Settings: React.FC = () => {
   const { theme, setTheme } = useTheme();
-  const confirm = useConfirm();
   const user = useCurrentUser();
-  const [emailNotifications, setEmailNotifications] = React.useState(true);
-
-  const resetData = async () => {
-    const ok = await confirm({
-      title: "Reset all local data?",
-      description:
-        "Your plans, projects, files, and tasks on this device are deleted and the sample data comes back. This can't be undone.",
-      confirmLabel: "Reset data",
-    });
-    if (!ok) return;
-
-    clearPersistedState();
-    // Reload rather than rehydrating in place: every store seeds itself on
-    // startup, and a partial reset would leave them disagreeing.
-    window.location.reload();
-  };
 
   return (
     <>
@@ -205,29 +196,16 @@ export const Settings: React.FC = () => {
 
         <section className="space-y-4 rounded-lg border bg-card p-5">
           <h2 className="font-semibold">Notifications</h2>
-          <label className="flex items-center justify-between gap-4">
-            <span className="text-sm">
-              Email me when a committee makes a decision
-            </span>
-            <Toggle
-              checked={emailNotifications}
-              onCheckedChange={setEmailNotifications}
-            />
-          </label>
-        </section>
-        <section className="space-y-4 rounded-lg border bg-card p-5">
-          <h2 className="font-semibold">Local data</h2>
-          <div className="flex flex-wrap items-center justify-between gap-4">
+          {/* The server sends no email yet and stores no preference for it;
+              a working switch here would promise something that never comes. */}
+          <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium">Reset demo data</p>
+              <p className="text-sm">Email me when a committee makes a decision</p>
               <p className="text-xs text-muted-foreground">
-                Plans, projects, files, and tasks are saved in this browser.
-                Resetting deletes them and restores the samples.
+                Not available yet. Decisions show up here in Notifications.
               </p>
             </div>
-            <Button variant="outline" onClick={resetData}>
-              Reset data
-            </Button>
+            <Toggle checked={false} disabled aria-label="Email notifications (not available yet)" onCheckedChange={() => {}} />
           </div>
         </section>
       </div>

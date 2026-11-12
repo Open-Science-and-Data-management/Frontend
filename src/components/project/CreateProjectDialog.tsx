@@ -2,9 +2,10 @@ import React from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useProjectStore } from "@/store/projectStore";
 import { useCurrentUser } from "@/store/authStore";
 import type { Project } from "@/types/project";
+import { createProjectOnServer } from "@/store/serverSync";
+import { useToastStore } from "@/store/toastStore";
 
 interface CreateProjectDialogProps {
   open: boolean;
@@ -17,7 +18,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   onOpenChange,
   onCreated,
 }) => {
-  const createProject = useProjectStore((s) => s.createProject);
+  const toast = useToastStore((s) => s.toast);
   // A citizen researcher has no committee, so their projects sign their own
   // plans off; everyone else's go to the institution's committee.
   const citizen = useCurrentUser()?.account_type === "citizen";
@@ -39,13 +40,24 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
       title="New project"
       description="A project holds your proposal, its DMP, files, and team."
       confirmLabel="Create project"
-      onConfirm={() => {
+      onConfirm={async () => {
         if (!name.trim()) return;
-        const project = createProject({
+        const input = {
           project_name: name.trim(),
           description: description.trim() || undefined,
-          plan_mode: citizen ? "independent" : "institutional",
-        });
+        };
+        // The server sets the plan mode from the account type itself.
+        let project;
+        try {
+          project = await createProjectOnServer(input);
+        } catch (err) {
+          toast({
+            title: "Project not created",
+            description: err instanceof Error ? err.message : undefined,
+            variant: "destructive",
+          });
+          return;
+        }
         reset();
         onOpenChange(false);
         onCreated?.(project);

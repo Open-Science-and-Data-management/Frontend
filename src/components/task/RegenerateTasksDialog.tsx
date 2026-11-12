@@ -6,10 +6,16 @@ import { X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useTaskStore } from "@/store/taskStore";
+<<<<<<< Updated upstream
 import type { DmpRecord } from "@/store/dmpStore";
 import { recordAiEvent } from "@/store/aiThread";
+=======
+import { outputsInForce, type DmpRecord } from "@/store/dmpStore";
+>>>>>>> Stashed changes
 import { useToastStore } from "@/store/toastStore";
-import { estimateCost, generateTasks, TASK_DIRECTIONS } from "@/api/aiApi";
+import { estimateCost, TASK_DIRECTIONS } from "@/api/aiApi";
+import { draftTasks } from "@/api/aiResults";
+import { totalTokens } from "@/api/aiContract";
 import { cn } from "@/utils/cn";
 
 interface RegenerateTasksDialogProps {
@@ -61,51 +67,30 @@ export const RegenerateTasksDialog: React.FC<RegenerateTasksDialogProps> = ({
   const run = async () => {
     setRunning(true);
     try {
-      const {
-        tasks: proposed,
-        token_count,
-        usage,
-      } = await generateTasks({
-        outputs: outputs.map((d) => ({
-          dataset_id: d.dataset_id,
-          title: d.title || "Untitled output",
-          type: d.type,
-          access: d.access,
-        })),
-        beginDate: plan.draft.begin_date,
-        endDate: plan.draft.end_date,
+      // Drafted by the server from the version in force; saved only here.
+      const { tasks: rows, result: run } = await draftTasks(plan.dmp_id, {
         direction,
+        datasetIds: outputs.map((d) => d.dataset_id as string),
       });
-
-      const rows = proposed.map((t) => ({
-        dmp_id: plan.dmp_id,
-        dataset_id: t.dataset_id,
-        title: t.title,
-        details: t.details,
-        lifecycle_stage: t.lifecycle_stage,
-        priority: t.priority,
-        generated_by: "ai" as const,
-      }));
-
+      if (rows.length === 0) {
+        toast({
+          title: "No tasks came back",
+          description: "The AI didn't draft any usable tasks. Try a different direction.",
+          variant: "destructive",
+        });
+        return;
+      }
       // Adding tasks for a new output must not disturb the rest of the board.
       const result = newOnly
-        ? { added: rows.length, removed: 0, kept: 0 }
-        : replaceGeneratedTasks(plan.dmp_id, rows);
-      if (newOnly) addGeneratedTasks(rows);
-
-      recordAiEvent(plan.dmp_id, {
-        action: "generate_tasks",
-        summary: `Regenerated tasks for ${plan.title}`,
-        detail: [
-          direction.trim() || "no direction given",
-          `${result.added} added, ${result.removed} replaced`,
-        ].join(" · "),
-        token_count,
-        usage,
-      });
+        ? (await addGeneratedTasks(plan.dmp_id, rows))
+          ? { added: rows.length, removed: 0, kept: 0 }
+          : null
+        : await replaceGeneratedTasks(plan.dmp_id, rows);
+      if (!result) return;
+      const tokens = totalTokens(run.usage);
       toast({
         title: `${result.added} tasks generated`,
-        description: `${result.removed} replaced, ${result.kept} kept · ${token_count.toLocaleString()} tokens.`,
+        description: `${result.removed} replaced, ${result.kept} kept · ${tokens.toLocaleString()} tokens.`,
       });
       onOpenChange(false);
       setDirection("");

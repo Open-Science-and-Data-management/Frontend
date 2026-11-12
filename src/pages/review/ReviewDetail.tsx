@@ -48,6 +48,33 @@ export const ReviewDetail: React.FC = () => {
 
   const record = library.find((d) => d.dmp_id === dmpId);
 
+  // Lists carry no plan content, so the plan under review is fetched here.
+  // No decision can be made until it has arrived.
+  const refreshDmp = useDmpStore((s) => s.refreshDmp);
+  const [content, setContent] = React.useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  const loadContent = React.useCallback(() => {
+    if (!dmpId) return () => {};
+    let live = true;
+    setContent("loading");
+    refreshDmp(dmpId)
+      .then(() => live && setContent("ready"))
+      .catch(() => live && setContent("error"));
+    return () => {
+      live = false;
+    };
+  }, [dmpId, refreshDmp]);
+  React.useEffect(loadContent, [loadContent]);
+
+  if (!record && content === "loading") {
+    return (
+      <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground">
+        Loading the plan…
+      </div>
+    );
+  }
+
   if (!record) {
     return (
       <div className="flex h-[60vh] flex-col items-center justify-center gap-3 text-center">
@@ -79,10 +106,10 @@ export const ReviewDetail: React.FC = () => {
         }
       : undefined;
 
-  const decide = () => {
+  const decide = async () => {
     if (!pending || !approver || !confirming) return;
     if (confirming === "approve") {
-      approveDmp(record.dmp_id, approver, note);
+      if (!(await approveDmp(record.dmp_id, approver, note))) return;
       toast({
         title: `Version ${pending.number} approved`,
         description: researcher
@@ -90,7 +117,7 @@ export const ReviewDetail: React.FC = () => {
           : undefined,
       });
     } else {
-      returnDmp(record.dmp_id, approver, note.trim());
+      if (!(await returnDmp(record.dmp_id, approver, note.trim()))) return;
       toast({
         title: `Version ${pending.number} sent back`,
         description: "Your comments went to the researcher.",
@@ -168,7 +195,23 @@ export const ReviewDetail: React.FC = () => {
               </p>
             )}
 
-            <DmpReview draft={snapshot} />
+            {content === "ready" ? (
+              <DmpReview draft={snapshot} />
+            ) : content === "loading" ? (
+              <p className="rounded-lg border bg-card p-6 text-sm text-muted-foreground">
+                Loading the plan's content…
+              </p>
+            ) : (
+              <div className="space-y-3 rounded-lg border border-destructive/40 bg-card p-6">
+                <p className="text-sm">
+                  The plan's content couldn't be loaded, so it can't be decided
+                  on yet.
+                </p>
+                <Button variant="outline" size="sm" onClick={loadContent}>
+                  Try again
+                </Button>
+              </div>
+            )}
           </div>
 
           <aside className="space-y-4 lg:sticky lg:top-20 lg:self-start">
@@ -211,7 +254,7 @@ export const ReviewDetail: React.FC = () => {
                 <Button
                   className="w-full"
                   variant="ok"
-                  disabled={!approver}
+                  disabled={!approver || content !== "ready"}
                   onClick={() => setConfirming("approve")}
                 >
                   <CheckCircle2 className="mr-2 h-4 w-4" />
@@ -220,7 +263,7 @@ export const ReviewDetail: React.FC = () => {
                 <Button
                   className="w-full"
                   variant="outline"
-                  disabled={!note.trim() || !approver}
+                  disabled={!note.trim() || !approver || content !== "ready"}
                   onClick={() => setConfirming("return")}
                 >
                   <Undo2 className="mr-2 h-4 w-4" />
@@ -241,29 +284,31 @@ export const ReviewDetail: React.FC = () => {
               </section>
             )}
 
-            <section className="space-y-2 rounded-lg border bg-card p-4">
-              <h2 className="text-sm font-semibold">Completeness</h2>
-              {readiness.canSubmit ? (
-                <p className="flex items-start gap-1.5 text-xs text-ok">
-                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  Every required field is filled in and valid.
-                </p>
-              ) : (
-                <>
-                  <p className="flex items-start gap-1.5 text-xs text-warn">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                    {readiness.unmetItems.length} item
-                    {readiness.unmetItems.length === 1 ? "" : "s"} still
-                    incomplete:
+            {content === "ready" && (
+              <section className="space-y-2 rounded-lg border bg-card p-4">
+                <h2 className="text-sm font-semibold">Completeness</h2>
+                {readiness.canSubmit ? (
+                  <p className="flex items-start gap-1.5 text-xs text-ok">
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    Every required field is filled in and valid.
                   </p>
-                  <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
-                    {readiness.unmetItems.map((item) => (
-                      <li key={item.label}>{item.label}</li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </section>
+                ) : (
+                  <>
+                    <p className="flex items-start gap-1.5 text-xs text-warn">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      {readiness.unmetItems.length} item
+                      {readiness.unmetItems.length === 1 ? "" : "s"} still
+                      incomplete:
+                    </p>
+                    <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted-foreground">
+                      {readiness.unmetItems.map((item) => (
+                        <li key={item.label}>{item.label}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </section>
+            )}
 
             <section className="space-y-3 rounded-lg border bg-card p-4">
               <h2 className="text-sm font-semibold">Version history</h2>

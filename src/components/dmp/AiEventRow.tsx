@@ -14,6 +14,7 @@ const ICONS: Record<AiAction, React.ComponentType<{ className?: string }>> = {
   batch_regenerate: RefreshCw,
   generate_tasks: ListChecks,
   redraft_steps: Sparkles,
+  chat: Sparkles,
 };
 
 export const AiEventRow: React.FC<{ event: ThreadEvent }> = ({ event }) => {

@@ -32,20 +32,35 @@ const Pending: React.FC<{ status: string; className?: string }> = ({
   </div>
 );
 
+// The server reports a limit of 0 for an account with no limit.
 const quotaState = (used: number, limit: number) => {
+  if (limit === 0)
+    return {
+      unlimited: true,
+      left: Infinity,
+      pct: 0,
+      isEmpty: false,
+      isLow: false,
+    };
   const left = Math.max(0, limit - used);
   return {
+    unlimited: false,
     left,
-    pct: limit > 0 ? Math.min(100, (used / limit) * 100) : 0,
+    pct: Math.min(100, (used / limit) * 100),
     isEmpty: left === 0,
     isLow: left > 0 && left / limit <= 0.2,
   };
 };
 
+const leftLabel = (left: number) =>
+  left === Infinity ? "Unlimited" : left.toLocaleString();
+
 // A reset date only when the server has one: the policy isn't settled, and
 // promising "the 1st" would be making it up.
 const tooltipText = (used: number, limit: number, resetsAt: Date | null) =>
-  `${used.toLocaleString()} of ${limit.toLocaleString()} tokens used${resetsAt ? ` · resets ${resetsAt.toLocaleDateString()}` : ""}`;
+  limit === 0
+    ? `${used.toLocaleString()} tokens used · no limit on this account`
+    : `${used.toLocaleString()} of ${limit.toLocaleString()} tokens used${resetsAt ? ` · resets ${resetsAt.toLocaleDateString()}` : ""}`;
 
 export const QuotaIndicator: React.FC<QuotaIndicatorProps> = ({
   className,
@@ -67,7 +82,9 @@ export const QuotaIndicator: React.FC<QuotaIndicatorProps> = ({
         )}
       >
         <Sparkles className="h-3.5 w-3.5" />
-        {left.toLocaleString()} tokens left
+        {left === Infinity
+          ? "Unlimited AI tokens"
+          : `${leftLabel(left)} tokens left`}
       </div>
     </Tooltip>
   );
@@ -82,7 +99,7 @@ export const QuotaBar: React.FC<{ className?: string }> = ({ className }) => {
   const { quota, status } = useQuota();
   const used = quota?.used ?? 0;
   const limit = quota?.limit ?? 0;
-  const { left, pct, isEmpty, isLow } = quotaState(used, limit);
+  const { unlimited, left, pct, isEmpty, isLow } = quotaState(used, limit);
 
   const [spent, setSpent] = React.useState<number | null>(null);
   const previous = React.useRef<number | null>(null);
@@ -123,22 +140,24 @@ export const QuotaBar: React.FC<{ className?: string }> = ({ className }) => {
           )}
         />
 
-        <div
-          role="progressbar"
-          aria-label="AI token quota"
-          aria-valuenow={used}
-          aria-valuemin={0}
-          aria-valuemax={limit}
-          className="hidden h-1.5 w-20 overflow-hidden rounded-full bg-muted sm:block"
-        >
+        {!unlimited && (
           <div
-            className={cn(
-              "h-full rounded-full transition-all duration-500",
-              isEmpty ? "bg-destructive" : isLow ? "bg-warn" : "bg-ai",
-            )}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+            role="progressbar"
+            aria-label="AI token quota"
+            aria-valuenow={used}
+            aria-valuemin={0}
+            aria-valuemax={limit}
+            className="hidden h-1.5 w-20 overflow-hidden rounded-full bg-muted sm:block"
+          >
+            <div
+              className={cn(
+                "h-full rounded-full transition-all duration-500",
+                isEmpty ? "bg-destructive" : isLow ? "bg-warn" : "bg-ai",
+              )}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        )}
 
         <span
           className={cn(
@@ -147,13 +166,17 @@ export const QuotaBar: React.FC<{ className?: string }> = ({ className }) => {
           )}
           data-testid="quota-left"
         >
-          {isEmpty ? "No tokens left" : `${left.toLocaleString()} left`}
+          {isEmpty
+            ? "No tokens left"
+            : unlimited
+              ? "Unlimited"
+              : `${leftLabel(left)} left`}
         </span>
 
         {/* Announced, not just shown: the cost of a run is easy to miss. */}
         <span aria-live="polite" className="sr-only">
           {spent !== null
-            ? `${spent.toLocaleString()} tokens used, ${left.toLocaleString()} left`
+            ? `${spent.toLocaleString()} tokens used, ${leftLabel(left)} left`
             : ""}
         </span>
         {spent !== null && (

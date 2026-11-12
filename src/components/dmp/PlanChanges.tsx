@@ -158,13 +158,11 @@ export const PlanChanges: React.FC = () => {
           <>
             <Button
               className="w-full"
-              onClick={() => {
+              onClick={async () => {
                 if (route.by === "self") {
                   // Nobody to wait on: the version is raised and decided at once.
-                  finalize();
-                  toast({ title: "New version in force" });
-                } else {
-                  submitRevision();
+                  if (await finalize()) toast({ title: "New version in force" });
+                } else if (await submitRevision()) {
                   toast({ title: "Revision submitted for approval" });
                 }
               }}
@@ -187,9 +185,8 @@ export const PlanChanges: React.FC = () => {
             <Button
               variant="outline"
               className="w-full"
-              onClick={() => {
-                saveMinorEdits();
-                toast({ title: "Changes saved" });
+              onClick={async () => {
+                if (await saveMinorEdits()) toast({ title: "Changes saved" });
               }}
             >
               <Check className="mr-2 h-4 w-4" />
@@ -216,8 +213,8 @@ export const PlanChanges: React.FC = () => {
                 confirmLabel: "Discard changes",
               })
             ) {
-              restoreVersion(active.number);
-              toast({ title: `Back to version ${active.number}` });
+              if (await restoreVersion(active.number))
+                toast({ title: `Back to version ${active.number}` });
             }
           }}
           className="w-full text-center text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

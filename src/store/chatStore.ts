@@ -1,22 +1,8 @@
 import { create } from "zustand";
-import { sameValue } from "@/utils/sameValue";
-import { aiApi, estimateCost, PROMPT_OVERHEAD, tokensIn } from "@/api/aiApi";
-import {
-  asAiError,
-  NO_USAGE,
-  totalTokens,
-  type AiUsage,
-} from "@/api/aiContract";
-import { serve } from "@/api/mock/aiServer";
+import { estimateCost } from "@/api/aiApi";
+import { asAiError, totalTokens } from "@/api/aiContract";
+import { runAiAction } from "@/api/aiStream";
 import { describeAiError, reportAiError, syncQuota } from "@/store/aiErrors";
-import { formatTokensLeft, useQuotaStore } from "@/store/quotaStore";
-import { planToolCalls } from "@/api/aiTools";
-import {
-  describeDirection,
-  redraftFromProposal,
-  type RegenerateDirection,
-} from "@/api/aiApi";
-import { recordAiEvent } from "@/store/aiThread";
 import { computeReadiness } from "@/hooks/useDmpReadiness";
 import { isActive } from "@/config/plan-mode";
 import { useDmpStore } from "@/store/dmpStore";
@@ -28,19 +14,13 @@ import {
   type ThreadTurn,
 } from "@/store/aiThread";
 import {
-  flagDrift,
   guardBeforeApply,
-  prepareRewrite,
-  runToolCall,
   type ChatProposal,
-  type ChatRejection,
   type ToolContext,
 } from "@/store/chatTools";
 
 export type ChatMessage = ThreadTurn;
 const makeId = () => Math.random().toString(36).substring(2, 10);
-
-const TOOL_CALL_COST = 60;
 
 export const estimateTurn = (message: string): number =>
   message.trim() ? estimateCost.chat(message) : 0;
@@ -98,13 +78,13 @@ const applyProposal = (proposal: ChatProposal) => {
   if (proposal.kind === "task") {
     const task = proposal.task;
     if (!task) return;
-    useTaskStore.getState().addTask({
-      dmp_id: dmp.currentDmpId ?? "current-dmp",
+    if (!dmp.currentDmpId) return;
+    void useTaskStore.getState().addTask({
+      dmp_id: dmp.currentDmpId,
       title: task.title,
       details: task.details,
       lifecycle_stage: task.lifecycle_stage,
       priority: task.priority,
-      generated_by: "ai",
     });
     return;
   }
@@ -150,6 +130,7 @@ export interface SuggestResult {
   stale: number;
 }
 
+<<<<<<< Updated upstream
 const asRegenerateDirection = (text: string): RegenerateDirection => {
   const trimmed = text.trim();
   if (/^shorter$/i.test(trimmed)) return { kind: "shorter" };
@@ -157,6 +138,8 @@ const asRegenerateDirection = (text: string): RegenerateDirection => {
   return { kind: "custom", detail: trimmed || "clearer" };
 };
 
+=======
+>>>>>>> Stashed changes
 const thread = () => useAiThread.getState();
 const currentScope = () => useDmpStore.getState().currentDmpId;
 
@@ -185,23 +168,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const trimmed = text.trim();
     if (!trimmed || get().isThinking) return;
 
-    const quota = useQuotaStore.getState();
-    const estimated = estimateTurn(trimmed);
-    if (!quota.hasTokensFor(estimated)) {
-      useToastStore.getState().toast({
-        title: "Not enough tokens left",
-        description: `This turn needs about ${estimated.toLocaleString()} tokens and you have ${formatTokensLeft(quota.tokensLeft())} left.`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // The question, and its answer, belong to the plan it was asked about —
-    // and the answer is worked out from that plan as it was when asked.
+    // The question, and its answer, belong to the plan it was asked about.
     const ticket = thread().ticket(currentScope());
-    const snapshot = currentContext();
+    const pendingId = makeId();
     thread().append(ticket.scope, {
-      id: makeId(),
+      id: pendingId,
       kind: "user",
       text: trimmed,
       at: new Date(),
@@ -210,6 +181,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const signal = begin();
 
     try {
+<<<<<<< Updated upstream
       const calls = planToolCalls(trimmed, {
         datasetCount: (snapshot.draft.dataset ?? []).length,
         hasDraft: Boolean(snapshot.draft.title || snapshot.draft.description),
@@ -286,16 +258,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const checked = flagDrift(
         proposals,
         useDmpStore.getState().draftFor(target),
+=======
+      // Pending edits first, so the assistant reads the plan as it is.
+      await useDmpStore.getState().flushDraft();
+      await runAiAction(
+        ticket.scope,
+        "chat",
+        { message: trimmed, ...(scope?.section ? { section: scope.section } : {}) },
+        { signal },
+>>>>>>> Stashed changes
       );
-      thread().append(target, {
-        id: makeId(),
-        kind: "assistant",
-        text: reply,
-        token_count: totalTokens(usage) + totalTokens(rewriteUsage),
-        at: new Date(),
-        proposals: checked.length ? checked : undefined,
-        rejections: rejections.length ? rejections : undefined,
-      });
+      // The server wrote both turns; show its copy.
+      await thread().reload(thread().resolve(ticket));
     } catch (err) {
       const e = asAiError(err);
       thread().append(thread().resolve(ticket), {
@@ -319,142 +293,50 @@ export const useChatStore = create<ChatState>((set, get) => ({
   suggestChanges: async ({ source, direction, filename, targetIds }) => {
     if (get().isThinking) return null;
     const dmp = useDmpStore.getState();
+    const scope = dmp.currentDmpId;
+    if (!scope) return null;
     const targets = dmp
       .eligibleBatchTargets()
       .filter((t) => (targetIds ?? []).includes(t.id));
-
-    const estimated =
-      source === "proposal"
-        ? estimateCost.chat(direction) * 2
-        : targets.reduce(
-            (sum, t) => sum + estimateCost.regenerateField(t.value),
-            0,
-          );
-
-    const quota = useQuotaStore.getState();
-    if (!quota.hasTokensFor(estimated)) {
-      useToastStore.getState().toast({
-        title: "Not enough tokens left",
-        description: `This needs about ${estimated.toLocaleString()} tokens and you have ${formatTokensLeft(quota.tokensLeft())} left.`,
-        variant: "destructive",
-      });
-      return null;
-    }
     if (source === "current" && targets.length === 0) return null;
 
-    // Suggestions are drafted against the plan as it is now, and checked
-    // against the plan as it is when they come back.
-    const ticket = thread().ticket(dmp.currentDmpId);
-    const snapshot = currentContext();
+    const ticket = thread().ticket(scope);
     set({ isThinking: true, pendingTicket: ticket });
     const signal = begin();
-
     try {
-      let fields: { path: string; value: unknown }[] = [];
-      let usage: AiUsage;
-      let summary: string;
-
-      if (source === "proposal") {
-        const result = await redraftFromProposal(
-          {
-            filename: filename ?? "the proposal",
-            direction,
-            current: snapshot.draft,
-          },
-          { signal },
-        );
-        fields = result.fields;
-        usage = result.usage;
-        summary = `Redrafted from ${filename ?? "the proposal"}${direction.trim() ? ` (${direction.trim()})` : ""}`;
-      } else {
-        const steer = asRegenerateDirection(direction);
-        const datasets = snapshot.draft.dataset ?? [];
-
-        const rewritten = await Promise.all(
-          targets.map(async (target) => {
-            const result = await aiApi.regenerateField(
-              target.label,
-              target.value,
-              steer,
-              "rewrite",
-              { signal },
-            );
-            const index = datasets.findIndex(
-              (d) => d.dataset_id === target.datasetId,
-            );
-            return {
-              path:
-                target.scope === "dmp"
-                  ? target.key
-                  : `dataset[${index}].${target.key}`,
-              value: result.text,
-              usage: result.usage,
-            };
-          }),
-        );
-
-        // A field that came back as it was isn't a change to decide on.
-        fields = rewritten
-          .filter(({ value }, i) => !sameValue(value, targets[i].value))
-          .map(({ path, value }) => ({ path, value }));
-        usage = rewritten.reduce<AiUsage>(
-          (sum, r) => ({
-            input_tokens: sum.input_tokens + r.usage.input_tokens,
-            output_tokens: sum.output_tokens + r.usage.output_tokens,
-            cached_input_tokens:
-              sum.cached_input_tokens + r.usage.cached_input_tokens,
-          }),
-          NO_USAGE,
-        );
-        summary = fields.length
-          ? `Rewrote ${fields.length} field${fields.length === 1 ? "" : "s"} (${describeDirection(steer)})`
-          : `Checked ${targets.length} field${targets.length === 1 ? "" : "s"} (${describeDirection(steer)})`;
-      }
-
-      const proposals: ChatProposal[] = [];
-      const rejections: ChatRejection[] = [];
-      fields.forEach((field) => {
-        const run = runToolCall(
-          { tool: "proposeFieldChange", path: field.path, value: field.value },
-          snapshot,
-        );
-        proposals.push(...run.proposals);
-        rejections.push(...run.rejections);
-      });
-
-      const target = thread().resolve(ticket);
-      const checked = flagDrift(
-        proposals,
-        useDmpStore.getState().draftFor(target),
+      await dmp.flushDraft();
+      const result = await runAiAction(
+        scope,
+        "suggest",
+        {
+          source,
+          direction: direction.trim() || undefined,
+          ...(source === "proposal" && filename ? { filename } : {}),
+          ...(source === "current"
+            ? {
+                fields: targets.map((t) => ({
+                  path:
+                    t.scope === "dmp"
+                      ? t.key
+                      : `dataset[${(dmp.draft.dataset ?? []).findIndex((d) => d.dataset_id === t.datasetId)}].${t.key}`,
+                  label: t.label,
+                  text: t.value,
+                })),
+              }
+            : {}),
+        },
+        { signal },
       );
-      const stale = checked.filter((p) => p.status === "stale").length;
-      const token_count = totalTokens(usage);
-
-      recordAiEvent(target, {
-        action: source === "proposal" ? "analyze_proposal" : "batch_regenerate",
-        summary,
-        detail: `${checked.length} suggestion(s), ${rejections.length} refused${stale ? `, ${stale} out of date` : ""}.`,
-        token_count,
-        usage,
-      });
-
-      const entryId = makeId();
-      thread().append(target, {
-        id: entryId,
-        kind: "assistant",
-        text: checked.length
-          ? `${summary}. ${checked.length} change${checked.length === 1 ? "" : "s"} to review. Nothing is applied until you accept it.${stale ? ` ${stale} no longer match${stale === 1 ? "es" : ""} the plan and ${stale === 1 ? "is" : "are"} marked out of date.` : ""}`
-          : `${summary}, but nothing new came out of it.`,
-        token_count,
-        at: new Date(),
-        proposals: checked.length ? checked : undefined,
-        rejections: rejections.length ? rejections : undefined,
-      });
-
+      await thread().reload(scope);
+      const turn = thread()
+        .entriesFor(scope)
+        .find((e) => e.id === result.entryId) as ThreadTurn | undefined;
+      const proposals = turn?.proposals ?? [];
+      const stale = proposals.filter((p) => p.status === "stale").length;
       return {
-        entryId,
-        proposals: checked.length - stale,
-        rejected: rejections.length,
+        entryId: result.entryId ?? "",
+        proposals: proposals.length - stale,
+        rejected: 0,
         stale,
       };
     } catch (err) {

@@ -136,8 +136,7 @@ export const MyDmps: React.FC = () => {
         description: "It returns to your plans as it was when archived.",
         confirmLabel: "Unarchive",
       });
-      if (!ok) return;
-      unarchiveDmp(dmp.dmp_id);
+      if (!ok || !(await unarchiveDmp(dmp.dmp_id))) return;
     }
     // Editing an approved or pending plan isn't the researcher's call, so those
     // open on the status screen instead of the editor.
